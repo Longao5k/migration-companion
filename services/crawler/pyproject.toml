@@ -1,0 +1,9 @@
+[project]
+name = "migration-companion-crawler"
+version = "0.1.0"
+description = "Allowlisted official-source monitor for Migration Companion"
+requires-python = ">=3.13"
+
+[tool.unittest]
+start-directory = "tests"
+

@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectTemplate {
+  SA_190
+  SA_491
+  BLANK
+}
+
+enum ChecklistStatus {
+  NOT_STARTED
+  PREPARING
+  READY
+  SENT
+  CONFIRMED
+}
+
+enum CollaboratorRole {
+  OWNER
+  VIEWER
+  COLLABORATOR
+}
+
+enum ReviewStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  CORRECTED
+}
+
+enum ChangeImportance {
+  GENERAL
+  IMPORTANT
+  MAJOR
+}
+
+enum FileScanStatus {
+  PENDING
+  CLEAN
+  REJECTED
+  ERROR
+}
+
+model Account {
+  id                  String                @id @default(cuid())
+  email               String                @unique
+  emailVerifiedAt     DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  deletionRequestedAt DateTime?
+  trialStartedAt      DateTime?
+  trialEndsAt         DateTime?
+  projects            Project[]             @relation("ProjectOwner")
+  memberships         Collaborator[]
+  shares              ShareLink[]
+  auditEvents         AuditEvent[]
+  subscription        Subscription?
+  sentInvitations     CollaborationInvite[] @relation("InviteSender")
+  comments            ProjectComment[]
+  uploadedFiles       FileRecord[]          @relation("FileUploader")
+}
+
+model Project {
+  id                  String                @id @default(cuid())
+  ownerId             String
+  owner               Account               @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name                String
+  template            ProjectTemplate
+  applicantName       String
+  targetDate          DateTime?
+  cloudFilesEnabled   Boolean               @default(false)
+  allowViewerDownload Boolean               @default(false)
+  version             Int                   @default(1)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  checklist           ChecklistItem[]
+  files               FileRecord[]
+  collaborators       Collaborator[]
+  shares              ShareLink[]
+  auditEvents         AuditEvent[]
+  invitations         CollaborationInvite[]
+  comments            ProjectComment[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model CollaborationInvite {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  invitedById String
+  invitedBy   Account          @relation("InviteSender", fields: [invitedById], references: [id], onDelete: Cascade)
+  email       String
+  role        CollaboratorRole
+  tokenHash   String           @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([projectId, expiresAt])
+  @@index([email, expiresAt])
+}
+
+model ProjectComment {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Account  @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, createdAt])
+}
+
+model ChecklistItem {
+  id         String          @id @default(cuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title      String
+  category   String
+  person     String
+  status     ChecklistStatus @default(NOT_STARTED)
+  dueAt      DateTime?
+  reminderAt DateTime?
+  note       String?
+  sourceUrl  String?
+  sourceAsOf DateTime?
+  reviewAsOf DateTime?
+  position   Int
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  files      FileRecord[]
+
+  @@index([projectId, position])
+}
+
+model FileRecord {
+  id              String         @id @default(cuid())
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  checklistItemId String?
+  checklistItem   ChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
+  uploadedById    String?
+  uploadedBy      Account?       @relation("FileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  originalName    String
+  storageKey      String
+  contentType     String
+  byteSize        BigInt
+  sha256          String
+  compatibility   String
+  isOriginal      Boolean        @default(true)
+  parentFileId    String?
+  scanStatus      FileScanStatus @default(PENDING)
+  scannerVersion  String?
+  scannedAt       DateTime?
+  createdAt       DateTime       @default(now())
+
+  @@unique([projectId, storageKey])
+  @@index([checklistItemId])
+  @@index([uploadedById])
+}
+
+model UploadSession {
+  id           String    @id @default(cuid())
+  projectId    String
+  accountId    String
+  storageKey   String    @unique
+  originalName String
+  contentType  String
+  byteSize     BigInt
+  sha256       String
+  expiresAt    DateTime
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([projectId, accountId, expiresAt])
+}
+
+model Collaborator {
+  id         String           @id @default(cuid())
+  projectId  String
+  project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  role       CollaboratorRole
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@unique([projectId, accountId])
+  @@index([accountId])
+}
+
+model ShareLink {
+  id             String    @id @default(cuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      Account   @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  tokenHash      String    @unique
+  accessCodeHash String
+  attempts       Int       @default(0)
+  lockedUntil    DateTime?
+  allowDownload  Boolean   @default(false)
+  scope          Json
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  lastAccessedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([projectId, expiresAt])
+}
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  accountId    String?
+  account      Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  projectId    String?
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  action       String
+  targetType   String
+  targetId     String?
+  safeMetadata Json?
+  createdAt    DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
+model Source {
+  id            String         @id @default(cuid())
+  name          String
+  url           String         @unique
+  jurisdiction  String
+  sourceType    String         @default("official")
+  enabled       Boolean        @default(true)
+  licenseNote   String?
+  lastCheckedAt DateTime?
+  snapshots     PageSnapshot[]
+  news          NewsItem[]
+  changes       ChangeLog[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model PageSnapshot {
+  id           String   @id @default(cuid())
+  sourceId     String
+  source       Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  contentHash  String
+  snapshotKey  String
+  httpStatus   Int
+  etag         String?
+  lastModified String?
+  fetchedAt    DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@unique([sourceId, contentHash])
+  @@index([sourceId, fetchedAt])
+}
+
+model ChangeLog {
+  id              String           @id @default(cuid())
+  sourceId        String
+  source          Source           @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  titleZh         String
+  oldExcerpt      String?
+  newExcerpt      String?
+  context         String?
+  importance      ChangeImportance
+  reviewStatus    ReviewStatus     @default(PENDING)
+  editorSummaryZh String?
+  discoveredAt    DateTime
+  officialAt      DateTime?
+  verifiedAt      DateTime?
+  publishedAt     DateTime?
+  correctionNote  String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([reviewStatus, importance, discoveredAt])
+}
+
+model NewsItem {
+  id          String   @id @default(cuid())
+  sourceId    String
+  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  titleZh     String
+  summaryZh   String
+  sourceTitle String
+  sourceUrl   String
+  tags        String[]
+  publishedAt DateTime
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([publishedAt])
+}
+
+model Subscription {
+  id                  String    @id @default(cuid())
+  accountId           String    @unique
+  account             Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  provider            String
+  productId           String
+  status              String
+  originalTransaction String    @unique
+  trialEndsAt         DateTime?
+  currentPeriodEndsAt DateTime?
+  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime  @default(now())
+}

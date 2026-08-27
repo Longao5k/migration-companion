@@ -1,0 +1,14 @@
+packages:
+  - apps/admin
+  - apps/web
+  - services/api
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  unrs-resolver: true

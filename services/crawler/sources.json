@@ -1,0 +1,67 @@
+[
+  {
+    "id": "sa-news",
+    "name": "Move to South Australia — News",
+    "url": "https://migration.sa.gov.au/news",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; preserve attribution and check page-level third-party exclusions.",
+    "enabled": true
+  },
+  {
+    "id": "sa-nomination-requirements",
+    "name": "South Australia nomination requirements",
+    "url": "https://migration.sa.gov.au/how-to-apply/nomination-requirements",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "sa-documents-required",
+    "name": "South Australia documents required",
+    "url": "https://migration.sa.gov.au/how-to-apply/documents-required",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "sa-processing-times",
+    "name": "South Australia processing times",
+    "url": "https://migration.sa.gov.au/processing-times",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "home-affairs-news",
+    "name": "Department of Home Affairs — News",
+    "url": "https://immi.homeaffairs.gov.au/news-subsite/Pages/News-page.aspx",
+    "jurisdiction": "AU-FED",
+    "license_note": "Internal monitoring evidence only; do not republish Commonwealth content without a page-level permission review.",
+    "enabled": true
+  },
+  {
+    "id": "home-affairs-190",
+    "name": "Skilled Nominated visa subclass 190",
+    "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/skilled-nominated-190",
+    "jurisdiction": "AU-FED",
+    "license_note": "Internal monitoring evidence only; publish source links and short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "home-affairs-491",
+    "name": "Skilled Work Regional provisional visa subclass 491",
+    "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/skilled-work-regional-provisional-491",
+    "jurisdiction": "AU-FED",
+    "license_note": "Internal monitoring evidence only; publish source links and short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "migration-act",
+    "name": "Migration Act 1958",
+    "url": "https://www.legislation.gov.au/C1958A00062/latest/text",
+    "jurisdiction": "AU-FED",
+    "license_note": "Monitor metadata and version links; legislation interpretation requires legal review.",
+    "enabled": true
+  }
+]
+
