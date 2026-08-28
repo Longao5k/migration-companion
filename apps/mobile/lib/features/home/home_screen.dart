@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/links/official_link.dart';
 import '../../core/models/models.dart';
 import '../../core/state/app_store.dart';
 import '../../shared/widgets/common.dart';
+import '../projects/project_cloud_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
@@ -60,13 +61,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onRefresh: () =>
                       ref.read(appStoreProvider.notifier).refreshContent(),
                 ),
-                if (!state.noticeDismissed) ...[
-                  const SizedBox(height: 12),
-                  _PrivacyNote(
-                    onDismiss: () =>
-                        ref.read(appStoreProvider.notifier).dismissNotice(),
-                  ),
-                ],
                 const SizedBox(height: 22),
                 _TopicRail(
                   selected: _selectedTopic,
@@ -76,8 +70,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 if (visibleNews.isEmpty)
                   EmptyState(
                     icon: Icons.auto_stories_outlined,
-                    title: '这个主题还没有已发布资讯',
-                    body: '我们只展示能回到官方原文的内容。可以切换主题或稍后刷新。',
+                    title: '这个分类还没有内容',
+                    body: '换一个分类看看，或者下拉刷新。',
                     action: TextButton(
                       onPressed: () =>
                           ref.read(appStoreProvider.notifier).refreshContent(),
@@ -98,7 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     changeCount: state.changes.length,
                   ),
                   SectionHeader(
-                    title: '最新解读',
+                    title: '更多',
                     trailing: Text(
                       '${visibleNews.length} 条',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -123,7 +117,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
                 if (state.changes.isNotEmpty) ...[
                   SectionHeader(
-                    title: '政策雷达',
+                    title: '政策变化',
                     trailing: TextButton(
                       onPressed: widget.onOpenChanges,
                       child: const Text('查看全部'),
@@ -139,14 +133,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   project: nextProject,
                   onTap: widget.onOpenProjects,
                 ),
-                const SizedBox(height: 26),
-                Text(
-                  '内容仅作信息整理，不构成移民法律意见。请始终核对官方原文。',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                const _DiscussionCard(),
               ],
             ),
           ),
@@ -270,12 +257,12 @@ class _ContentSignal extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final hasError = error != null;
     final label = refreshing
-        ? '正在同步官方来源'
+        ? '正在更新'
         : hasError
-        ? '离线阅读 · 当前为最近缓存'
+        ? '现在看的是上次存下来的内容'
         : updatedAt == null
-        ? '等待首次同步'
-        : '已于 ${DateFormat('HH:mm').format(updatedAt!.toLocal())} 核对来源';
+        ? '还没更新过'
+        : '${DateFormat('HH:mm').format(updatedAt!.toLocal())} 更新';
     return Row(
       children: [
         Container(
@@ -312,42 +299,11 @@ class _ContentSignal extends StatelessWidget {
         else
           IconButton(
             onPressed: onRefresh,
-            tooltip: '刷新官方内容',
+            tooltip: '刷新',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.refresh_rounded, size: 20),
           ),
       ],
-    );
-  }
-}
-
-class _PrivacyNote extends StatelessWidget {
-  const _PrivacyNote({required this.onDismiss});
-
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.lock_outline_rounded, size: 18, color: scheme.primary),
-          const SizedBox(width: 9),
-          const Expanded(child: Text('访客项目仍只保存在本机，注册不会自动上传。')),
-          IconButton(
-            onPressed: onDismiss,
-            tooltip: '关闭',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close_rounded, size: 18),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1087,6 +1043,25 @@ class _StorySheet extends StatelessWidget {
                     letterSpacing: -0.6,
                   ),
                 ),
+                // 中文标题是我们写的，官方标题是官方写的。两个都给，用户才知道
+                // 自己在官网上该找哪一篇。
+                if (item.sourceTitle != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    item.sourceTitle!,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '官方原标题（英文）',
+                    style: Theme.of(context).textTheme.labelSmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Container(
                   padding: const EdgeInsets.all(18),
@@ -1124,46 +1099,48 @@ class _StorySheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
-                Text('如何使用这条资讯', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
                 Text(
-                  '先阅读官方页面确认日期、适用范围和例外情况，再决定是否更新自己的申请计划。本摘要不会判断个人资格，也不会替代注册移民代理或律师意见。',
-                  style: Theme.of(context).textTheme.bodyLarge
-                      ?.copyWith(color: scheme.onSurfaceVariant, height: 1.65),
+                  '内容摘自官方页面。是否适用于你的情况，请以官方原文为准。',
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
                 ),
                 const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLowest,
-                    border: Border.all(color: scheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.language_rounded, color: scheme.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              '官方来源',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text(
-                              item.sourceName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
-                            ),
-                          ],
+                InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => openOfficialSource(context, item.sourceUrl),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLowest,
+                      border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.language_rounded, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                '官方来源',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              Text(
+                                item.sourceName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const Icon(Icons.open_in_new_rounded, size: 19),
-                    ],
+                        const Icon(Icons.open_in_new_rounded, size: 19),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -1181,12 +1158,10 @@ class _StorySheet extends StatelessWidget {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => launchUrl(
-                        Uri.parse(item.sourceUrl),
-                        mode: LaunchMode.externalApplication,
-                      ),
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      label: const Text('查看官方原文'),
+                      onPressed: () =>
+                          openOfficialSource(context, item.sourceUrl),
+                      icon: const Icon(Icons.article_outlined),
+                      label: const Text('读官方原文'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1311,9 +1286,118 @@ class _NewsSearchDelegate extends SearchDelegate<void> {
             leading: _SourceMark(sourceName: item.sourceName),
             title: Text(item.title),
             subtitle: Text('${item.sourceName} · ${item.tags.join(' / ')}'),
-            onTap: () => launchUrl(
-              Uri.parse(item.sourceUrl),
-              mode: LaunchMode.externalApplication,
+            onTap: () => openOfficialSource(context, item.sourceUrl),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 主界面上的讨论入口。
+///
+/// 讨论此前只存在于「云端与协作」的第三个页签里，用户基本找不到。这一版唯一允许的
+/// 用户内容就是项目内的私密讨论——它只在被邀请的协作者之间可见，不是公开社区，
+/// 所以可以放到主界面而不需要一套公开内容审核体系。
+///
+/// 没有云项目、没有登录、或者一条留言都没有时整块不显示：主界面不该出现一个
+/// 永远是空的入口。
+class _DiscussionCard extends ConsumerStatefulWidget {
+  const _DiscussionCard();
+
+  @override
+  ConsumerState<_DiscussionCard> createState() => _DiscussionCardState();
+}
+
+class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
+  Future<ProjectDiscussionPreview?>? _pending;
+  int _cloudProjectSignature = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(appStoreProvider);
+    final cloudProjects = state.projects
+        .where((project) => project.isCloudSyncEnabled)
+        .toList();
+    if (!state.isSignedIn || cloudProjects.isEmpty)
+      return const SizedBox.shrink();
+
+    // 云项目集合变了才重新拉，不然每次 build 都会发一轮请求。
+    final signature = Object.hashAll(cloudProjects.map((p) => p.id));
+    if (signature != _cloudProjectSignature) {
+      _cloudProjectSignature = signature;
+      _pending = ref.read(appStoreProvider.notifier).latestDiscussion();
+    }
+
+    return FutureBuilder<ProjectDiscussionPreview?>(
+      future: _pending,
+      builder: (context, snapshot) {
+        final preview = snapshot.data;
+        if (preview == null || preview.body.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final scheme = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Card(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProjectCloudScreen(
+                    projectId: preview.projectId,
+                    initialTab: 2,
+                  ),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.forum_outlined,
+                          size: 18,
+                          color: scheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            preview.projectName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Text(
+                          '${preview.totalCount} 条留言',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      preview.body,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      preview.createdAt == null
+                          ? preview.author
+                          : '${preview.author} · '
+                                '${DateFormat('M月d日 HH:mm').format(preview.createdAt!)}',
+                      style: Theme.of(context).textTheme.labelSmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );

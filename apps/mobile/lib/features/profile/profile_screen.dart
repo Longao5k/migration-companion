@@ -46,7 +46,7 @@ class ProfileScreen extends ConsumerWidget {
                   const SizedBox(height: 6),
                   Text(
                     state.isSignedIn
-                        ? '${state.accountEmail}\n项目归属已保护；文件仍按项目决定是否上传。'
+                        ? '${state.accountEmail}\n换手机时可以用这个账号找回你的清单。'
                         : '项目保存在本机。你可以随时导出备份，不会遇到登录墙。',
                   ),
                   const SizedBox(height: 18),

@@ -142,7 +142,8 @@ extension VerificationStatusLabel on VerificationStatus {
 
   /// 是否经过人工处理。更正过的条目同样是人工处理过的，不能显示为“待核实”。
   bool get isHumanReviewed =>
-      this == VerificationStatus.verified || this == VerificationStatus.corrected;
+      this == VerificationStatus.verified ||
+      this == VerificationStatus.corrected;
 }
 
 extension ChecklistStatusLabel on ChecklistStatus {
@@ -164,6 +165,7 @@ class NewsItem {
     required this.title,
     required this.summary,
     required this.sourceName,
+    this.sourceTitle,
     required this.sourceUrl,
     required this.publishedAt,
     required this.sourceType,
@@ -175,6 +177,10 @@ class NewsItem {
   final String title;
   final String summary;
   final String sourceName;
+
+  /// 官方页面的原标题（英文）。中文标题是我们编辑写的，原标题是官方写的——
+  /// 真正有法律效力的是后者，所以详情页要能看到它，不能只留译文。
+  final String? sourceTitle;
   final String sourceUrl;
   final DateTime publishedAt;
   final NewsSourceType sourceType;
@@ -186,6 +192,7 @@ class NewsItem {
     title: title,
     summary: summary,
     sourceName: sourceName,
+    sourceTitle: sourceTitle,
     sourceUrl: sourceUrl,
     publishedAt: publishedAt,
     sourceType: sourceType,
@@ -198,6 +205,7 @@ class NewsItem {
     'title': title,
     'summary': summary,
     'sourceName': sourceName,
+    'sourceTitle': sourceTitle,
     'sourceUrl': sourceUrl,
     'publishedAt': publishedAt.toIso8601String(),
     'sourceType': sourceType.name,
@@ -210,6 +218,9 @@ class NewsItem {
     title: json['title'] as String,
     summary: json['summary'] as String,
     sourceName: json['sourceName'] as String,
+    sourceTitle: (json['sourceTitle'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['sourceTitle'] as String).trim(),
     sourceUrl: json['sourceUrl'] as String,
     publishedAt: DateTime.parse(json['publishedAt'] as String),
     sourceType: NewsSourceType.values.byName(
@@ -453,12 +464,34 @@ class VisaProject {
   final DateTime? lastSyncedAt;
   final String cloudRole;
 
+  /// 视为「已办好」的材料项数量。
+  int get doneCount => items
+      .where((item) => item.status.index >= ChecklistStatus.ready.index)
+      .length;
+
   double get completion {
     if (items.isEmpty) return 0;
-    final done = items
-        .where((item) => item.status.index >= ChecklistStatus.ready.index)
-        .length;
-    return done / items.length;
+    return doneCount / items.length;
+  }
+
+  /// 用户接下来该做的那一项。
+  ///
+  /// 进度条只回答「做了多少」，不回答「我现在干什么」。有到期日的先排到期日，
+  /// 没有的按清单顺序——这样打开申请页第一眼看到的就是下一步，而不是一个百分比。
+  ChecklistItem? get nextAction {
+    final pending = items
+        .where((item) => item.status.index < ChecklistStatus.ready.index)
+        .toList();
+    if (pending.isEmpty) return null;
+    pending.sort((a, b) {
+      final left = a.dueDate;
+      final right = b.dueDate;
+      if (left != null && right != null) return left.compareTo(right);
+      if (left != null) return -1;
+      if (right != null) return 1;
+      return 0;
+    });
+    return pending.first;
   }
 
   VisaProject copyWith({

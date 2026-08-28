@@ -1627,6 +1627,59 @@ class AppStore extends StateNotifier<AppState> {
     return payload.cast<Map<String, dynamic>>();
   }
 
+  /// 主界面用的讨论摘要：最近有留言的那个云项目和它最新的一条。
+  ///
+  /// 讨论一直藏在「云端与协作」里的第三个页签，等于没有。协作是这一版唯一允许的
+  /// 用户内容——它是项目内私密的，不是公开社区，所以能提到主界面而不需要
+  /// 公开内容的审核体系。
+  ///
+  /// 只查有云同步的项目；本机项目没有讨论，也不该为此发请求。
+  Future<ProjectDiscussionPreview?> latestDiscussion() async {
+    final cloudProjects = state.projects
+        .where(
+          (project) => project.isCloudSyncEnabled && project.remoteId != null,
+        )
+        .toList();
+    if (cloudProjects.isEmpty || state.accountEmail == null) return null;
+
+    ProjectDiscussionPreview? newest;
+    for (final project in cloudProjects) {
+      final List<Map<String, dynamic>> comments;
+      try {
+        comments = await listComments(project.id);
+      } catch (_) {
+        // 主界面的一张卡片不值得因为一个项目取不到就整块报错。
+        continue;
+      }
+      if (comments.isEmpty) continue;
+      final latest = comments.reduce((a, b) {
+        final left = DateTime.tryParse(a['createdAt'] as String? ?? '');
+        final right = DateTime.tryParse(b['createdAt'] as String? ?? '');
+        if (left == null) return b;
+        if (right == null) return a;
+        return left.isAfter(right) ? a : b;
+      });
+      final createdAt = DateTime.tryParse(latest['createdAt'] as String? ?? '');
+      final preview = ProjectDiscussionPreview(
+        projectId: project.id,
+        projectName: project.name,
+        body: (latest['body'] as String? ?? '').trim(),
+        author:
+            (latest['author'] as Map<String, dynamic>?)?['email'] as String? ??
+            '成员',
+        createdAt: createdAt?.toLocal(),
+        totalCount: comments.length,
+      );
+      if (newest == null ||
+          (preview.createdAt != null &&
+              (newest.createdAt == null ||
+                  preview.createdAt!.isAfter(newest.createdAt!)))) {
+        newest = preview;
+      }
+    }
+    return newest;
+  }
+
   Future<void> addComment({
     required String projectId,
     required String body,
@@ -1881,8 +1934,7 @@ class AppStore extends StateNotifier<AppState> {
           ) ??
           0,
       cloudFileUploadsEnabled: cloudUploads['enabled'] as bool? ?? true,
-      cloudFileUploadsDisabledReason:
-          cloudUploads['disabledReason'] as String?,
+      cloudFileUploadsDisabledReason: cloudUploads['disabledReason'] as String?,
       clearCloudFileUploadsDisabledReason:
           cloudUploads['disabledReason'] == null,
     );
@@ -1993,6 +2045,25 @@ ProjectActivity _activity(String message) => ProjectActivity(
   createdAt: DateTime.now(),
 );
 
+/// 主界面讨论卡片需要的最小信息。
+class ProjectDiscussionPreview {
+  const ProjectDiscussionPreview({
+    required this.projectId,
+    required this.projectName,
+    required this.body,
+    required this.author,
+    required this.createdAt,
+    required this.totalCount,
+  });
+
+  final String projectId;
+  final String projectName;
+  final String body;
+  final String author;
+  final DateTime? createdAt;
+  final int totalCount;
+}
+
 final appStoreProvider = StateNotifierProvider<AppStore, AppState>(
   (ref) => AppStore(createLocalRepository()),
 );
@@ -2036,8 +2107,11 @@ NewsItem _newsFromApi(Map<String, dynamic> json, {required bool bookmarked}) {
     id: json['id'] as String,
     title: json['titleZh'] as String,
     summary: json['summaryZh'] as String,
-    sourceName:
-        source['name'] as String? ?? json['sourceTitle'] as String? ?? '官方来源',
+    sourceName: source['name'] as String? ?? '官方来源',
+    // 官方原标题保留为独立字段，不再当作来源名的兜底：这两件事在详情页要分开显示。
+    sourceTitle: (json['sourceTitle'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['sourceTitle'] as String).trim(),
     sourceUrl: json['sourceUrl'] as String,
     publishedAt: DateTime.parse(json['publishedAt'] as String).toLocal(),
     sourceType: sourceType,

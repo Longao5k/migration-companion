@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+
+import '../../core/links/official_link.dart';
 
 import '../../core/models/models.dart';
 import '../../core/state/app_store.dart';
@@ -53,7 +54,7 @@ class _EvidenceIntro extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Text(
-      '不是“听说政策改了”，而是保留来源、时间、修改前后和人工核实状态。',
+      '官方页面一改动就记录下来，改前改后都在，你可以自己对照。',
       style: Theme.of(context).textTheme.bodyLarge
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
     ),
@@ -151,22 +152,28 @@ class ChangeDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(change.summary),
-          const SectionHeader(title: '页面差异'),
-          _DiffBlock(title: '修改前', text: change.beforeText, added: false),
+          if (!change.verification.isHumanReviewed) ...[
+            const SizedBox(height: 12),
+            Text(
+              '系统发现这个页面变了，我们的编辑还在核对。在核对完成前，请直接看官方原文。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SectionHeader(title: '官方页面改了什么'),
+          _DiffBlock(title: '改之前', text: change.beforeText, added: false),
           const SizedBox(height: 10),
-          _DiffBlock(title: '修改后', text: change.afterText, added: true),
+          _DiffBlock(title: '改之后', text: change.afterText, added: true),
           const SizedBox(height: 22),
           FilledButton.icon(
-            onPressed: () => launchUrl(
-              Uri.parse(change.sourceUrl),
-              mode: LaunchMode.externalApplication,
-            ),
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('打开官方页面核对'),
+            onPressed: () => openOfficialSource(context, change.sourceUrl),
+            icon: const Icon(Icons.article_outlined),
+            label: const Text('读官方原文'),
           ),
           const SizedBox(height: 14),
           Text(
-            '此记录展示页面证据，不构成对个人资格或申请结果的判断。',
+            '上面是官方页面改动前后的原文摘录。是否影响你的申请，请以官方原文为准。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -205,7 +212,6 @@ class _DiffBlock extends StatelessWidget {
     );
   }
 }
-
 
 /// 变更列表为空时的措辞，按真实监控状态区分。
 class _ChangesEmptyState extends ConsumerWidget {

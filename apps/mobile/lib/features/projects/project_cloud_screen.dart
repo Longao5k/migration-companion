@@ -13,9 +13,16 @@ import '../../shared/widgets/common.dart';
 /// 三个页签都直接读服务端。撤销分享、降权成员和删除文件之后，本机缓存会让用户误判
 /// 当前权限，因此这里不缓存列表，只在成功后重新拉取。
 class ProjectCloudScreen extends ConsumerWidget {
-  const ProjectCloudScreen({super.key, required this.projectId});
+  const ProjectCloudScreen({
+    super.key,
+    required this.projectId,
+    this.initialTab = 0,
+  });
 
   final String projectId;
+
+  /// 从主界面的讨论入口进来时直接落在「协作」页签，否则用户还要自己找一次。
+  final int initialTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,11 +39,11 @@ class ProjectCloudScreen extends ConsumerWidget {
         appBar: AppBar(title: const Text('云端与协作')),
         body: EmptyState(
           icon: Icons.cloud_off_outlined,
-          title: '此项目仅保存在本机',
-          body: '云文件、安全分享入口和 App 协作都需要先明确开启这个项目的云同步。',
+          title: '这个申请只在你手机上',
+          body: '要把它分享给别人一起看，需要先同步到云端。',
           action: TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('返回项目'),
+            child: const Text('返回'),
           ),
         ),
       );
@@ -44,6 +51,7 @@ class ProjectCloudScreen extends ConsumerWidget {
 
     return DefaultTabController(
       length: 3,
+      initialIndex: initialTab,
       child: Scaffold(
         appBar: AppBar(
           title: Text(project.name),
@@ -202,8 +210,8 @@ class _CloudFilesTab extends ConsumerWidget {
         if (files.isEmpty) {
           return const EmptyState(
             icon: Icons.cloud_upload_outlined,
-            title: '此项目还没有云文件',
-            body: '在材料项里逐个选择要上传的文件。上传不会因为登录自动发生。',
+            title: '还没有文件',
+            body: '到材料项里挑一份文件上传。',
             action: SizedBox.shrink(),
           );
         }
@@ -585,22 +593,12 @@ class _CollaborationTab extends ConsumerWidget {
                   onChanged: reload,
                 ),
               ),
-            const SectionHeader(title: '项目讨论'),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '讨论只用于协调材料准备。不要在这里填写证件号码、访问码或政府表格答案。',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SectionHeader(title: '讨论'),
             if (data.comments.isEmpty)
               const Card(
                 child: Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('还没有讨论内容。'),
+                  child: Text('还没有人留言。'),
                 ),
               )
             else
@@ -620,7 +618,7 @@ class _CollaborationTab extends ConsumerWidget {
             FilledButton.tonalIcon(
               onPressed: () => _addComment(context, ref, reload),
               icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('发表讨论'),
+              label: const Text('留言'),
             ),
           ],
         );
@@ -637,12 +635,12 @@ class _CollaborationTab extends ConsumerWidget {
     final submitted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('发表讨论'),
+        title: const Text('留言'),
         content: TextField(
           controller: controller,
           maxLines: 4,
           maxLength: 2000,
-          decoration: const InputDecoration(hintText: '例如：工作证明已经补齐第二页'),
+          decoration: const InputDecoration(hintText: '留言…（请勿填写证件号码）'),
         ),
         actions: [
           TextButton(
@@ -651,7 +649,7 @@ class _CollaborationTab extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('发表'),
+            child: const Text('发送'),
           ),
         ],
       ),
@@ -665,7 +663,7 @@ class _CollaborationTab extends ConsumerWidget {
           .addComment(projectId: project.id, body: controller.text.trim());
       await reload();
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('发表失败：$error')));
+      messenger.showSnackBar(SnackBar(content: Text('发送失败：$error')));
     }
   }
 }

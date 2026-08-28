@@ -65,10 +65,7 @@ class SystemViewerPdfEngine implements PdfDocumentEngine {
     final target = await _createWorkingCopy(sourcePath, displayName);
     final result = await OpenFilex.open(target.path, type: 'application/pdf');
     if (result.type != ResultType.done) {
-      throw FileSystemException(
-        '这台设备没有可以打开 PDF 的应用。',
-        target.path,
-      );
+      throw FileSystemException('这台设备没有可以打开 PDF 的应用。', target.path);
     }
     return target.path;
   }

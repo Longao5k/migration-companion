@@ -49,20 +49,21 @@ class ProjectsScreen extends ConsumerWidget {
           : state.projects.isEmpty
           ? EmptyState(
               icon: Icons.route_outlined,
-              title: '规划你的第一条申请路线',
-              body: '从南澳 190/491 基础路线开始，把关键节点、材料和提醒放在同一个时间线上。',
+              title: '建一个申请，把材料理清楚',
+              body: '选 190 或 491，我们给你一份常见材料清单，可以自己改。',
               action: FilledButton.icon(
                 onPressed: () => _createProject(context, ref),
                 icon: const Icon(Icons.arrow_forward_rounded),
-                label: const Text('开始规划'),
+                label: const Text('开始'),
               ),
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              itemCount: state.projects.length,
+              itemCount: state.projects.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 14),
-              itemBuilder: (context, index) =>
-                  _ProjectCard(project: state.projects[index]),
+              itemBuilder: (context, index) => index == state.projects.length
+                  ? const _LocalStorageNote()
+                  : _ProjectCard(project: state.projects[index]),
             ),
     );
   }
@@ -196,10 +197,7 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
               decoration: const InputDecoration(labelText: '申请人'),
             ),
             const SizedBox(height: 12),
-            const Text(
-              '模板仅用于整理材料，不代表完整、适用或满足签证要求。',
-              style: TextStyle(fontSize: 12),
-            ),
+            const Text('这是常见材料清单，请按你收到的邀请函核对。', style: TextStyle(fontSize: 12)),
           ],
         ),
         actions: [
@@ -637,18 +635,31 @@ class _ProjectSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          Text(
-            '${(project.completion * 100).round()}%',
-            style: Theme.of(context).textTheme.displaySmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '${project.doneCount}',
+                style: Theme.of(context).textTheme.displaySmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              Text(
+                ' / ${project.items.length} 项已办好',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
-          const Text('已准备、已发送或已确认'),
           const SizedBox(height: 12),
           LinearProgressIndicator(
             value: project.completion,
             minHeight: 8,
             borderRadius: BorderRadius.circular(10),
           ),
+          const SizedBox(height: 14),
+          _NextActionLine(project: project),
         ],
       ),
     ),
@@ -878,7 +889,9 @@ Future<void> _showChecklistItem(
                           },
                           itemBuilder: (_) => [
                             // 云文件未开放时不显示上传入口，避免用户点了才知道不可用。
-                            if (ref.watch(appStoreProvider).cloudFileUploadsEnabled &&
+                            if (ref
+                                    .watch(appStoreProvider)
+                                    .cloudFileUploadsEnabled &&
                                 project.isCloudSyncEnabled &&
                                 attachment.syncStatus !=
                                     AttachmentSyncStatus.available &&
@@ -1970,4 +1983,80 @@ Future<String?> _askBackupPassword(
       ],
     ),
   );
+}
+
+/// 「下一步做什么」——把清单里最该动手的一项直接说出来。
+class _NextActionLine extends StatelessWidget {
+  const _NextActionLine({required this.project});
+
+  final VisaProject project;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final next = project.nextAction;
+    if (next == null) {
+      return Text(
+        project.items.isEmpty ? '还没有材料项' : '清单上的材料都办好了',
+        style: TextStyle(color: scheme.onSurfaceVariant),
+      );
+    }
+    final due = next.dueDate;
+    final days = due == null
+        ? null
+        : DateUtils.dateOnly(due)
+              .difference(DateUtils.dateOnly(DateTime.now()))
+              .inDays;
+    final suffix = days == null
+        ? ''
+        : days < 0
+        ? '，已过期 ${-days} 天'
+        : days == 0
+        ? '，今天到期'
+        : '，还有 $days 天到期';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.arrow_forward_rounded, size: 17, color: scheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '下一步：${next.title}$suffix',
+            style: TextStyle(
+              color: scheme.onSurface,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 材料存在哪里，说一次就够，而且要说在材料这一页。
+class _LocalStorageNote extends StatelessWidget {
+  const _LocalStorageNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lock_outline_rounded, size: 16, color: scheme.outline),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '这些材料只存在这台手机上。换手机前记得导出一份加密备份。',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
