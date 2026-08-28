@@ -2,10 +2,13 @@ import json
 import os
 from pathlib import Path
 
-from .api import report_source_check, submit_candidate
+from dataclasses import replace
+
+from .api import report_source_check, submit_candidate, submit_news_draft
 from .diffing import make_candidate
 from .fetcher import ConditionalHeaders, OfficialFetcher
 from .models import Source
+from .news_discovery import discover_sa_news, extract_article_excerpt
 from .normalizer import normalize_html
 from .storage import LocalEvidenceStore
 
@@ -46,18 +49,19 @@ def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
             etag=result.etag,
             last_modified=result.last_modified,
         )
+        news_result = _discover_news(source, fetcher, state_dir, api_url, worker_key)
         if not previous.content_hash:
-            return "baseline-created"
+            return _with_news("baseline-created", news_result)
         candidate = make_candidate(previous.normalized_text, normalized, source.name)
         if not candidate:
-            return "unchanged"
+            return _with_news("unchanged", news_result)
 
         if api_url and worker_key:
             submit_candidate(api_url, worker_key, source, candidate)
-            return f"candidate-submitted:{candidate.importance}"
+            return _with_news(f"candidate-submitted:{candidate.importance}", news_result)
         output = state_dir / source.id / "pending-candidate.json"
         output.write_text(json.dumps(candidate.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
-        return f"candidate-staged:{candidate.importance}"
+        return _with_news(f"candidate-staged:{candidate.importance}", news_result)
     except Exception as error:
         try:
             report("ERROR", error_code=type(error).__name__)
@@ -65,3 +69,41 @@ def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
             # Health reporting must never hide the original fetch/normalisation failure.
             pass
         raise
+
+
+def _with_news(status: str, discovered: int) -> str:
+    return f"{status};news-drafts:{discovered}" if discovered else status
+
+
+def _discover_news(
+    source: Source,
+    fetcher: OfficialFetcher,
+    state_dir: Path,
+    api_url: str | None,
+    worker_key: str | None,
+) -> int:
+    if not source.discovery_url:
+        return 0
+    listing_source = replace(source, url=source.discovery_url, discovery_url=None)
+    listing = fetcher.fetch(listing_source, ConditionalHeaders())
+    limit = max(1, min(int(os.environ.get("NEWS_DISCOVERY_LIMIT", "6")), 12))
+    discovered = discover_sa_news(listing.body, limit)
+    complete = []
+    for item in discovered:
+        article_source = replace(source, url=item.url, discovery_url=None)
+        article = fetcher.fetch(article_source, ConditionalHeaders())
+        excerpt = extract_article_excerpt(article.body, item.title)
+        if len(excerpt) < 40:
+            continue
+        complete_item = replace(item, excerpt=excerpt)
+        complete.append(complete_item)
+        if api_url and worker_key:
+            submit_news_draft(api_url, worker_key, source, complete_item)
+    if complete and not (api_url and worker_key):
+        output = state_dir / source.id / "pending-news.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps([item.__dict__ for item in complete], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    return len(complete)

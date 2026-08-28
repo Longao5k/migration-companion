@@ -34,7 +34,14 @@ class AppState {
     this.followedJurisdictions = const ['AU-SA'],
     this.followedTags = const [],
     this.importantNotificationsOnly = true,
+    this.cloudFileUploadsEnabled = true,
+    this.cloudFileUploadsDisabledReason,
   });
+
+  /// 服务端是否开放云文件上传。当前阶段材料文件只保存在设备上，云存储待澳洲区域上线后开放。
+  /// 由 `/entitlements/me` 下发，避免用户在上传时才撞到失败。
+  final bool cloudFileUploadsEnabled;
+  final String? cloudFileUploadsDisabledReason;
 
   final List<NewsItem> news;
   final List<PolicyChange> changes;
@@ -93,6 +100,9 @@ class AppState {
     List<String>? followedJurisdictions,
     List<String>? followedTags,
     bool? importantNotificationsOnly,
+    bool? cloudFileUploadsEnabled,
+    String? cloudFileUploadsDisabledReason,
+    bool clearCloudFileUploadsDisabledReason = false,
   }) => AppState(
     news: news ?? this.news,
     changes: changes ?? this.changes,
@@ -121,6 +131,11 @@ class AppState {
     followedTags: followedTags ?? this.followedTags,
     importantNotificationsOnly:
         importantNotificationsOnly ?? this.importantNotificationsOnly,
+    cloudFileUploadsEnabled:
+        cloudFileUploadsEnabled ?? this.cloudFileUploadsEnabled,
+    cloudFileUploadsDisabledReason: clearCloudFileUploadsDisabledReason
+        ? null
+        : cloudFileUploadsDisabledReason ?? this.cloudFileUploadsDisabledReason,
   );
 }
 
@@ -149,6 +164,7 @@ class AppStore extends StateNotifier<AppState> {
 
   static const _projectsKey = 'migration_companion.projects.v1';
   static const _accountEmailKey = 'migration_companion.account_email.v1';
+  static const _authTokenKey = 'migration_companion.auth_token.v1';
   static const _noticeKey = 'migration_companion.notice_dismissed.v1';
   static const _bookmarksKey = 'migration_companion.bookmarks.v1';
   static const _contentCacheKey = 'migration_companion.content_cache.v1';
@@ -164,6 +180,13 @@ class AppStore extends StateNotifier<AppState> {
 
   /// 所有服务端调用都经过这个工厂，测试可以注入带 mock 传输层的客户端。
   final ApiClient Function(String accountEmail) _apiClientFactory;
+  String? _accessToken;
+
+  ApiClient _api(String accountEmail) {
+    final client = _apiClientFactory(accountEmail);
+    client.accessToken = _accessToken;
+    return client;
+  }
 
   List<PendingSyncOperation> get pendingSyncOperations =>
       List.unmodifiable(_pendingSyncOperations);
@@ -203,6 +226,7 @@ class AppStore extends StateNotifier<AppState> {
       );
     }).toList();
     final accountEmail = await _repository.read(_accountEmailKey);
+    _accessToken = await _repository.read(_authTokenKey);
     final bookmarksRaw = await _repository.read(_bookmarksKey);
     final bookmarks = bookmarksRaw == null
         ? <String>{}
@@ -313,7 +337,7 @@ class AppStore extends StateNotifier<AppState> {
     );
     if (!project.isCloudSyncEnabled || project.remoteId == null) return;
     if (project.syncStatus == ProjectSyncStatus.conflict) return;
-    final api = _apiClientFactory(email);
+    final api = _api(email);
 
     while (true) {
       final operation = _pendingSyncOperations
@@ -495,7 +519,7 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> restoreCloudProjects() async {
     final email = state.accountEmail;
     if (email == null) return;
-    final api = _apiClientFactory(email);
+    final api = _api(email);
     final summaries = await api.getList('/projects');
     for (final summary in summaries.cast<Map<String, dynamic>>()) {
       final remoteId = summary['id'] as String;
@@ -750,7 +774,7 @@ class AppStore extends StateNotifier<AppState> {
     if (state.isContentRefreshing) return;
     state = state.copyWith(isContentRefreshing: true, clearContentError: true);
     try {
-      final api = _apiClientFactory(
+      final api = _api(
         state.accountEmail ?? 'public@migration-companion.invalid',
       );
       final payloads = await Future.wait([
@@ -1063,6 +1087,11 @@ class AppStore extends StateNotifier<AppState> {
   }) async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
+    if (!state.cloudFileUploadsEnabled) {
+      throw FormatException(
+        state.cloudFileUploadsDisabledReason ?? '云文件上传尚未开放',
+      );
+    }
     final project = state.projects.firstWhere(
       (candidate) => candidate.id == projectId,
     );
@@ -1100,7 +1129,7 @@ class AppStore extends StateNotifier<AppState> {
       syncStatus: AttachmentSyncStatus.uploading,
     );
     try {
-      final api = _apiClientFactory(email);
+      final api = _api(email);
       Map<String, dynamic>? remote;
 
       // App 在 PUT 已完成、complete 响应丢失时可能被关闭。只持久化会话 ID，
@@ -1352,7 +1381,7 @@ class AppStore extends StateNotifier<AppState> {
     if (email == null) throw const FormatException('请先登录账号');
     final project = state.projects.firstWhere((item) => item.id == projectId);
     if (project.isCloudSyncEnabled) return;
-    final api = _apiClientFactory(email);
+    final api = _api(email);
     final remote = await api.post('/projects', {
       'name': project.name,
       'template': switch (project.visaType) {
@@ -1423,7 +1452,7 @@ class AppStore extends StateNotifier<AppState> {
     if (!project.isCloudSyncEnabled || project.remoteId == null) {
       throw const FormatException('请先开启此项目的云同步');
     }
-    final remote = await _apiClientFactory(email).patch(
+    final remote = await _api(email).patch(
       '/projects/${project.remoteId}/viewer-download',
       {'enabled': enabled},
     );
@@ -1466,15 +1495,14 @@ class AppStore extends StateNotifier<AppState> {
     if (selectedRemoteIds.isEmpty && fileIds.isEmpty) {
       throw const FormatException('请至少选择一项分享内容');
     }
-    return _apiClientFactory(email)
-        .post('/projects/${project.remoteId}/shares', {
-          'expiresInDays': expiresInDays,
-          'allowDownload': allowDownload,
-          'accessCode': accessCode,
-          'checklistItemIds': selectedRemoteIds,
-          'fileIds': fileIds,
-          'includeNotes': includeNotes,
-        });
+    return _api(email).post('/projects/${project.remoteId}/shares', {
+      'expiresInDays': expiresInDays,
+      'allowDownload': allowDownload,
+      'accessCode': accessCode,
+      'checklistItemIds': selectedRemoteIds,
+      'fileIds': fileIds,
+      'includeNotes': includeNotes,
+    });
   }
 
   Future<Map<String, dynamic>> inviteCollaborator({
@@ -1488,7 +1516,7 @@ class AppStore extends StateNotifier<AppState> {
     if (!project.isCloudSyncEnabled || project.remoteId == null) {
       throw const FormatException('邀请协作者前，请先开启此项目的云同步');
     }
-    return _apiClientFactory(accountEmail).post(
+    return _api(accountEmail).post(
       '/projects/${project.remoteId}/invitations',
       {'email': email.trim().toLowerCase(), 'role': role},
     );
@@ -1502,7 +1530,7 @@ class AppStore extends StateNotifier<AppState> {
   ApiClient _requireApi() {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    return _apiClientFactory(email);
+    return _api(email);
   }
 
   VisaProject _requireCloudProject(String projectId) {
@@ -1745,24 +1773,47 @@ class AppStore extends StateNotifier<AppState> {
     await _persistProjects();
   }
 
-  Future<void> signIn(String email) async {
+  Future<void> signIn(String email, {String accessCode = ''}) async {
     final normalized = email.trim().toLowerCase();
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalized)) {
       throw const FormatException('请输入有效邮箱地址');
     }
-    final account = await _apiClientFactory(normalized).getMap('/auth/me');
-    await _repository.write(_accountEmailKey, normalized);
-    state = state.copyWith(
-      isSignedIn: true,
-      accountEmail: normalized,
-      deletionRequestedAt: _optionalDate(account['deletionRequestedAt']),
-      clearDeletionRequestedAt: account['deletionRequestedAt'] == null,
-    );
-    await refreshEntitlements();
+    final previousToken = _accessToken;
+    try {
+      if (accessCode.trim().isNotEmpty) {
+        final login = await _apiClientFactory(normalized).postPublic(
+          '/auth/pilot',
+          {'email': normalized, 'accessCode': accessCode.trim()},
+        );
+        _accessToken = login['accessToken'] as String?;
+        if (_accessToken == null || _accessToken!.isEmpty) {
+          throw const FormatException('身份服务没有返回有效登录凭据');
+        }
+      }
+      final account = await _api(normalized).getMap('/auth/me');
+      await _repository.write(_accountEmailKey, normalized);
+      if (_accessToken case final token?) {
+        await _repository.write(_authTokenKey, token);
+      } else {
+        await _repository.remove(_authTokenKey);
+      }
+      state = state.copyWith(
+        isSignedIn: true,
+        accountEmail: normalized,
+        deletionRequestedAt: _optionalDate(account['deletionRequestedAt']),
+        clearDeletionRequestedAt: account['deletionRequestedAt'] == null,
+      );
+      await refreshEntitlements();
+    } catch (_) {
+      _accessToken = previousToken;
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {
     await _repository.remove(_accountEmailKey);
+    await _repository.remove(_authTokenKey);
+    _accessToken = null;
     state = state.copyWith(
       isSignedIn: false,
       clearAccountEmail: true,
@@ -1782,7 +1833,7 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> refreshAccount() async {
     final email = state.accountEmail;
     if (email == null) return;
-    final account = await _apiClientFactory(email).getMap('/auth/me');
+    final account = await _api(email).getMap('/auth/me');
     state = state.copyWith(
       deletionRequestedAt: _optionalDate(account['deletionRequestedAt']),
       clearDeletionRequestedAt: account['deletionRequestedAt'] == null,
@@ -1792,7 +1843,11 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> refreshEntitlements() async {
     final email = state.accountEmail;
     if (email == null) return;
-    final payload = await _apiClientFactory(email).getMap('/entitlements/me');
+    final payload = await _api(email).getMap('/entitlements/me');
+    // 旧服务端没有这个字段时按“开放”处理，避免升级顺序造成误报未开放。
+    final cloudUploads =
+        payload['cloudFileUploads'] as Map<String, dynamic>? ??
+        const <String, dynamic>{};
     state = state.copyWith(
       entitlementTier: payload['tier'] as String? ?? 'FREE',
       trialEndsAt: payload['trialEndsAt'] == null
@@ -1808,13 +1863,18 @@ class AppStore extends StateNotifier<AppState> {
             payload['cloudStorageReservedBytes']?.toString() ?? '',
           ) ??
           0,
+      cloudFileUploadsEnabled: cloudUploads['enabled'] as bool? ?? true,
+      cloudFileUploadsDisabledReason:
+          cloudUploads['disabledReason'] as String?,
+      clearCloudFileUploadsDisabledReason:
+          cloudUploads['disabledReason'] == null,
     );
   }
 
   Future<void> startTrial() async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    await _apiClientFactory(email).post('/entitlements/trial');
+    await _api(email).post('/entitlements/trial');
     await refreshEntitlements();
   }
 
@@ -1825,7 +1885,7 @@ class AppStore extends StateNotifier<AppState> {
   }) async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    await _apiClientFactory(email).post('/entitlements/purchases', {
+    await _api(email).post('/entitlements/purchases', {
       'provider': provider,
       'productId': productId,
       'verificationData': verificationData,
@@ -1836,14 +1896,14 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> restorePurchasesFromServer() async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    await _apiClientFactory(email).post('/entitlements/restore');
+    await _api(email).post('/entitlements/restore');
     await refreshEntitlements();
   }
 
   Future<void> requestAccountDeletion() async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    final result = await _apiClientFactory(email).delete('/auth/me');
+    final result = await _api(email).delete('/auth/me');
     state = state.copyWith(
       deletionRequestedAt:
           _optionalDate(result['requestedAt']) ?? DateTime.now(),
@@ -1853,8 +1913,7 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> refreshNotificationPreferences() async {
     final email = state.accountEmail;
     if (email == null) return;
-    final payload = await _apiClientFactory(email)
-        .getMap('/notification-preferences');
+    final payload = await _api(email).getMap('/notification-preferences');
     state = state.copyWith(
       policyNotificationsEnabled: payload['policyUpdates'] as bool? ?? false,
       followedJurisdictions:
@@ -1874,15 +1933,14 @@ class AppStore extends StateNotifier<AppState> {
   }) async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    final payload = await _apiClientFactory(email)
-        .patch('/notification-preferences', {
-          'policyUpdates': enabled,
-          'productUpdates': false,
-          'jurisdictions': jurisdictions,
-          'tags': tags,
-          'importantOnly': importantOnly,
-          'timezone': 'Australia/Adelaide',
-        });
+    final payload = await _api(email).patch('/notification-preferences', {
+      'policyUpdates': enabled,
+      'productUpdates': false,
+      'jurisdictions': jurisdictions,
+      'tags': tags,
+      'importantOnly': importantOnly,
+      'timezone': 'Australia/Adelaide',
+    });
     state = state.copyWith(
       policyNotificationsEnabled: payload['policyUpdates'] as bool,
       followedJurisdictions: (payload['jurisdictions'] as List<dynamic>)
@@ -1895,7 +1953,7 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> cancelAccountDeletion() async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    await _apiClientFactory(email).post('/auth/me/deletion/cancel');
+    await _api(email).post('/auth/me/deletion/cancel');
     state = state.copyWith(clearDeletionRequestedAt: true);
   }
 

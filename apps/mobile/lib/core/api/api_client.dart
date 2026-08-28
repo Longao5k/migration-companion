@@ -16,21 +16,39 @@ class ApiException implements Exception {
 }
 
 class ApiClient {
-  ApiClient({required this.accountEmail, http.Client? httpClient})
-    : _http = httpClient ?? http.Client();
+  ApiClient({
+    required this.accountEmail,
+    this.accessToken,
+    http.Client? httpClient,
+  }) : _http = httpClient ?? http.Client();
 
   static const configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   final String accountEmail;
+  String? accessToken;
   final http.Client _http;
 
   String get baseUrl =>
       configuredBaseUrl.isEmpty ? defaultApiBaseUrl() : configuredBaseUrl;
 
   Map<String, String> get _headers => {
-    'authorization': 'Bearer local-or-cognito-token',
-    'x-dev-account-email': accountEmail,
+    'authorization': 'Bearer ${accessToken ?? 'local-or-cognito-token'}',
+    if (accessToken == null) 'x-dev-account-email': accountEmail,
     'content-type': 'application/json',
   };
+
+  Future<Map<String, dynamic>> postPublic(
+    String path,
+    Map<String, Object?> body,
+  ) async {
+    final response = await _network(
+      () => _http.post(
+        Uri.parse('$baseUrl$path'),
+        headers: const {'content-type': 'application/json'},
+        body: jsonEncode(body),
+      ),
+    );
+    return _decodeMap(response);
+  }
 
   Future<Map<String, dynamic>> getMap(String path) async {
     final response = await _network(
@@ -92,8 +110,8 @@ class ApiClient {
   }) async {
     final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'))
       ..headers.addAll({
-        'authorization': 'Bearer local-or-cognito-token',
-        'x-dev-account-email': accountEmail,
+        'authorization': 'Bearer ${accessToken ?? 'local-or-cognito-token'}',
+        if (accessToken == null) 'x-dev-account-email': accountEmail,
       })
       ..fields.addAll(fields)
       ..files.add(

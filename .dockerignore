@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.vscode
+**/node_modules
+**/.next
+**/dist
+**/.dart_tool
+**/build
+**/.local-state
+**/.local-live-check
+apps/mobile
+docs
+*.log

@@ -3,6 +3,7 @@
     "id": "sa-news",
     "name": "Move to South Australia — News",
     "url": "https://migration.sa.gov.au/news",
+    "discovery_url": "https://migration.sa.gov.au/ajax/news-listing",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; preserve attribution and check page-level third-party exclusions.",
     "enabled": true
@@ -64,4 +65,3 @@
     "enabled": true
   }
 ]
-

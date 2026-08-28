@@ -7,6 +7,7 @@ import {
   CreateNewsDto,
   CreateSourceDto,
   IngestChangeDto,
+  IngestNewsDto,
   ReviewChangeDto,
   SourceCheckDto,
   UpdateNewsDto,
@@ -109,6 +110,7 @@ export class ContentService {
   async createNews(dto: CreateNewsDto) {
     const source = await this.requireSource(dto.sourceId);
     this.assertSourceUrl(source.url, dto.sourceUrl);
+    if (dto.isPublished) this.assertChineseEditorialCopy(dto.titleZh, dto.summaryZh);
     return this.prisma.newsItem.create({
       data: {
         sourceId: source.id,
@@ -131,6 +133,12 @@ export class ContentService {
     });
     if (!current) throw new NotFoundException('未找到新闻');
     if (dto.sourceUrl !== undefined) this.assertSourceUrl(current.source.url, dto.sourceUrl);
+    if (dto.isPublished === true) {
+      this.assertChineseEditorialCopy(
+        dto.titleZh ?? current.titleZh,
+        dto.summaryZh ?? current.summaryZh,
+      );
+    }
     return this.prisma.newsItem.update({
       where: { id },
       data: {
@@ -215,6 +223,36 @@ export class ContentService {
         ...(dto.importance === ChangeImportance.GENERAL ? { publishedAt: new Date() } : {}),
       },
       update: {},
+    });
+  }
+
+  async ingestNews(dto: IngestNewsDto) {
+    const source = await this.prisma.source.findUnique({
+      where: { url: dto.sourceRegistryUrl },
+    });
+    if (!source?.enabled) {
+      throw new BadRequestException('新闻发现任务只能使用已启用的来源注册表');
+    }
+    this.assertSourceUrl(source.url, dto.sourceUrl);
+    return this.prisma.newsItem.upsert({
+      where: { sourceUrl: dto.sourceUrl },
+      create: {
+        sourceId: source.id,
+        // Worker only creates a private editorial draft. English source text
+        // may temporarily occupy these fields, but cannot reach the public API
+        // until an editor rewrites and publishes it.
+        titleZh: dto.sourceTitle.trim(),
+        summaryZh: dto.sourceExcerpt.trim(),
+        sourceTitle: dto.sourceTitle.trim(),
+        sourceUrl: dto.sourceUrl,
+        tags: this.cleanTags(dto.tags),
+        publishedAt: new Date(dto.publishedAt),
+        isPublished: false,
+      },
+      update: {
+        publishedAt: new Date(dto.publishedAt),
+      },
+      include: { source: true },
     });
   }
 
@@ -367,5 +405,12 @@ export class ContentService {
 
   private cleanTags(tags: string[]) {
     return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
+  }
+
+  private assertChineseEditorialCopy(title: string, summary: string) {
+    const containsChinese = /[\u3400-\u9fff]/;
+    if (!containsChinese.test(title) || !containsChinese.test(summary)) {
+      throw new BadRequestException('发布前必须由编辑填写中文原创标题和摘要');
+    }
   }
 }

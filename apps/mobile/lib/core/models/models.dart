@@ -128,6 +128,23 @@ class LocalAttachment {
       );
 }
 
+/// 核实状态的唯一文案来源。
+///
+/// 冻结规则：重大/重要变化必须人工核实后才能公开，一般变化只能标为“自动发现、待核实”。
+/// 任何界面都不得用严重程度或其他字段推导核实状态——那会把未经人工核实的变化说成已核实。
+extension VerificationStatusLabel on VerificationStatus {
+  String get label => switch (this) {
+    VerificationStatus.verified => '已人工核实',
+    VerificationStatus.corrected => '已更正',
+    VerificationStatus.pendingReview => '待人工核实',
+    VerificationStatus.autoDetected => '自动发现 · 待人工核实',
+  };
+
+  /// 是否经过人工处理。更正过的条目同样是人工处理过的，不能显示为“待核实”。
+  bool get isHumanReviewed =>
+      this == VerificationStatus.verified || this == VerificationStatus.corrected;
+}
+
 extension ChecklistStatusLabel on ChecklistStatus {
   String get label => switch (this) {
     ChecklistStatus.notStarted => '未准备',

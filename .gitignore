@@ -21,3 +21,8 @@ dist/
 __pycache__/
 *.py[cod]
 **/.kotlin/
+
+# 抓取证据与采集器本地状态：包含官方页面原始 HTML 与规范化全文。
+# 按冻结的版权与证据规则，这些只能留在独立的私有证据存储，不得作为自有内容提交或再发布。
+.local-live-check/
+.local-state/

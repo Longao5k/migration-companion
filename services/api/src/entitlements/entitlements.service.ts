@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { cloudFileUploadsEnabled, cloudFilesDisabledMessage } from '../files/cloud-files';
 import { PrismaService } from '../prisma.service';
 import { SubmitPurchaseDto, VerifiedStoreEventDto } from './entitlements.dto';
 
@@ -55,6 +56,11 @@ export class EntitlementsService {
         yearly: process.env.STORE_YEARLY_PRODUCT_ID ?? 'migration_companion_premium_yearly',
       },
       trialDisclosure: '7 天高级试用不会自动转为付费，也不会创建商店订阅。',
+      // 客户端据此显示“云文件暂未开放”，而不是让用户在上传时才撞到失败。
+      cloudFileUploads: {
+        enabled: cloudFileUploadsEnabled(),
+        ...(cloudFileUploadsEnabled() ? {} : { disabledReason: cloudFilesDisabledMessage }),
+      },
     };
   }
 

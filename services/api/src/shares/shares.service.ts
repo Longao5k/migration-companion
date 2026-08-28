@@ -10,6 +10,7 @@ import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { promisify } from 'node:util';
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { publicShareOrigin } from '../public-origin';
 import { PrismaService } from '../prisma.service';
 import { AccessShareDto, CreateShareDto } from './shares.dto';
 
@@ -51,6 +52,13 @@ export class SharesService {
         }
       : {}),
   });
+  private readonly signedUrlS3 = process.env.S3_PUBLIC_ENDPOINT
+    ? new S3Client({
+        region: process.env.S3_REGION ?? 'ap-southeast-2',
+        endpoint: process.env.S3_PUBLIC_ENDPOINT,
+        forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+      })
+    : this.s3;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -130,7 +138,7 @@ export class SharesService {
       },
     });
 
-    const origin = process.env.SHARE_ORIGIN ?? 'http://localhost:3001';
+    const origin = publicShareOrigin();
     return {
       ...share,
       url: `${origin}/s/${share.id}#${secret}`,
@@ -216,7 +224,7 @@ export class SharesService {
           downloadUrl:
             share.allowDownload && this.bucket
               ? await getSignedUrl(
-                  this.s3,
+                  this.signedUrlS3,
                   new GetObjectCommand({
                     Bucket: this.bucket,
                     Key: file.storageKey,

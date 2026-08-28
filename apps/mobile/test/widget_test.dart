@@ -12,8 +12,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('把申请这件事，理清楚'), findsOneWidget);
+    expect(find.text('移民资讯'), findsOneWidget);
     expect(find.text('资讯'), findsOneWidget);
-    expect(find.text('项目'), findsOneWidget);
+    expect(find.text('申请'), findsOneWidget);
   });
 }

@@ -89,10 +89,18 @@ function App() {
   const [selectedId, setSelectedId] = useState('')
   const [summary, setSummary] = useState('')
   const [correctionNote, setCorrectionNote] = useState('')
+  const [selectedNewsId, setSelectedNewsId] = useState('')
+  const [newsTitle, setNewsTitle] = useState('')
+  const [newsSummary, setNewsSummary] = useState('')
+  const [newsTags, setNewsTags] = useState('')
 
   const selected = useMemo(
     () => [...queue, ...changes].find((item) => item.id === selectedId),
     [queue, changes, selectedId],
+  )
+  const selectedNews = useMemo(
+    () => news.find((item) => item.id === selectedNewsId),
+    [news, selectedNewsId],
   )
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -266,6 +274,36 @@ function App() {
     }
   }
 
+  function editNews(item: NewsItem) {
+    setSelectedNewsId(item.id)
+    setNewsTitle(item.titleZh)
+    setNewsSummary(item.summaryZh)
+    setNewsTags(item.tags.join(', '))
+  }
+
+  async function saveNewsDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedNews) return
+    setLoading(true)
+    try {
+      await request(`/v1/content/admin/news/${selectedNews.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          titleZh: newsTitle.trim(),
+          summaryZh: newsSummary.trim(),
+          tags: newsTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
+        }),
+      })
+      setNotice('中文编辑稿已保存；确认事实和原文链接后再发布。')
+      setSelectedNewsId('')
+      await load('published')
+    } catch (error) {
+      setNotice(`编辑稿未保存：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const enabledCount = sources.filter((item) => item.enabled).length
   const healthyCount = health.filter((item) => item.lastSuccessAt && !item.lastFailureCode).length
 
@@ -314,11 +352,19 @@ function App() {
               {news.map((item) => (
                 <article className="management-card" key={item.id}>
                   <div><span className={`state-pill ${item.isPublished ? 'online' : ''}`}>{item.isPublished ? '已发布' : '草稿'}</span><strong>{item.titleZh}</strong><small>{item.source.name} · {formatTime(item.publishedAt)}</small></div>
-                  <button onClick={() => toggleNews(item)} disabled={loading}>{item.isPublished ? '撤下' : '发布'}</button>
+                  <span className="card-actions"><button onClick={() => editNews(item)} disabled={loading}>编辑</button><button onClick={() => toggleNews(item)} disabled={loading}>{item.isPublished ? '撤下' : '发布'}</button></span>
                 </article>
               ))}
             </div>
-            <form className="editor-form" onSubmit={createNews}>
+            {selectedNews ? <form className="editor-form" onSubmit={saveNewsDraft}>
+              <span className="eyebrow">Editorial draft</span><h2>编辑新闻草稿</h2>
+              <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>
+              <label>中文原创摘要<textarea required maxLength={2000} value={newsSummary} onChange={(event) => setNewsSummary(event.target.value)} /></label>
+              <label>标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
+              <p className="guard-copy">原文：<a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">{selectedNews.sourceTitle} ↗</a></p>
+              <button className="approve" disabled={loading}>保存编辑稿</button>
+              <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>取消</button>
+            </form> : <form className="editor-form" onSubmit={createNews}>
               <span className="eyebrow">Create news</span><h2>新增新闻</h2>
               <label>批准来源<select name="sourceId" required defaultValue=""><option value="" disabled>选择来源</option>{sources.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <label>中文标题<input name="titleZh" required maxLength={240} /></label>
@@ -330,7 +376,7 @@ function App() {
               <label className="check-row"><input name="isPublished" type="checkbox" />保存后立即发布</label>
               <p className="guard-copy">只写事实性摘要，不判断个人资格，不复制官方网页全文。</p>
               <button className="approve" disabled={loading}>保存新闻</button>
-            </form>
+            </form>}
             <div className="management-list full-width">
               <div className="panel-heading"><div><span className="eyebrow">Published changes</span><h2>已公开变更与更正</h2></div></div>
               {changes.filter((item) => item.publishedAt).map((item) => (

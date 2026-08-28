@@ -99,6 +99,30 @@ export class CreateNewsDto {
   isPublished?: boolean;
 }
 
+export class IngestNewsDto {
+  @IsUrl({ require_tld: false })
+  sourceRegistryUrl!: string;
+
+  @IsUrl({ require_tld: false })
+  sourceUrl!: string;
+
+  @IsString()
+  @Length(1, 240)
+  sourceTitle!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  sourceExcerpt!: string;
+
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  tags!: string[];
+
+  @IsDateString()
+  publishedAt!: string;
+}
+
 export class UpdateNewsDto {
   @IsOptional()
   @IsString()

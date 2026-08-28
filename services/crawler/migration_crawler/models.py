@@ -12,6 +12,7 @@ class Source:
     jurisdiction: str
     license_note: str
     enabled: bool
+    discovery_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,3 +32,11 @@ class ChangeCandidate:
     context: str
     importance: Importance
 
+
+@dataclass(frozen=True)
+class DiscoveredNews:
+    title: str
+    url: str
+    category: str
+    published_at: str
+    excerpt: str = ""

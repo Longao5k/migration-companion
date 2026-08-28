@@ -16,6 +16,7 @@ class NativeEncryptedLocalRepository implements LocalRepository {
     'migration_companion.projects.v1',
     'migration_companion.signed_in.v1',
     'migration_companion.account_email.v1',
+    'migration_companion.auth_token.v1',
     'migration_companion.notice_dismissed.v1',
     'migration_companion.bookmarks.v1',
   ];

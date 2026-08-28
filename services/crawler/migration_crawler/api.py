@@ -3,7 +3,37 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
-from .models import ChangeCandidate, Source
+from .models import ChangeCandidate, DiscoveredNews, Source
+
+
+def submit_news_draft(
+    api_url: str, worker_key: str, source: Source, item: DiscoveredNews
+) -> None:
+    tags = ["南澳"]
+    searchable = f"{item.title} {item.excerpt}".lower()
+    if "190" in searchable:
+        tags.append("190")
+    if "491" in searchable:
+        tags.append("491")
+    if item.category:
+        tags.append(item.category)
+    payload = {
+        "sourceRegistryUrl": source.url,
+        "sourceUrl": item.url,
+        "sourceTitle": item.title,
+        "sourceExcerpt": item.excerpt,
+        "tags": tags,
+        "publishedAt": item.published_at,
+    }
+    request = Request(
+        f"{api_url.rstrip('/')}/v1/content/worker/news",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Worker-Key": worker_key},
+        method="POST",
+    )
+    with urlopen(request, timeout=15) as response:
+        if response.status >= 300:
+            raise RuntimeError(f"review API returned HTTP {response.status}")
 
 
 def submit_candidate(api_url: str, worker_key: str, source: Source, candidate: ChangeCandidate) -> None:

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppTheme {
-  static const _ink = Color(0xFF182A3A);
-  static const _eucalyptus = Color(0xFF2A6E65);
-  static const _sand = Color(0xFFF4EFE6);
-  static const _amber = Color(0xFFE7A93B);
+  static const _ink = Color(0xFF142231);
+  static const _eucalyptus = Color(0xFF147B66);
+  static const _sand = Color(0xFFF3F5F2);
+  static const _amber = Color(0xFFD99B2B);
 
   static ThemeData get light {
     final scheme = ColorScheme.fromSeed(
@@ -12,9 +12,9 @@ abstract final class AppTheme {
       brightness: Brightness.light,
       primary: _eucalyptus,
       secondary: _amber,
-      surface: const Color(0xFFFCFAF6),
+      surface: const Color(0xFFF7F8F5),
     );
-    return _theme(scheme, _sand);
+    return _theme(scheme);
   }
 
   static ThemeData get dark {
@@ -23,10 +23,10 @@ abstract final class AppTheme {
       brightness: Brightness.dark,
       surface: const Color(0xFF111B24),
     );
-    return _theme(scheme, const Color(0xFF1B2730));
+    return _theme(scheme);
   }
 
-  static ThemeData _theme(ColorScheme scheme, Color mutedSurface) {
+  static ThemeData _theme(ColorScheme scheme) {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -37,8 +37,9 @@ abstract final class AppTheme {
         'Noto Sans CJK SC',
       ],
       textTheme: const TextTheme(
+        displaySmall: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -1),
         headlineMedium: TextStyle(
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w800,
           letterSpacing: -0.5,
         ),
         titleLarge: TextStyle(fontWeight: FontWeight.w700),
@@ -54,9 +55,13 @@ abstract final class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: mutedSurface,
+        color: scheme.surfaceContainerLowest,
+        surfaceTintColor: Colors.transparent,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -81,8 +86,12 @@ abstract final class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
-        backgroundColor: scheme.surface,
-        indicatorColor: scheme.primaryContainer,
+        height: 72,
+        backgroundColor: scheme.surfaceContainerLowest,
+        indicatorColor: scheme.primaryContainer.withValues(alpha: 0.72),
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
             fontSize: 11,
@@ -94,12 +103,13 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: mutedSurface,
+        fillColor: scheme.surfaceContainerLow,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
       ),
+      dividerTheme: DividerThemeData(color: scheme.outlineVariant, space: 1),
       extensions: const [
         AppPalette(
           ink: _ink,

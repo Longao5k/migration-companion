@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { CollaboratorRole } from '@prisma/client';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { publicShareOrigin } from '../public-origin';
 import { PrismaService } from '../prisma.service';
 import {
   AcceptInvitationDto,
@@ -65,7 +66,7 @@ export class CollaborationService {
         safeMetadata: { role: invitation.role },
       },
     });
-    const origin = process.env.SHARE_ORIGIN ?? 'http://localhost:3001';
+    const origin = publicShareOrigin();
     return {
       ...invitation,
       projectName: project.name,

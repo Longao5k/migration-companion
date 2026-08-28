@@ -71,7 +71,7 @@ class _ChangeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final verified = change.verification == VerificationStatus.verified;
+    final verified = change.verification.isHumanReviewed;
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
@@ -141,10 +141,8 @@ class ChangeDetailScreen extends StatelessWidget {
           Row(
             children: [
               SourceBadge(
-                label: change.verification == VerificationStatus.verified
-                    ? '已人工核实'
-                    : '待人工核实',
-                verified: change.verification == VerificationStatus.verified,
+                label: change.verification.label,
+                verified: change.verification.isHumanReviewed,
               ),
               const Spacer(),
               Text(DateFormat('yyyy-MM-dd HH:mm').format(change.discoveredAt)),

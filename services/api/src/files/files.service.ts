@@ -19,6 +19,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { PrismaService } from '../prisma.service';
 import { CompleteUploadDto, CreateUploadDto, ScanResultDto } from './files.dto';
+import { cloudFileUploadsEnabled, cloudFilesDisabledMessage } from './cloud-files';
 
 const allowedTypes = new Set([
   'application/pdf',
@@ -41,10 +42,20 @@ export class FilesService {
         }
       : {}),
   });
+  private readonly signedUrlS3 = process.env.S3_PUBLIC_ENDPOINT
+    ? new S3Client({
+        region: process.env.S3_REGION ?? 'ap-southeast-2',
+        endpoint: process.env.S3_PUBLIC_ENDPOINT,
+        forcePathStyle: process.env.S3_FORCE_PATH_STYLE === 'true',
+      })
+    : this.s3;
 
   constructor(private readonly prisma: PrismaService) {}
 
   async createUpload(accountId: string, projectId: string, dto: CreateUploadDto) {
+    if (!cloudFileUploadsEnabled()) {
+      throw new ServiceUnavailableException(cloudFilesDisabledMessage);
+    }
     if (!this.bucket) throw new ServiceUnavailableException('文件存储尚未配置');
     if (!allowedTypes.has(dto.contentType)) throw new BadRequestException('不支持此文件类型');
     const ownerId = await this.assertCanUpload(accountId, projectId);
@@ -75,7 +86,7 @@ export class FilesService {
       ServerSideEncryption: process.env.S3_ENDPOINT ? undefined : 'aws:kms',
       ...(process.env.S3_KMS_KEY_ID ? { SSEKMSKeyId: process.env.S3_KMS_KEY_ID } : {}),
     });
-    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: 600 });
+    const uploadUrl = await getSignedUrl(this.signedUrlS3, command, { expiresIn: 600 });
     return {
       uploadId: session.id,
       uploadUrl,
@@ -87,6 +98,10 @@ export class FilesService {
   }
 
   async complete(accountId: string, uploadId: string, dto: CompleteUploadDto) {
+    if (!cloudFileUploadsEnabled()) {
+      throw new ServiceUnavailableException(cloudFilesDisabledMessage);
+    }
+
     const session = await this.prisma.uploadSession.findFirst({
       where: { id: uploadId, accountId },
     });
@@ -167,6 +182,9 @@ export class FilesService {
     file: Express.Multer.File | undefined,
     checklistItemId?: string,
   ) {
+    if (!cloudFileUploadsEnabled()) {
+      throw new ServiceUnavailableException(cloudFilesDisabledMessage);
+    }
     if (!this.bucket) throw new ServiceUnavailableException('文件存储尚未配置');
     if (!file) throw new BadRequestException('请选择文件');
     if (!allowedTypes.has(file.mimetype)) throw new BadRequestException('不支持此文件类型');
@@ -277,7 +295,7 @@ export class FilesService {
       throw new ForbiddenException('文件尚未通过安全扫描，不能下载');
     }
     const downloadUrl = await getSignedUrl(
-      this.s3,
+      this.signedUrlS3,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: file.storageKey,

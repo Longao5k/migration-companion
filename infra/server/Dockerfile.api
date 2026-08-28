@@ -1,0 +1,29 @@
+FROM node:24.9.0-bookworm-slim AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable
+WORKDIR /repo
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY services/api/package.json services/api/package.json
+RUN pnpm install --frozen-lockfile --filter @migration-companion/api...
+COPY services/api services/api
+RUN pnpm --filter @migration-companion/api prisma:generate \
+    && pnpm --filter @migration-companion/api build \
+    && pnpm --filter @migration-companion/api deploy --prod --legacy /prod/api \
+    && cd /prod/api \
+    && ./node_modules/.bin/prisma generate
+
+FROM node:24.9.0-bookworm-slim AS runtime
+ENV NODE_ENV=production
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder --chown=node:node /prod/api ./
+COPY --chown=node:node services/crawler/sources.json ./config/sources.json
+USER node
+EXPOSE 3000
+CMD ["node", "dist/main.js"]

@@ -188,6 +188,17 @@ class _CloudFilesTab extends ConsumerWidget {
         (file) => (file['scanStatus'] as String? ?? 'PENDING') == 'PENDING',
       ),
       builder: (context, files, reload) {
+        final state = ref.watch(appStoreProvider);
+        if (files.isEmpty && !state.cloudFileUploadsEnabled) {
+          return EmptyState(
+            icon: Icons.cloud_off_outlined,
+            title: '云文件暂未开放',
+            body:
+                state.cloudFileUploadsDisabledReason ??
+                '当前版本的材料文件只保存在你的设备上。记得定期导出加密备份。',
+            action: const SizedBox.shrink(),
+          );
+        }
         if (files.isEmpty) {
           return const EmptyState(
             icon: Icons.cloud_upload_outlined,

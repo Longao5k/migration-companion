@@ -22,7 +22,7 @@ class ProjectsScreen extends ConsumerWidget {
     final state = ref.watch(appStoreProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('材料项目'),
+        title: const Text('申请路线'),
         actions: [
           IconButton(
             onPressed: () => showSearch<void>(
@@ -48,13 +48,13 @@ class ProjectsScreen extends ConsumerWidget {
           ? const Center(child: CircularProgressIndicator())
           : state.projects.isEmpty
           ? EmptyState(
-              icon: Icons.folder_copy_outlined,
-              title: '从一个清楚的清单开始',
-              body: '选择南澳 190/491 基础模板，或创建完全属于你的空白项目。',
+              icon: Icons.route_outlined,
+              title: '规划你的第一条申请路线',
+              body: '从南澳 190/491 基础路线开始，把关键节点、材料和提醒放在同一个时间线上。',
               action: FilledButton.icon(
                 onPressed: () => _createProject(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('创建第一个项目'),
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: const Text('开始规划'),
               ),
             )
           : ListView.separated(
@@ -170,7 +170,7 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: const Text('创建材料项目'),
+        title: const Text('创建申请路线'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -262,7 +262,7 @@ class _ProjectCard extends StatelessWidget {
                     color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.folder_open),
+                  child: const Icon(Icons.route_outlined),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -273,7 +273,9 @@ class _ProjectCard extends StatelessWidget {
                         project.name,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      Text('${project.visaType} · ${project.items.length} 项材料'),
+                      Text(
+                        '${project.visaType} · ${project.items.length} 个关键节点',
+                      ),
                     ],
                   ),
                 ),
@@ -875,7 +877,9 @@ Future<void> _showChecklistItem(
                             }
                           },
                           itemBuilder: (_) => [
-                            if (project.isCloudSyncEnabled &&
+                            // 云文件未开放时不显示上传入口，避免用户点了才知道不可用。
+                            if (ref.watch(appStoreProvider).cloudFileUploadsEnabled &&
+                                project.isCloudSyncEnabled &&
                                 attachment.syncStatus !=
                                     AttachmentSyncStatus.available &&
                                 attachment.syncStatus !=

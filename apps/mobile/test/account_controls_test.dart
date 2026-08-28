@@ -45,10 +45,7 @@ void main() {
     await store.requestAccountDeletion();
     expect(store.state.isSignedIn, isTrue);
     expect(store.state.projects.single.id, project.id);
-    expect(
-      store.state.deletionRequestedAt?.toUtc(),
-      DateTime.utc(2026, 8, 28),
-    );
+    expect(store.state.deletionRequestedAt?.toUtc(), DateTime.utc(2026, 8, 28));
 
     await store.cancelAccountDeletion();
     expect(store.state.deletionRequestedAt, isNull);

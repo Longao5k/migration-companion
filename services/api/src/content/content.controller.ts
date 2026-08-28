@@ -4,6 +4,7 @@ import {
   CreateNewsDto,
   CreateSourceDto,
   IngestChangeDto,
+  IngestNewsDto,
   ReviewChangeDto,
   SourceCheckDto,
   UpdateNewsDto,
@@ -101,6 +102,12 @@ export class ContentController {
   @UseGuards(WorkerApiKeyGuard)
   ingest(@Body() body: IngestChangeDto) {
     return this.content.ingest(body);
+  }
+
+  @Post('worker/news')
+  @UseGuards(WorkerApiKeyGuard)
+  ingestNews(@Body() body: IngestNewsDto) {
+    return this.content.ingestNews(body);
   }
 
   @Post('worker/source-checks')

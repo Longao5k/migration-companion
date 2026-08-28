@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth/auth.controller';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ContentController } from './content/content.controller';
@@ -26,11 +27,14 @@ import {
   NotificationWorkerController,
 } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
+import { PilotAuthController } from './auth/pilot-auth.controller';
+import { PilotAuthService } from './auth/pilot-auth.service';
 
 @Module({
-  imports: [],
+  imports: [JwtModule.register({})],
   controllers: [
     HealthController,
+    PilotAuthController,
     AuthController,
     ProjectsController,
     SharesController,
@@ -57,6 +61,7 @@ import { NotificationsService } from './notifications/notifications.service';
     EntitlementsService,
     AccountDeletionService,
     NotificationsService,
+    PilotAuthService,
   ],
 })
 export class AppModule {}

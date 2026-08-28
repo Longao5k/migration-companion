@@ -32,7 +32,10 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      HomeScreen(onOpenProjects: () => setState(() => _index = 2)),
+      HomeScreen(
+        onOpenProjects: () => setState(() => _index = 2),
+        onOpenChanges: () => setState(() => _index = 1),
+      ),
       const ChangeLogScreen(),
       const ProjectsScreen(),
       const ToolsScreen(),
@@ -47,24 +50,24 @@ class _AppShellState extends ConsumerState<AppShell> {
         onDestinationSelected: (value) => setState(() => _index = value),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.newspaper_outlined),
-            selectedIcon: Icon(Icons.newspaper),
+            icon: Icon(Icons.auto_stories_outlined),
+            selectedIcon: Icon(Icons.auto_stories_rounded),
             label: '资讯',
           ),
           NavigationDestination(
-            icon: Icon(Icons.change_circle_outlined),
-            selectedIcon: Icon(Icons.change_circle),
-            label: '变更',
+            icon: Icon(Icons.radar_outlined),
+            selectedIcon: Icon(Icons.radar_rounded),
+            label: '追踪',
           ),
           NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder),
-            label: '项目',
+            icon: Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route_rounded),
+            label: '申请',
           ),
           NavigationDestination(
-            icon: Icon(Icons.edit_document),
-            selectedIcon: Icon(Icons.edit_document),
-            label: '工具',
+            icon: Icon(Icons.draw_outlined),
+            selectedIcon: Icon(Icons.draw_rounded),
+            label: '文档',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

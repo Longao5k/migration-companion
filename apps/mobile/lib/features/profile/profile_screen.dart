@@ -205,18 +205,44 @@ String _tierLabel(String tier) => switch (tier) {
 };
 
 Future<void> _signIn(BuildContext context, WidgetRef ref) async {
+  const pilotAuthEnabled = bool.fromEnvironment('PILOT_AUTH');
   final controller = TextEditingController(
     text: kDebugMode ? 'owner@example.com' : '',
   );
-  final email = await showDialog<String>(
+  final accessCodeController = TextEditingController();
+  final credentials = await showDialog<({String email, String accessCode})>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(kDebugMode ? '本地开发账号' : '邮箱登录'),
-      content: TextField(
-        controller: controller,
-        keyboardType: TextInputType.emailAddress,
-        autocorrect: false,
-        decoration: const InputDecoration(labelText: '邮箱地址'),
+      title: Text(
+        pilotAuthEnabled
+            ? '内测账号登录'
+            : kDebugMode
+            ? '本地开发账号'
+            : '邮箱登录',
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: controller,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            decoration: const InputDecoration(labelText: '邮箱地址'),
+          ),
+          if (pilotAuthEnabled) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: accessCodeController,
+              obscureText: true,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: '内测访问码',
+                helperText: '只用于当前封闭测试，正式登录上线后会替换。',
+              ),
+            ),
+          ],
+        ],
       ),
       actions: [
         TextButton(
@@ -224,15 +250,20 @@ Future<void> _signIn(BuildContext context, WidgetRef ref) async {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, controller.text.trim()),
+          onPressed: () => Navigator.pop(context, (
+            email: controller.text.trim(),
+            accessCode: accessCodeController.text,
+          )),
           child: const Text('继续'),
         ),
       ],
     ),
   );
-  if (email == null || !context.mounted) return;
+  if (credentials == null || !context.mounted) return;
   try {
-    await ref.read(appStoreProvider.notifier).signIn(email);
+    await ref
+        .read(appStoreProvider.notifier)
+        .signIn(credentials.email, accessCode: credentials.accessCode);
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context)

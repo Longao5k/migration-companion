@@ -89,6 +89,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .management-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .management-card small { grid-column: 2; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .management-card button, .editor-form button, .correction-editor button { border: 0; border-radius: 9px; padding: 9px 13px; font-weight: 800; }
+.card-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .state-pill { border-radius: 20px; padding: 3px 7px; background: #eee9e2; color: #735d4b; font-size: 10px; font-weight: 900; }
 .state-pill.online { color: #246659; background: #d9f3ec; }
 .editor-form { padding: 22px; display: grid; gap: 13px; }

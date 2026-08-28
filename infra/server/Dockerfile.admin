@@ -1,0 +1,15 @@
+FROM node:24.9.0-bookworm-slim AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+WORKDIR /repo
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/admin/package.json apps/admin/package.json
+RUN pnpm install --frozen-lockfile --filter @migration-companion/admin...
+COPY apps/admin apps/admin
+RUN pnpm --filter @migration-companion/admin build
+
+FROM nginx:1.29.1-alpine
+COPY infra/server/admin-nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /repo/apps/admin/dist /usr/share/nginx/html
+EXPOSE 80

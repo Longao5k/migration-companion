@@ -319,7 +319,7 @@ model NewsItem {
   titleZh     String
   summaryZh   String
   sourceTitle String
-  sourceUrl   String
+  sourceUrl   String   @unique
   tags        String[]
   isPublished Boolean  @default(false)
   publishedAt DateTime
@@ -388,4 +388,17 @@ model NotificationOutbox {
 
   @@index([status, availableAt])
   @@index([accountId, createdAt])
+}
+
+/// 内测登录的失败计数与锁定。
+/// 内测访问码逐邮箱绑定，因此暴力猜测只能针对单个邮箱；按邮箱计数即可阻断，
+/// 且未注册邮箱同样计数，避免通过响应差异枚举内测名单。
+model PilotLoginAttempt {
+  email       String    @id
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  lastAttempt DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([lockedUntil])
 }

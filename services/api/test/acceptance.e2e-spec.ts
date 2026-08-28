@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import request from 'supertest';
@@ -19,7 +19,8 @@ const ownerEmail = `e2e-owner-${run}@migration-companion.invalid`;
 const collaboratorEmail = `e2e-collaborator-${run}@migration-companion.invalid`;
 const viewerEmail = `e2e-viewer-${run}@migration-companion.invalid`;
 const deletionEmail = `e2e-delete-${run}@migration-companion.invalid`;
-const testEmails = [ownerEmail, collaboratorEmail, viewerEmail, deletionEmail];
+const pilotEmail = `e2e-pilot-${run}@migration-companion.invalid`;
+const testEmails = [ownerEmail, collaboratorEmail, viewerEmail, deletionEmail, pilotEmail];
 
 const samplePdf = readFileSync(join(__dirname, 'fixtures', 'sample.pdf'));
 const samplePdfSha256 = createHash('sha256').update(samplePdf).digest('hex');
@@ -1035,4 +1036,231 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
     ).rejects.toBeTruthy();
     s3.destroy();
   });
+
+  it('34. 云文件未开放时拒绝新增上传，但仍允许取回与删除既有文件', async () => {
+    // 先在开放状态下放入一个文件，再关闭开关，验证“只挡新增、不锁数据”。
+    const upload = await request(http)
+      .post(`/v1/projects/${projectId}/files`)
+      .set(as(ownerEmail))
+      .attach('file', samplePdf, { filename: 'gated.pdf', contentType: 'application/pdf' })
+      .expect(201);
+
+    const previous = process.env.CLOUD_FILES_ENABLED;
+    process.env.CLOUD_FILES_ENABLED = 'false';
+    try {
+      const blocked = await request(http)
+        .post(`/v1/projects/${projectId}/files`)
+        .set(as(ownerEmail))
+        .attach('file', samplePdf, { filename: 'blocked.pdf', contentType: 'application/pdf' })
+        .expect(503);
+      expect(blocked.body.message).toContain('云文件上传尚未开放');
+
+      await request(http)
+        .post(`/v1/projects/${projectId}/uploads`)
+        .set(as(ownerEmail))
+        .send({
+          originalName: 'blocked.pdf',
+          contentType: 'application/pdf',
+          byteSize: samplePdf.length,
+          sha256: samplePdfSha256,
+        })
+        .expect(503);
+
+      // 权益接口告知客户端，避免用户在上传时才发现不可用。
+      const entitlement = await request(http)
+        .get('/v1/entitlements/me')
+        .set(as(ownerEmail))
+        .expect(200);
+      expect(entitlement.body.cloudFileUploads.enabled).toBe(false);
+      expect(entitlement.body.cloudFileUploads.disabledReason).toContain('只保存在你的设备上');
+
+      // 关闭上传不能把既有数据锁死：下载与删除必须仍然可用。
+      await request(http)
+        .get(`/v1/files/${upload.body.id}/download`)
+        .set(as(ownerEmail))
+        .expect(200);
+      await request(http)
+        .delete(`/v1/files/${upload.body.id}`)
+        .set(as(ownerEmail))
+        .expect(200);
+    } finally {
+      restoreEnv('CLOUD_FILES_ENABLED', previous);
+    }
+  });
+
+  it('30. 公网内测登录签发受验证 JWT，不依赖可伪造的邮箱请求头', async () => {
+    const accessCode = 'e2e-pilot-access';
+    await withPilotAuth({ [pilotEmail]: accessCode }, async () => {
+      const login = await request(http)
+        .post('/v1/auth/pilot')
+        .send({ email: pilotEmail, accessCode })
+        .expect(201);
+      expect(login.body.accessToken).toEqual(expect.any(String));
+
+      const account = await request(http)
+        .get('/v1/auth/me')
+        .set('authorization', `Bearer ${login.body.accessToken}`)
+        .set('x-dev-account-email', 'attacker@migration-companion.invalid')
+        .expect(200);
+      expect(account.body.email).toBe(pilotEmail);
+      expect(account.body.id).toMatch(/^pilot-/);
+
+      await request(http)
+        .get('/v1/auth/me')
+        .set('authorization', 'Bearer invalid-pilot-token')
+        .set('x-dev-account-email', pilotEmail)
+        .expect(401);
+    });
+  });
+
+  it('31. 内测访问码绑定邮箱：拿别人的码登录自己的邮箱会被拒绝', async () => {
+    const ownCode = 'e2e-pilot-access';
+    const otherEmail = `e2e-pilot-other-${run}@migration-companion.invalid`;
+    await withPilotAuth(
+      { [pilotEmail]: ownCode, [otherEmail]: 'e2e-other-access' },
+      async () => {
+        // 持有 pilotEmail 的码，却试图登录 otherEmail —— 这正是共享码方案下的冒充路径。
+        await request(http)
+          .post('/v1/auth/pilot')
+          .send({ email: otherEmail, accessCode: ownCode })
+          .expect(401);
+
+        // 不在名单内的邮箱与错误访问码返回同一个响应，不泄露内测名单。
+        const unknown = await request(http)
+          .post('/v1/auth/pilot')
+          .send({ email: `nobody-${run}@migration-companion.invalid`, accessCode: ownCode })
+          .expect(401);
+        expect(unknown.body.message).toBe('邮箱或内测访问码无效');
+      },
+    );
+  });
+
+  it('32. 内测登录连续失败会锁定该邮箱，正确访问码在锁定期内同样被拒', async () => {
+    const accessCode = 'e2e-pilot-access';
+    const lockedEmail = `e2e-pilot-locked-${run}@migration-companion.invalid`;
+    await withPilotAuth({ [lockedEmail]: accessCode }, async () => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(http)
+          .post('/v1/auth/pilot')
+          .send({ email: lockedEmail, accessCode: 'wrong-access-code' })
+          .expect(401);
+      }
+      await request(http)
+        .post('/v1/auth/pilot')
+        .send({ email: lockedEmail, accessCode })
+        .expect(429);
+    });
+    await prisma.pilotLoginAttempt.deleteMany({ where: { email: lockedEmail } });
+  });
+
+  it('33. 旧的共享访问码配置被拒绝启动，不允许静默沿用', async () => {
+    const previous = {
+      nodeEnv: process.env.NODE_ENV,
+      enabled: process.env.PILOT_AUTH_ENABLED,
+      secret: process.env.PILOT_JWT_SECRET,
+      codes: process.env.PILOT_ACCESS_CODES,
+      legacy: process.env.PILOT_ACCESS_CODE_SCRYPT,
+    };
+    const salt = randomBytes(16);
+    process.env.NODE_ENV = 'production';
+    process.env.PILOT_AUTH_ENABLED = 'true';
+    process.env.PILOT_JWT_SECRET = 'e2e-only-jwt-secret-with-at-least-32-characters';
+    delete process.env.PILOT_ACCESS_CODES;
+    process.env.PILOT_ACCESS_CODE_SCRYPT = `${salt.toString('hex')}:${scryptSync('shared-code', salt, 32).toString('hex')}`;
+    try {
+      const response = await request(http)
+        .post('/v1/auth/pilot')
+        .send({ email: pilotEmail, accessCode: 'shared-code' })
+        .expect(503);
+      expect(response.body.message).toContain('PILOT_ACCESS_CODES');
+    } finally {
+      restoreEnv('NODE_ENV', previous.nodeEnv);
+      restoreEnv('PILOT_AUTH_ENABLED', previous.enabled);
+      restoreEnv('PILOT_JWT_SECRET', previous.secret);
+      restoreEnv('PILOT_ACCESS_CODES', previous.codes);
+      restoreEnv('PILOT_ACCESS_CODE_SCRYPT', previous.legacy);
+    }
+  });
+
+  it('31. 爬虫新闻只能进入草稿，中文编辑完成前不能公开', async () => {
+    expect(contentSourceId).toBeTruthy();
+    const source = await prisma.source.findUniqueOrThrow({ where: { id: contentSourceId } });
+    await prisma.source.update({ where: { id: source.id }, data: { enabled: true } });
+    const sourceUrl = `${source.url}/official-article-${run}`;
+    const payload = {
+      sourceRegistryUrl: source.url,
+      sourceUrl,
+      sourceTitle: 'Official English source title',
+      sourceExcerpt: 'Official English source excerpt retained only inside the editorial draft.',
+      tags: ['南澳'],
+      publishedAt: new Date().toISOString(),
+    };
+    const draft = await request(http)
+      .post('/v1/content/worker/news')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send(payload)
+      .expect(201);
+    const retried = await request(http)
+      .post('/v1/content/worker/news')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send(payload)
+      .expect(201);
+    expect(retried.body.id).toBe(draft.body.id);
+    expect(draft.body.isPublished).toBe(false);
+
+    await request(http)
+      .patch(`/v1/content/admin/news/${draft.body.id}`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({ isPublished: true })
+      .expect(400);
+    await request(http)
+      .patch(`/v1/content/admin/news/${draft.body.id}`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({
+        titleZh: '南澳官方资讯更新',
+        summaryZh: '这是一段经过人工核对的中文原创事实摘要，用户仍需返回官方原文确认。',
+        isPublished: true,
+      })
+      .expect(200);
+    const publicNews = await request(http).get('/v1/content/news').expect(200);
+    expect(publicNews.body.some((item: { id: string }) => item.id === draft.body.id)).toBe(true);
+  });
 });
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+/// 以“逐邮箱绑定的内测访问码”配置运行一段验收，并在结束后恢复原环境。
+async function withPilotAuth(
+  codesByEmail: Record<string, string>,
+  body: () => Promise<void>,
+) {
+  const previous = {
+    nodeEnv: process.env.NODE_ENV,
+    enabled: process.env.PILOT_AUTH_ENABLED,
+    secret: process.env.PILOT_JWT_SECRET,
+    codes: process.env.PILOT_ACCESS_CODES,
+    legacy: process.env.PILOT_ACCESS_CODE_SCRYPT,
+  };
+  process.env.NODE_ENV = 'production';
+  process.env.PILOT_AUTH_ENABLED = 'true';
+  process.env.PILOT_JWT_SECRET = 'e2e-only-jwt-secret-with-at-least-32-characters';
+  delete process.env.PILOT_ACCESS_CODE_SCRYPT;
+  process.env.PILOT_ACCESS_CODES = Object.entries(codesByEmail)
+    .map(([email, code]) => {
+      const salt = randomBytes(16);
+      return `${email}=${salt.toString('hex')}:${scryptSync(code, salt, 32).toString('hex')}`;
+    })
+    .join(',');
+  try {
+    await body();
+  } finally {
+    restoreEnv('NODE_ENV', previous.nodeEnv);
+    restoreEnv('PILOT_AUTH_ENABLED', previous.enabled);
+    restoreEnv('PILOT_JWT_SECRET', previous.secret);
+    restoreEnv('PILOT_ACCESS_CODES', previous.codes);
+    restoreEnv('PILOT_ACCESS_CODE_SCRYPT', previous.legacy);
+  }
+}
