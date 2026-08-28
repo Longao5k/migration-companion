@@ -71,8 +71,17 @@ Google 下架的常见原因就是这张表跟实际行为对不上。以下是*
 - 不收集位置、通讯录、短信、通话记录、设备标识符
 - **不上传用户的材料文件**（`CLOUD_FILES_ENABLED=false`，服务端直接拒绝新增上传）
 
-**Android 权限只有两个**：`INTERNET`、`RECEIVE_BOOT_COMPLETED`（重启后恢复用户自己设的提醒）。
+**Android 权限**：`INTERNET`、`RECEIVE_BOOT_COMPLETED`（重启后恢复用户自己设的提醒），
 通知权限由 `flutter_local_notifications` 在 Android 13+ 合并进清单，只在用户主动设置提醒时请求。
+
+> `open_filex` 会往合并清单里塞 `READ_EXTERNAL_STORAGE` 和三个 `READ_MEDIA_*`。
+> 我们不读媒体库，已在 `AndroidManifest.xml` 用 `tools:node="remove"` 移除。
+> **上传前请用 `bundletool`/`aapt2 dump permissions` 核对一次实际合并结果**，
+> 表单要按合并后的清单填，不是按源码里写了几行填。
+
+清单里还声明了 `<queries>`（打开 https、Custom Tabs、PDF/Word 查看、文本分享）。
+Android 11 起没有这几行，「读官方原文」和「打开查看」会解析不到应用而**静默失败**。
+这些是定向声明，不需要受限的 `QUERY_ALL_PACKAGES`。
 
 **确实收集的**：
 

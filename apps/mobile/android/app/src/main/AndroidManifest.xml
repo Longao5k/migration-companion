@@ -1,16 +1,68 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      open_filex 会带进这四个存储/媒体权限。我们从不读媒体库：文件由用户通过系统
+      文件选择器（SAF）挑选，副本写在 App 私有目录，再用 FileProvider 授出内容 URI，
+      整条链路不需要任何存储权限。留着它们等于向用户和商店多要一份用不到的授权。
+    -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VIDEO"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
+        tools:node="remove" />
+
+    <!--
+      Android 11 起的软件包可见性：没有声明就看不见能处理这些意图的应用，
+      「读官方原文」和「打开查看」会直接失败在解析这一步——不是崩溃，是没反应。
+      两个依赖都没有替我们声明（open_filex 完全没有 queries，url_launcher 也没有），
+      所以必须写在这里。这些是定向声明，不需要受限的 QUERY_ALL_PACKAGES 权限。
+    -->
+    <queries>
+        <!-- 应用内浏览器 / 外部浏览器打开官方页面 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- Custom Tabs（应用内浏览器视图） -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <!-- 把材料副本交给系统里的 PDF / Word 阅读器 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/pdf" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/msword" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data
+                android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        </intent>
+        <!-- 分享（share_plus） -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
     <application
         android:label="Migration Companion"
         android:name="${applicationName}"
         android:allowBackup="false"
         android:fullBackupContent="false"
-        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher">
-        <meta-data
-            android:name="pdftron_license_key"
-            android:value="@string/PDFTRON_LICENSE_KEY" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
