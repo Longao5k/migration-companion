@@ -100,4 +100,65 @@ void main() {
       expect(partial.nextAction?.title, 'a');
     });
   });
+
+  group('监控状态', () {
+    MonitoringStatus parse(Map<String, dynamic> json) =>
+        MonitoringStatus.fromJson(json);
+
+    test('部分页面取不到的辖区，措辞是「部分」而不是整个辖区都监控不到', () {
+      final status = parse({
+        'monitoredCount': 5,
+        'unavailableCount': 3,
+        'jurisdictions': [
+          {'jurisdiction': 'AU-SA', 'monitoredCount': 4, 'unavailableCount': 0},
+          {'jurisdiction': 'AU-FED', 'monitoredCount': 1, 'unavailableCount': 3},
+        ],
+      });
+      expect(status.hasGap, isTrue);
+      expect(status.fullyDown, isEmpty);
+      expect(status.partlyDown.single.jurisdiction, 'AU-FED');
+      // 「联邦的页面现在监控不到」会被读成「联邦法规变了我们也看不见」，正好说反。
+      expect(status.gapSentence, '联邦有部分页面监控不到');
+    });
+
+    test('整个辖区都取不到时才说「现在监控不到」', () {
+      final status = parse({
+        'monitoredCount': 0,
+        'unavailableCount': 2,
+        'jurisdictions': [
+          {'jurisdiction': 'AU-SA', 'monitoredCount': 0, 'unavailableCount': 2},
+        ],
+      });
+      expect(status.gapSentence, '南澳的页面现在监控不到');
+    });
+
+    test('没有缺口时不产生任何提示', () {
+      final status = parse({
+        'monitoredCount': 6,
+        'unavailableCount': 0,
+        'jurisdictions': [
+          {'jurisdiction': 'AU-SA', 'monitoredCount': 6, 'unavailableCount': 0},
+        ],
+      });
+      expect(status.hasGap, isFalse);
+      expect(status.gapSentence, isNull);
+    });
+
+    test('待人工核实的条数会被读出来，空列表才不会被说成「没有变化」', () {
+      final status = parse({
+        'monitoredCount': 6,
+        'unavailableCount': 0,
+        'pendingReviewCount': 6,
+      });
+      expect(status.pendingReviewCount, 6);
+      expect(status.hasGap, isFalse);
+    });
+
+    test('旧服务端不返回 jurisdictions 时不会崩，只是没有细分', () {
+      final status = parse({'monitoredCount': 3, 'unavailableCount': 1});
+      expect(status.hasGap, isTrue);
+      expect(status.gapSentence, isNull);
+      expect(status.pendingReviewCount, 0);
+    });
+  });
 }

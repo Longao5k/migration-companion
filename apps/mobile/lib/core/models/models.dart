@@ -274,12 +274,19 @@ class MonitoringStatus {
   const MonitoringStatus({
     required this.monitoredCount,
     required this.unavailableCount,
+    this.pendingReviewCount = 0,
     this.jurisdictions = const [],
     this.lastSuccessAt,
   });
 
   final int monitoredCount;
   final int unavailableCount;
+
+  /// 已经发现、但重要到必须先人工核实才发布的改动条数。
+  ///
+  /// 列表为空有第三种含义：不是「没变」，是「变了，我们还在核」。对着一个正在
+  /// 核实的政策改动说「暂时没有变化」，是这个产品最不能犯的错。
+  final int pendingReviewCount;
   final List<JurisdictionCoverage> jurisdictions;
   final DateTime? lastSuccessAt;
 
@@ -312,6 +319,7 @@ class MonitoringStatus {
   Map<String, Object?> toJson() => {
     'monitoredCount': monitoredCount,
     'unavailableCount': unavailableCount,
+    'pendingReviewCount': pendingReviewCount,
     'jurisdictions': jurisdictions.map((entry) => entry.toJson()).toList(),
     'lastSuccessAt': lastSuccessAt?.toIso8601String(),
   };
@@ -321,6 +329,7 @@ class MonitoringStatus {
     return MonitoringStatus(
       monitoredCount: json['monitoredCount'] as int? ?? 0,
       unavailableCount: json['unavailableCount'] as int? ?? 0,
+      pendingReviewCount: json['pendingReviewCount'] as int? ?? 0,
       jurisdictions: (raw ?? const [])
           .cast<Map<String, dynamic>>()
           .map(JurisdictionCoverage.fromJson)

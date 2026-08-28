@@ -248,6 +248,16 @@ class _ChangesEmptyState extends ConsumerWidget {
       );
     }
 
+    // 「有改动正在核实」和「没有改动」是两件事，不能都显示成后者。
+    if (monitoring!.pendingReviewCount > 0) {
+      return EmptyState(
+        icon: Icons.hourglass_bottom_outlined,
+        title: '有 ${monitoring!.pendingReviewCount} 条改动正在核对',
+        body: '我们发现官方页面有改动，编辑核对完就会出现在这里。急的话可以先去官网看。',
+        action: reload,
+      );
+    }
+
     return EmptyState(
       icon: Icons.check_circle_outline,
       title: '这些页面暂时没有变化',

@@ -56,8 +56,11 @@ describe('ContentService monitoring coverage', () => {
   const now = Date.now();
   const recent = new Date(now - 60_000);
 
-  function serviceWith(sources: any[]) {
-    const prisma = { source: { findMany: jest.fn().mockResolvedValue(sources) } } as any;
+  function serviceWith(sources: any[], pendingReview = 0) {
+    const prisma = {
+      source: { findMany: jest.fn().mockResolvedValue(sources) },
+      changeLog: { count: jest.fn().mockResolvedValue(pendingReview) },
+    } as any;
     return new ContentService(prisma);
   }
 
@@ -123,5 +126,16 @@ describe('ContentService monitoring coverage', () => {
     expect(status.unavailableCount).toBe(0);
     expect(status.unavailableJurisdictions).toEqual([]);
     expect(status.lastSuccessAt).toEqual(recent);
+  });
+
+  it('surfaces changes held behind human review so an empty list is not read as "nothing changed"', async () => {
+    const service = serviceWith(
+      [{ name: 'SA news', jurisdiction: 'AU-SA', enabled: true, lastSuccessAt: recent, lastFailureAt: null }],
+      6,
+    );
+
+    const status = await service.monitoringStatus();
+    expect(status.unavailableCount).toBe(0);
+    expect(status.pendingReviewCount).toBe(6);
   });
 });

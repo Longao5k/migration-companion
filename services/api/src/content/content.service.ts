@@ -36,6 +36,15 @@ export class ContentService {
    * 只下发聚合信息与官方页面名称，不下发失败细节与内部标识。
    */
   async monitoringStatus() {
+    // 已发现但还压在人工复核里的改动。列表为空其实有第三种含义：
+    // 「发现了，但重要变更在核实前不发布」。不说出来，用户看到的仍是「没有变化」。
+    const pendingReviewCount = await this.prisma.changeLog.count({
+      where: {
+        reviewStatus: ReviewStatus.PENDING,
+        importance: { in: [ChangeImportance.IMPORTANT, ChangeImportance.MAJOR] },
+      },
+    });
+
     const sources = await this.prisma.source.findMany({
       where: { sourceType: 'official' },
       select: {
@@ -81,6 +90,7 @@ export class ContentService {
     return {
       monitoredCount: monitored.length,
       unavailableCount: unavailable.length,
+      pendingReviewCount,
       jurisdictions,
       // 保留给旧版本 App：它只认这个字段。新版本读 jurisdictions。
       unavailableJurisdictions: jurisdictions
