@@ -67,8 +67,8 @@ cd apps/mobile && fvm flutter build appbundle --release --dart-define=API_BASE_U
 | --- | --- |
 | `fvm flutter build apk --release` | 成功，70 MB |
 | `fvm flutter build appbundle --release` | **AAB 已生成**（61 MB），但命令以退出码 1 结束，见下 |
-| 合并清单权限 | 只剩 `INTERNET` / `RECEIVE_BOOT_COMPLETED` / `POST_NOTIFICATIONS` / `VIBRATE` |
-| 合并清单是否含计费 | 否 |
+| 合并清单权限 | `INTERNET` / `RECEIVE_BOOT_COMPLETED` / `POST_NOTIFICATIONS` / `VIBRATE` / `ACCESS_NETWORK_STATE` / `com.android.vending.BILLING` |
+| 合并清单是否含计费 | 是（有意保留，第一版要卖订阅） |
 | AAB 调试符号是否已剥离 | 是，`BUNDLE-METADATA/com.android.tools.build.debugsymbols/` 下三种 ABI 齐全 |
 
 **关于那个退出码 1**：报错文本是「Release app bundle failed to strip debug symbols」，
@@ -107,14 +107,16 @@ Google 下架的常见原因就是这张表跟实际行为对不上。以下是*
 | `RECEIVE_BOOT_COMPLETED` | 我们 | 重启后恢复用户自己设的提醒 |
 | `POST_NOTIFICATIONS` | `flutter_local_notifications` | Android 13+，只在用户主动设提醒时请求 |
 | `VIBRATE` | `flutter_local_notifications` | 提醒震动 |
+| `ACCESS_NETWORK_STATE` | `in_app_purchase` | 计费库自带 |
+| `com.android.vending.BILLING` | `in_app_purchase` | 订阅（第一版出售 PDF / Word 编辑） |
 
 （合并清单里还有一条 `…DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，是 Flutter 引擎
 自定义的签名级权限，不面向用户，表单里不用填。）
 
 > `open_filex` 原本会塞进 `READ_EXTERNAL_STORAGE` 和三个 `READ_MEDIA_*`。我们不读媒体库，
 > 已用 `tools:node="remove"` 移除，核对过合并清单确认没了。
-> `in_app_purchase` 原本会塞进 `com.android.vending.BILLING` 和两个 `ProxyBillingActivity`——
-> 包里买不到任何东西却声明计费权限，和「无内购」的表单直接矛盾，因此整个依赖已移出发布构建。
+> `in_app_purchase` 会塞进 `com.android.vending.BILLING` 和两个 `ProxyBillingActivity`。
+> 这是有意保留的（第一版要卖订阅），所以表单的「应用内购买」必须填「是」。
 >
 > 换依赖或升级后，**上传前用 `aapt2 dump permissions` 重新核对一次**。
 
@@ -170,7 +172,7 @@ Google 要求提供账号删除的**应用内入口和网页入口**，两个都
 
 **截图与描述里不能出现的东西**（都是这个构建做不到的，出现即为虚假宣称）：
 
-- 订阅、Premium、7 天试用、价格——计费依赖已整个移出发布构建，包里没有这些入口
+- 订阅、Premium、7 天试用、价格——入口尚未开启（等 PDF / Word 编辑上线），现在不能宣传
 - PDF/Word 的编辑、批注、签名、表单填写、页面整理——这一版只能查看
 - 云端上传、云端备份——`CLOUD_FILES_ENABLED=false`，上传入口是关的
 
@@ -188,9 +190,21 @@ App 的资讯、政策变更、文档工具和本机材料清单**不需要登�
 - 提供一组**专供审核使用**的邮箱 + 访问码（用 `set-pilot-codes.sh` 单独生成一条，
   不要复用真实测试者的），并写明有效期
 
-**应用内购买：选「否」。** `in_app_purchase` 已移出发布构建，合并清单里没有
-`com.android.vending.BILLING`，包里也没有任何计费入口，两边是一致的。
-等订阅真正开放时再改这一项——先声明有内购、实际却买不到，会被判为误导。
+**应用内购买：按你上传的那个包填，不要按计划填。**
+
+第一版的定位是靠订阅出售 PDF / Word 编辑，所以计费依赖留在代码里，合并清单会带上
+`com.android.vending.BILLING`。但**订阅入口目前是关的**（`subscriptionsEnabled` 默认 false），
+因为编辑能力还没接进来——权益不存在就开卖，既违反商店计费政策，也踩澳洲消费者法。
+
+于是有两种包，填法不同：
+
+| 你上传的包 | 「应用内购买」 | 商店描述与截图 |
+| --- | --- | --- |
+| 现在这种（不带 `--dart-define=SUBSCRIPTIONS=true`） | **是** | 不能出现订阅、试用、价格、编辑 |
+| 编辑上线后（带 `SUBSCRIPTIONS=true`） | **是** | 可以，且必须与实际权益一致 |
+
+两种都填「是」：清单里有 `BILLING` 权限，声明「无内购」会对不上。区别在于**描述和截图**——
+在编辑能力真正可用之前，商店页面不能宣传订阅或编辑，否则就是卖一个买不到也用不了的东西。
 
 ---
 

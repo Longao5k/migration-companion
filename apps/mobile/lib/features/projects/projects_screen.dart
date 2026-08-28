@@ -1283,7 +1283,7 @@ Future<void> _uploadAttachment(
     builder: (context) => AlertDialog(
       title: const Text('上传这个附件？'),
       content: Text(
-        '${attachment.name}\n\n文件将上传到此项目的云端隔离区，占用云端存储额度；'
+        '${attachment.name}\n\n文件将上传到此项目的云端隔离区，占用订阅存储空间；'
         '当前剩余约 ${formatBytes(account.cloudStorageRemainingBytes)}。安全扫描通过前不能下载或分享。',
       ),
       actions: [

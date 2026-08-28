@@ -51,11 +51,11 @@ dependencies:
   cryptography: 2.9.0
   cross_file: 0.3.5+5
   http: ^1.6.0
-  # in_app_purchase 已移出发布构建。它会把 com.android.vending.BILLING 权限和
-  # Play Billing 的两个 ProxyBillingActivity 合并进清单，而包里买不到任何东西——
-  # 商店表单填「无内购」时两边就对不上。订阅权益真正可用时，连同
-  # lib/features/subscription/subscription_screen.dart 一起从 git 历史恢复
-  # （提交 125897b 之前）。
+  # 第一版靠订阅出售 PDF / Word 编辑能力，因此保留。
+  # 注意：它会把 com.android.vending.BILLING 和 Play Billing 的两个
+  # ProxyBillingActivity 合并进清单，所以商店表单的「应用内购买」必须填「是」——
+  # 声明「无内购」而清单里有计费权限，两边对不上会被驳回。
+  in_app_purchase: ^3.3.0
   http_parser: ^4.1.2
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.1
