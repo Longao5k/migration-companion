@@ -61,6 +61,34 @@ cd apps/mobile && fvm flutter build appbundle --release --dart-define=API_BASE_U
 
 ---
 
+### 2.1 本机已验证到哪一步（2026-08-28）
+
+| 检查 | 结果 |
+| --- | --- |
+| `fvm flutter build apk --release` | 成功，70 MB |
+| `fvm flutter build appbundle --release` | **AAB 已生成**（61 MB），但命令以退出码 1 结束，见下 |
+| 合并清单权限 | 只剩 `INTERNET` / `RECEIVE_BOOT_COMPLETED` / `POST_NOTIFICATIONS` / `VIBRATE` |
+| 合并清单是否含计费 | 否 |
+| AAB 调试符号是否已剥离 | 是，`BUNDLE-METADATA/com.android.tools.build.debugsymbols/` 下三种 ABI 齐全 |
+
+**关于那个退出码 1**：报错文本是「Release app bundle failed to strip debug symbols」，
+但真正的原因不是没剥离——AAB 里的 `.sym` 文件是齐的。Flutter 在打完包之后会用
+`apkanalyzer` 再核对一遍，而 `apkanalyzer` 属于 **Android SDK Command-line Tools**，
+这台机器上没装（`fvm flutter doctor` 里的 `cmdline-tools component is missing`），
+核对跑不起来就当成失败了。
+
+修法：Android Studio → Settings → Languages & Frameworks → Android SDK → **SDK Tools**
+页签 → 勾选 **Android SDK Command-line Tools (latest)** → Apply。装完再跑一次，
+命令会正常以 0 退出。装之前生成的那个 AAB 本身是可用的。
+
+顺带把 `flutter doctor --android-licenses` 也跑一遍。
+
+> **签名**：现在 `android/key.properties` 还不存在，所以 release 包回落到了 **debug 签名**。
+> **debug 签名的包 Play 不收**。按下一节生成 keystore 并写好 `key.properties` 之后，
+> 必须**重新打一次包**再上传。
+
+---
+
 ## 3. Data safety 表单（按实际代码填，别猜）
 
 Google 下架的常见原因就是这张表跟实际行为对不上。以下是**核实过的现状**：
@@ -76,10 +104,12 @@ Google 下架的常见原因就是这张表跟实际行为对不上。以下是*
 | 权限 | 来自 | 用途 |
 | --- | --- | --- |
 | `INTERNET` | 我们 | 拉取官方资讯与政策变更 |
-| `ACCESS_NETWORK_STATE` | 依赖 | 网络状态判断 |
 | `RECEIVE_BOOT_COMPLETED` | 我们 | 重启后恢复用户自己设的提醒 |
 | `POST_NOTIFICATIONS` | `flutter_local_notifications` | Android 13+，只在用户主动设提醒时请求 |
 | `VIBRATE` | `flutter_local_notifications` | 提醒震动 |
+
+（合并清单里还有一条 `…DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`，是 Flutter 引擎
+自定义的签名级权限，不面向用户，表单里不用填。）
 
 > `open_filex` 原本会塞进 `READ_EXTERNAL_STORAGE` 和三个 `READ_MEDIA_*`。我们不读媒体库，
 > 已用 `tools:node="remove"` 移除，核对过合并清单确认没了。
