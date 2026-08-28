@@ -64,13 +64,28 @@ export class ContentService {
       .filter((value): value is Date => value !== null)
       .sort((a, b) => b.getTime() - a.getTime())[0];
 
+    // 按辖区分别统计。只给一个「联邦不可用」的列表会说反话：内政部的三个页面
+    // 确实抓不到（边缘 403），但联邦法规（Migration Act / Regulations）一直在监控。
+    // 告诉用户「联邦页面监控不到」，会让人以为法规变动我们也看不见。
+    const jurisdictions = [...new Set(sources.map((source) => source.jurisdiction))]
+      .sort()
+      .map((jurisdiction) => ({
+        jurisdiction,
+        monitoredCount: monitored.filter((source) => source.jurisdiction === jurisdiction)
+          .length,
+        unavailableCount: unavailable.filter(
+          (source) => source.jurisdiction === jurisdiction,
+        ).length,
+      }));
+
     return {
       monitoredCount: monitored.length,
       unavailableCount: unavailable.length,
-      // 让 App 能说清「哪一部分看不到」，而不是笼统地说没有变化。
-      unavailableJurisdictions: [
-        ...new Set(unavailable.map((source) => source.jurisdiction)),
-      ].sort(),
+      jurisdictions,
+      // 保留给旧版本 App：它只认这个字段。新版本读 jurisdictions。
+      unavailableJurisdictions: jurisdictions
+        .filter((entry) => entry.unavailableCount > 0)
+        .map((entry) => entry.jurisdiction),
       unavailableSources: unavailable.map((source) => ({
         name: source.name,
         jurisdiction: source.jurisdiction,

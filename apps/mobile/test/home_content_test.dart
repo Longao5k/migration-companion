@@ -26,7 +26,7 @@ void main() {
         'title': '标题',
         'summary': '摘要',
         'sourceName': '来源',
-        if (raw != null) 'sourceTitle': raw,
+        'sourceTitle': ?raw,
         'sourceUrl': 'https://migration.sa.gov.au/news/x',
         'publishedAt': '2026-07-02T00:00:00.000Z',
         'sourceType': 'official',

@@ -235,50 +235,101 @@ class NewsItem {
 ///
 /// 变更列表为空有两种完全不同的含义：「已在监控，确实没有变化」和「根本没在监控」。
 /// 对移民产品，把后者显示成前者等于告诉用户「政策没变」，因此必须区分。
+/// 一个辖区的监控覆盖情况。
+class JurisdictionCoverage {
+  const JurisdictionCoverage({
+    required this.jurisdiction,
+    required this.monitoredCount,
+    required this.unavailableCount,
+  });
+
+  final String jurisdiction;
+  final int monitoredCount;
+  final int unavailableCount;
+
+  bool get isFullyDown => monitoredCount == 0 && unavailableCount > 0;
+  bool get isPartlyDown => monitoredCount > 0 && unavailableCount > 0;
+
+  String get label => switch (jurisdiction) {
+    'AU-SA' => '南澳',
+    'AU-FED' => '联邦',
+    _ => jurisdiction,
+  };
+
+  Map<String, Object?> toJson() => {
+    'jurisdiction': jurisdiction,
+    'monitoredCount': monitoredCount,
+    'unavailableCount': unavailableCount,
+  };
+
+  factory JurisdictionCoverage.fromJson(Map<String, dynamic> json) =>
+      JurisdictionCoverage(
+        jurisdiction: json['jurisdiction'] as String? ?? '',
+        monitoredCount: json['monitoredCount'] as int? ?? 0,
+        unavailableCount: json['unavailableCount'] as int? ?? 0,
+      );
+}
+
 class MonitoringStatus {
   const MonitoringStatus({
     required this.monitoredCount,
     required this.unavailableCount,
-    required this.unavailableJurisdictions,
+    this.jurisdictions = const [],
     this.lastSuccessAt,
   });
 
   final int monitoredCount;
   final int unavailableCount;
-  final List<String> unavailableJurisdictions;
+  final List<JurisdictionCoverage> jurisdictions;
   final DateTime? lastSuccessAt;
 
   bool get hasGap => unavailableCount > 0;
 
-  /// 把辖区代码写成用户看得懂的说法。
-  String get unavailableLabel => unavailableJurisdictions
-      .map(
-        (code) => switch (code) {
-          'AU-SA' => '南澳',
-          'AU-FED' => '联邦',
-          _ => code,
-        },
-      )
-      .join('、');
+  /// 完全监控不到的辖区。这些才可以说「看不到那部分的变化」。
+  List<JurisdictionCoverage> get fullyDown =>
+      jurisdictions.where((entry) => entry.isFullyDown).toList();
+
+  /// 只有部分页面取不到的辖区。
+  ///
+  /// 联邦就是这种情况：内政部的说明页抓不到，但 Migration Act 和 Migration
+  /// Regulations 一直在监控。笼统地说「联邦监控不到」会让人以为法规变动我们
+  /// 也看不见——那是把话说反了。
+  List<JurisdictionCoverage> get partlyDown =>
+      jurisdictions.where((entry) => entry.isPartlyDown).toList();
+
+  /// 缺口的一句话描述；没有缺口时返回 null。
+  String? get gapSentence {
+    final full = fullyDown.map((entry) => entry.label).toList();
+    final partial = partlyDown.map((entry) => entry.label).toList();
+    final parts = [
+      if (full.isNotEmpty) '${full.join('、')}的页面现在监控不到',
+      if (partial.isNotEmpty) '${partial.join('、')}有部分页面监控不到',
+    ];
+    if (parts.isEmpty) return null;
+    return parts.join('，');
+  }
 
   Map<String, Object?> toJson() => {
     'monitoredCount': monitoredCount,
     'unavailableCount': unavailableCount,
-    'unavailableJurisdictions': unavailableJurisdictions,
+    'jurisdictions': jurisdictions.map((entry) => entry.toJson()).toList(),
     'lastSuccessAt': lastSuccessAt?.toIso8601String(),
   };
 
-  factory MonitoringStatus.fromJson(Map<String, dynamic> json) =>
-      MonitoringStatus(
-        monitoredCount: json['monitoredCount'] as int? ?? 0,
-        unavailableCount: json['unavailableCount'] as int? ?? 0,
-        unavailableJurisdictions:
-            (json['unavailableJurisdictions'] as List<dynamic>? ?? const [])
-                .cast<String>(),
-        lastSuccessAt: json['lastSuccessAt'] == null
-            ? null
-            : DateTime.tryParse(json['lastSuccessAt'] as String),
-      );
+  factory MonitoringStatus.fromJson(Map<String, dynamic> json) {
+    final raw = json['jurisdictions'] as List<dynamic>?;
+    return MonitoringStatus(
+      monitoredCount: json['monitoredCount'] as int? ?? 0,
+      unavailableCount: json['unavailableCount'] as int? ?? 0,
+      jurisdictions: (raw ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(JurisdictionCoverage.fromJson)
+          .toList(),
+      lastSuccessAt: json['lastSuccessAt'] == null
+          ? null
+          : DateTime.tryParse(json['lastSuccessAt'] as String),
+    );
+  }
 }
 
 class PolicyChange {

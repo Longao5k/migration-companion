@@ -236,14 +236,14 @@ class _ChangesEmptyState extends ConsumerWidget {
       );
     }
 
-    if (monitoring!.hasGap) {
+    final gap = monitoring!.gapSentence;
+    if (gap != null) {
       return EmptyState(
         icon: Icons.error_outline,
-        title: '${monitoring!.unavailableLabel}页面暂时监控不到',
+        title: '有一部分页面监控不到',
         body:
-            '我们正在监控 ${monitoring!.monitoredCount} 个官方页面，'
-            '但${monitoring!.unavailableLabel}的页面当前取不到，'
-            '所以这里看不到那部分的变化。请直接查看官方网站。',
+            '正在监控 ${monitoring!.monitoredCount} 个官方页面，$gap，'
+            '这部分的变化请直接去官网看。',
         action: reload,
       );
     }
@@ -281,7 +281,7 @@ class _MonitoringGapNotice extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '${monitoring.unavailableLabel}页面暂时监控不到，下面只包含能监控到的部分。',
+              '${monitoring.gapSentence ?? '有一部分页面监控不到'}，下面只包含能监控到的部分。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

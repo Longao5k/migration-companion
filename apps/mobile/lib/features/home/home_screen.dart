@@ -1319,8 +1319,9 @@ class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
     final cloudProjects = state.projects
         .where((project) => project.isCloudSyncEnabled)
         .toList();
-    if (!state.isSignedIn || cloudProjects.isEmpty)
+    if (!state.isSignedIn || cloudProjects.isEmpty) {
       return const SizedBox.shrink();
+    }
 
     // 云项目集合变了才重新拉，不然每次 build 都会发一轮请求。
     final signature = Object.hashAll(cloudProjects.map((p) => p.id));
