@@ -1642,16 +1642,27 @@ class AppStore extends StateNotifier<AppState> {
         .toList();
     if (cloudProjects.isEmpty || state.accountEmail == null) return null;
 
+    // 并发拉取。串行的话首页首帧要等 N 次往返，用户看着一片空白。
+    final results = await Future.wait(
+      cloudProjects.map((project) async {
+        try {
+          return (project: project, comments: await listComments(project.id));
+        } catch (_) {
+          return (project: project, comments: null);
+        }
+      }),
+    );
+
+    // 全部失败要抛出去，让界面显示「取不到」。静默返回 null 会被读成
+    // 「没有人留言」——又一次把不知道说成没发生。
+    if (results.every((entry) => entry.comments == null)) {
+      throw const FormatException('讨论暂时取不到');
+    }
+
     ProjectDiscussionPreview? newest;
-    for (final project in cloudProjects) {
-      final List<Map<String, dynamic>> comments;
-      try {
-        comments = await listComments(project.id);
-      } catch (_) {
-        // 主界面的一张卡片不值得因为一个项目取不到就整块报错。
-        continue;
-      }
-      if (comments.isEmpty) continue;
+    for (final entry in results) {
+      final comments = entry.comments;
+      if (comments == null || comments.isEmpty) continue;
       final latest = comments.reduce((a, b) {
         final left = DateTime.tryParse(a['createdAt'] as String? ?? '');
         final right = DateTime.tryParse(b['createdAt'] as String? ?? '');
@@ -1661,8 +1672,8 @@ class AppStore extends StateNotifier<AppState> {
       });
       final createdAt = DateTime.tryParse(latest['createdAt'] as String? ?? '');
       final preview = ProjectDiscussionPreview(
-        projectId: project.id,
-        projectName: project.name,
+        projectId: entry.project.id,
+        projectName: entry.project.name,
         body: (latest['body'] as String? ?? '').trim(),
         author:
             (latest['author'] as Map<String, dynamic>?)?['email'] as String? ??
@@ -2062,6 +2073,15 @@ class ProjectDiscussionPreview {
   final String author;
   final DateTime? createdAt;
   final int totalCount;
+
+  /// 首页是最容易被旁人瞥到的一屏，不在那里显示完整邮箱。
+  String get authorLabel {
+    final at = author.indexOf('@');
+    if (at <= 0) return author;
+    final name = author.substring(0, at);
+    if (name.length <= 2) return '$name***';
+    return '${name.substring(0, 2)}***';
+  }
 }
 
 final appStoreProvider = StateNotifierProvider<AppStore, AppState>(

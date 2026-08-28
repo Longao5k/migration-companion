@@ -62,7 +62,11 @@ class ProjectsScreen extends ConsumerWidget {
               itemCount: state.projects.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 14),
               itemBuilder: (context, index) => index == state.projects.length
-                  ? const _LocalStorageNote()
+                  ? _LocalStorageNote(
+                      allLocal: state.projects.every(
+                        (project) => !project.isCloudSyncEnabled,
+                      ),
+                    )
                   : _ProjectCard(project: state.projects[index]),
             ),
     );
@@ -197,7 +201,11 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
               decoration: const InputDecoration(labelText: '申请人'),
             ),
             const SizedBox(height: 12),
-            const Text('这是常见材料清单，请按你收到的邀请函核对。', style: TextStyle(fontSize: 12)),
+            const Text(
+              '这是常见材料清单，请按你收到的邀请函核对。'
+              '我们不是移民代理，这份清单不代表你的个案要求。',
+              style: TextStyle(fontSize: 12),
+            ),
           ],
         ),
         actions: [
@@ -2035,8 +2043,13 @@ class _NextActionLine extends StatelessWidget {
 }
 
 /// 材料存在哪里，说一次就够，而且要说在材料这一页。
+///
+/// 措辞必须跟着实际情况变：只要有一个项目开了云同步，「只存在这台手机上」就是假话，
+/// 而开启云同步时的同意弹窗已经明说清单会同步到服务器——同一页上不能两种说法。
 class _LocalStorageNote extends StatelessWidget {
-  const _LocalStorageNote();
+  const _LocalStorageNote({required this.allLocal});
+
+  final bool allLocal;
 
   @override
   Widget build(BuildContext context) {
@@ -2050,7 +2063,10 @@ class _LocalStorageNote extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '这些材料只存在这台手机上。换手机前记得导出一份加密备份。',
+              allLocal
+                  ? '这些材料只存在这台手机上。换手机前记得导出一份加密备份。'
+                  : '开了云同步的申请，清单会同步到服务器；材料文件始终只在这台手机上。'
+                        '换手机前记得导出一份加密备份。',
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: scheme.onSurfaceVariant),
             ),

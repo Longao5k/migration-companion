@@ -148,7 +148,8 @@ class ProfileScreen extends ConsumerWidget {
             onTap: () => _showInfo(
               context,
               '帮助与支持',
-              '本地开发版本暂未配置公开支持邮箱。正式发布前会替换为运营主体的支持渠道。',
+              '内测期间请直接联系把这个版本发给你的人。'
+                  '正式发布前这里会换成公开的支持邮箱。',
             ),
           ),
         ],

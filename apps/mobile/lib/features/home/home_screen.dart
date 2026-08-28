@@ -191,7 +191,7 @@ class _EditorialHeader extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '${DateFormat('M月d日').format(DateTime.now())} · 只读经过来源核对的变化',
+                '${DateFormat('M月d日').format(DateTime.now())} · 来自官方页面',
                 style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(color: scheme.onSurfaceVariant),
               ),
@@ -566,12 +566,12 @@ class _BriefingMetrics extends StatelessWidget {
           const _MetricIcon(icon: Icons.fact_check_outlined),
           const SizedBox(width: 10),
           Expanded(
-            child: _Metric(label: '已发布解读', value: '$newsCount'),
+            child: _Metric(label: '资讯', value: '$newsCount'),
           ),
           Container(width: 1, height: 32, color: scheme.outlineVariant),
           const SizedBox(width: 16),
           Expanded(
-            child: _Metric(label: '核实变更', value: '$changeCount'),
+            child: _Metric(label: '页面变化', value: '$changeCount'),
           ),
           const SizedBox(width: 4),
           Icon(Icons.trending_up_rounded, color: scheme.primary, size: 20),
@@ -1101,7 +1101,8 @@ class _StorySheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  '内容摘自官方页面。是否适用于你的情况，请以官方原文为准。',
+                  '内容摘自官方页面。是否适用于你的情况，请以官方原文为准——'
+                  '我们不是移民代理，不能替你判断个案。',
                   style: Theme.of(context).textTheme.bodyMedium
                       ?.copyWith(color: scheme.onSurfaceVariant, height: 1.6),
                 ),
@@ -1312,6 +1313,11 @@ class _DiscussionCard extends ConsumerStatefulWidget {
 class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
   Future<ProjectDiscussionPreview?>? _pending;
   int _cloudProjectSignature = -1;
+  DateTime? _lastContentRefresh;
+
+  void _reload() => setState(() {
+    _pending = ref.read(appStoreProvider.notifier).latestDiscussion();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1323,16 +1329,35 @@ class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
       return const SizedBox.shrink();
     }
 
-    // 云项目集合变了才重新拉，不然每次 build 都会发一轮请求。
-    final signature = Object.hashAll(cloudProjects.map((p) => p.id));
+    // 云项目集合或登录账号变了才重新拉，不然每次 build 都会发一轮请求。
+    // 账号必须进签名：登出不会清空 state.projects，而 AppShell 用 IndexedStack
+    // 保活这个 State，只按项目 id 判断的话，换人登录会直接看到上一个人的留言。
+    final signature = Object.hashAll([
+      state.accountEmail,
+      ...cloudProjects.map((project) => project.id),
+    ]);
     if (signature != _cloudProjectSignature) {
       _cloudProjectSignature = signature;
+      _pending = ref.read(appStoreProvider.notifier).latestDiscussion();
+    }
+    // 内容刷新时把讨论也重新拉一次，否则卡片会永远停在第一次拉到的那条留言，
+    // 用户没有任何办法刷新它。
+    if (state.contentUpdatedAt != _lastContentRefresh) {
+      _lastContentRefresh = state.contentUpdatedAt;
       _pending = ref.read(appStoreProvider.notifier).latestDiscussion();
     }
 
     return FutureBuilder<ProjectDiscussionPreview?>(
       future: _pending,
       builder: (context, snapshot) {
+        // 加载中、全部失败、真的没留言——三种情况以前长得一模一样。
+        // 「取不到」显示成「没有留言」是同一类错误：把不知道说成没发生。
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+        if (snapshot.hasError) {
+          return _DiscussionUnavailable(onRetry: _reload);
+        }
         final preview = snapshot.data;
         if (preview == null || preview.body.isEmpty) {
           return const SizedBox.shrink();
@@ -1390,8 +1415,8 @@ class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
                     const SizedBox(height: 8),
                     Text(
                       preview.createdAt == null
-                          ? preview.author
-                          : '${preview.author} · '
+                          ? preview.authorLabel
+                          : '${preview.authorLabel} · '
                                 '${DateFormat('M月d日 HH:mm').format(preview.createdAt!)}',
                       style: Theme.of(context).textTheme.labelSmall
                           ?.copyWith(color: scheme.onSurfaceVariant),
@@ -1403,6 +1428,34 @@ class _DiscussionCardState extends ConsumerState<_DiscussionCard> {
           ),
         );
       },
+    );
+  }
+}
+
+/// 讨论拉不到时的样子。空着会被读成「没有人留言」。
+class _DiscussionUnavailable extends StatelessWidget {
+  const _DiscussionUnavailable({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 12, 12),
+          child: Row(
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 18, color: scheme.outline),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('讨论暂时取不到')),
+              TextButton(onPressed: onRetry, child: const Text('重试')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

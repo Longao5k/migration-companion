@@ -640,7 +640,12 @@ class _CollaborationTab extends ConsumerWidget {
           controller: controller,
           maxLines: 4,
           maxLength: 2000,
-          decoration: const InputDecoration(hintText: '留言…（请勿填写证件号码）'),
+          decoration: const InputDecoration(
+            hintText: '留言…',
+            // helperText 打字时不消失。提的是证件号码、访问码和政府表格答案，
+            // 三样都是写进去就收不回的东西，而这一版讨论还会出现在首页。
+            helperText: '不要写证件号码、访问码或政府表格答案',
+          ),
         ),
         actions: [
           TextButton(

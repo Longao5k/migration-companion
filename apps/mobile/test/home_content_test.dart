@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:migration_companion/core/models/models.dart';
+import 'package:migration_companion/core/state/app_store.dart';
 
 void main() {
   group('官方原标题', () {
@@ -158,11 +159,54 @@ void main() {
       expect(status.hasGap, isFalse);
     });
 
-    test('旧服务端不返回 jurisdictions 时不会崩，只是没有细分', () {
+    test('旧服务端不返回 jurisdictions 时，缺口仍要说出来，只是没有细分', () {
       final status = parse({'monitoredCount': 3, 'unavailableCount': 1});
       expect(status.hasGap, isTrue);
-      expect(status.gapSentence, isNull);
+      // 分不出辖区不等于没有缺口。返回 null 会让界面落到「没有变化」。
+      expect(status.gapSentence, '有一部分官方页面现在监控不到');
       expect(status.pendingReviewCount, 0);
+    });
+  });
+
+  group('监控缺口的兜底', () {
+    test('旧服务端只给计数、不给 jurisdictions 时，仍然说出缺口', () {
+      // 这条路径以前会让 gapSentence 返回 null，界面一路落到
+      // 「这些页面暂时没有变化」——为了修「说反话」而造出一句「说没变化」。
+      final status = MonitoringStatus.fromJson({
+        'monitoredCount': 3,
+        'unavailableCount': 2,
+      });
+      expect(status.hasGap, isTrue);
+      expect(status.gapSentence, isNotNull);
+    });
+
+    test('没有缺口时依然不产生提示', () {
+      final status = MonitoringStatus.fromJson({
+        'monitoredCount': 3,
+        'unavailableCount': 0,
+      });
+      expect(status.gapSentence, isNull);
+    });
+  });
+
+  group('首页讨论卡片', () {
+    ProjectDiscussionPreview preview(String author) => ProjectDiscussionPreview(
+      projectId: 'p1',
+      projectName: '南澳 190',
+      body: '工作证明补齐了',
+      author: author,
+      createdAt: DateTime(2026, 8, 28),
+      totalCount: 3,
+    );
+
+    test('协作者邮箱在首页只显示前两位', () {
+      expect(preview('alice@example.com').authorLabel, 'al***');
+      expect(preview('bo@example.com').authorLabel, 'bo***');
+      expect(preview('a@example.com').authorLabel, 'a***');
+    });
+
+    test('不是邮箱的显示名原样保留', () {
+      expect(preview('成员').authorLabel, '成员');
     });
   });
 }

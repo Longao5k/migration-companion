@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/documents/document_engines.dart';
 import '../../core/state/app_store.dart';
 import '../change_log/change_log_screen.dart';
 import '../home/home_screen.dart';
@@ -26,6 +27,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       await store.ready;
       await store.refreshContent();
       await store.resumeCloudSync();
+      // 交给外部阅读器的副本是完整的申请材料。启动时清一次过期的，
+      // 否则只打开过一次文件的用户会永远留着那份明文拷贝。
+      await pruneStaleWorkingCopies();
     });
   }
 

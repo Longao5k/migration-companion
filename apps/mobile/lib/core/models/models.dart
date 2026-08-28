@@ -305,14 +305,19 @@ class MonitoringStatus {
       jurisdictions.where((entry) => entry.isPartlyDown).toList();
 
   /// 缺口的一句话描述；没有缺口时返回 null。
+  ///
+  /// 只要 [hasGap] 为真就必须返回一句话。旧服务端不下发 `jurisdictions`，
+  /// 如果这里因为分不出辖区就返回 null，界面会一路落到「这些页面暂时没有变化」——
+  /// 为了修「说反话」而引入一条「说没变化」的新路径，比原来的问题更糟。
   String? get gapSentence {
+    if (!hasGap) return null;
     final full = fullyDown.map((entry) => entry.label).toList();
     final partial = partlyDown.map((entry) => entry.label).toList();
     final parts = [
       if (full.isNotEmpty) '${full.join('、')}的页面现在监控不到',
       if (partial.isNotEmpty) '${partial.join('、')}有部分页面监控不到',
     ];
-    if (parts.isEmpty) return null;
+    if (parts.isEmpty) return '有一部分官方页面现在监控不到';
     return parts.join('，');
   }
 

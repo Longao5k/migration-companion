@@ -35,6 +35,9 @@ def excerpt_budget(body_chars: int) -> int:
     return EXCERPT_COMBINED
 
 
+CANDIDATE_CONTEXT = "自动差异候选；必须回到官方页面判断真实含义。"
+
+
 def make_candidate(
     old: str, new: str, source_name: str, body_chars: int = 0
 ) -> ChangeCandidate | None:
@@ -48,8 +51,11 @@ def make_candidate(
         elif line.startswith("+ "):
             added.append(line[2:])
 
+    # 服务端按 old + new + context 合计计算，所以 context 必须先从预算里扣掉。
+    # 不扣的话，长页面上 600 + 600 + len(context) = 1222 会越过 1200 的合计上限，
+    # 真实政策变更会被我们自己的 API 以 400 拒绝——正是这段配额想避免的事。
     # 预算在改前/改后之间平分，各自再受单字段上限约束。
-    budget = excerpt_budget(body_chars)
+    budget = max(0, excerpt_budget(body_chars) - len(CANDIDATE_CONTEXT))
     per_field = min(EXCERPT_PER_FIELD, max(0, budget // 2))
     old_excerpt = "\n".join(removed)[:per_field]
     new_excerpt = "\n".join(added)[:per_field]

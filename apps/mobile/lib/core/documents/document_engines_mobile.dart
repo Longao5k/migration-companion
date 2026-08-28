@@ -124,6 +124,21 @@ Future<File> _createWorkingCopy(String sourcePath, String displayName) async {
   return target;
 }
 
+/// 清理过期工作副本。App 启动时调用一次。
+///
+/// 只在创建下一份副本时清理是不够的：用户打开一次护照扫描件之后再不碰文档工具，
+/// 那份明文拷贝就会一直留在磁盘上。
+Future<void> pruneStaleWorkingCopies() async {
+  try {
+    final root = await getApplicationDocumentsDirectory();
+    await pruneWorkingCopies(
+      Directory(path.join(root.path, 'document-working-copies')),
+    );
+  } on Exception {
+    // 清理失败不该影响启动。
+  }
+}
+
 /// 删除过期的工作副本。此前这个目录只增不减：用户每打开一份材料就永久多留一份
 /// 明文拷贝，删掉原件也删不掉它。
 Future<void> pruneWorkingCopies(Directory workingDirectory) async {

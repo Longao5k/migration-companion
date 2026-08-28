@@ -27,8 +27,14 @@ class ChangeLogScreen extends ConsumerWidget {
       // 在移民产品上等于告诉用户政策没变——必须按真实监控状态分别措辞。
       if (changes.isEmpty)
         _ChangesEmptyState(monitoring: state.monitoring)
-      else if (state.monitoring?.hasGap ?? false)
-        _MonitoringGapNotice(monitoring: state.monitoring!),
+      else ...[
+        if (state.monitoring?.hasGap ?? false)
+          _MonitoringGapNotice(monitoring: state.monitoring!),
+        // 列表非空不代表列表完整：一般变更自动发布，重要变更压在人工核实里。
+        // 只在空列表时提示，等于在最常见的状态下什么都不说。
+        if ((state.monitoring?.pendingReviewCount ?? 0) > 0)
+          _PendingReviewNotice(count: state.monitoring!.pendingReviewCount),
+      ],
       if (changes.isNotEmpty)
         ...changes.map((change) => _ChangeCard(change: change)),
     ];
@@ -54,7 +60,7 @@ class _EvidenceIntro extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Text(
-      '官方页面一改动就记录下来，改前改后都在，你可以自己对照。',
+      '我们盯着这些官方页面。发现改动就把改前改后都留下来，你可以自己对照。',
       style: Theme.of(context).textTheme.bodyLarge
           ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
     ),
@@ -173,7 +179,8 @@ class ChangeDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            '上面是官方页面改动前后的原文摘录。是否影响你的申请，请以官方原文为准。',
+            '上面是官方页面改动前后的原文摘录。是否影响你的申请，请以官方原文为准——'
+            '我们不是移民代理，不能替你判断个案。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -292,6 +299,42 @@ class _MonitoringGapNotice extends StatelessWidget {
           Expanded(
             child: Text(
               '${monitoring.gapSentence ?? '有一部分页面监控不到'}，下面只包含能监控到的部分。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 列表里没有、但已经发现的改动。
+class _PendingReviewNotice extends StatelessWidget {
+  const _PendingReviewNotice({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.hourglass_bottom_outlined,
+            size: 18,
+            color: scheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '另有 $count 条改动我们的编辑还在核对，核对完才会出现在下面。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

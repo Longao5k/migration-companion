@@ -2,6 +2,9 @@ import 'document_engine.dart';
 import 'document_preflight.dart';
 
 PdfDocumentEngine createPdfDocumentEngine() => _BrowserPdfEngine();
+
+/// 网页端不落地文件，没有需要清理的副本。
+Future<void> pruneStaleWorkingCopies() async {}
 DocxDocumentEngine createDocxDocumentEngine() => _MetadataDocxEngine();
 
 class _BrowserPdfEngine implements PdfDocumentEngine {
