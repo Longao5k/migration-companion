@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,5 +175,95 @@ void main() {
     expect(attachment.remoteId, isNull);
     expect(attachment.syncStatus, AttachmentSyncStatus.localOnly);
     expect(attachment.localPath, '/private/local-project/local-attachment');
+  });
+
+  test('预签名直传在 complete 响应丢失后只重试完成步骤', () async {
+    final payload = utf8.encode('%PDF-1.7 resumable');
+    final digest = sha256.convert(payload).toString();
+    const localPath = '/private/local-project/local-attachment';
+    final attachments = RecordingAttachmentStorage()
+      ..paths[localPath] = Uint8List.fromList(payload);
+    var createCount = 0;
+    var putCount = 0;
+    var completeCount = 0;
+    final store = await signedInStore(
+      attachments: attachments,
+      project: cloudProject(
+        attachmentSha256: digest,
+        attachmentLocalPath: localPath,
+        attachmentRemoteId: null,
+        syncStatus: AttachmentSyncStatus.localOnly,
+      ),
+      handler: (request) async {
+        if (request.url.path.endsWith('/projects/remote-project/uploads')) {
+          createCount++;
+          return http.Response(
+            jsonEncode({
+              'uploadId': 'upload-1',
+              'uploadUrl': 'https://storage.invalid/upload-1',
+              'requiredHeaders': {'content-type': 'application/pdf'},
+            }),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.method == 'PUT' && request.url.host == 'storage.invalid') {
+          putCount++;
+          expect(request.headers['authorization'], isNull);
+          expect(request.headers['content-type'], 'application/pdf');
+          return http.Response('', 200);
+        }
+        if (request.url.path.endsWith('/uploads/upload-1/complete')) {
+          completeCount++;
+          if (completeCount == 1) throw http.ClientException('response lost');
+          return http.Response(
+            jsonEncode({
+              'id': 'remote-file',
+              'scanStatus': 'CLEAN',
+              'byteSize': payload.length.toString(),
+            }),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'tier': 'FREE',
+            'cloudStorageBytes': 1024 * 1024 * 1024,
+            'cloudStorageUsedBytes': '0',
+            'cloudStorageReservedBytes': '0',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      },
+    );
+
+    await expectLater(
+      store.uploadAttachment(
+        projectId: 'local-project',
+        itemId: 'local-item',
+        attachmentId: 'local-attachment',
+      ),
+      throwsA(anything),
+    );
+    var attachment =
+        store.state.projects.single.items.single.attachments.single;
+    expect(attachment.uploadSessionId, 'upload-1');
+    expect(attachment.uploadSessionUploaded, isTrue);
+    expect(attachment.syncStatus, AttachmentSyncStatus.failed);
+
+    await store.uploadAttachment(
+      projectId: 'local-project',
+      itemId: 'local-item',
+      attachmentId: 'local-attachment',
+    );
+    attachment = store.state.projects.single.items.single.attachments.single;
+    expect(createCount, 1);
+    expect(putCount, 1);
+    expect(completeCount, 2);
+    expect(attachment.remoteId, 'remote-file');
+    expect(attachment.uploadSessionId, isNull);
+    expect(attachment.syncStatus, AttachmentSyncStatus.available);
   });
 }

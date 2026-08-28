@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,7 +18,8 @@ const run = randomUUID().slice(0, 8);
 const ownerEmail = `e2e-owner-${run}@migration-companion.invalid`;
 const collaboratorEmail = `e2e-collaborator-${run}@migration-companion.invalid`;
 const viewerEmail = `e2e-viewer-${run}@migration-companion.invalid`;
-const testEmails = [ownerEmail, collaboratorEmail, viewerEmail];
+const deletionEmail = `e2e-delete-${run}@migration-companion.invalid`;
+const testEmails = [ownerEmail, collaboratorEmail, viewerEmail, deletionEmail];
 
 const samplePdf = readFileSync(join(__dirname, 'fixtures', 'sample.pdf'));
 const samplePdfSha256 = createHash('sha256').update(samplePdf).digest('hex');
@@ -45,6 +47,7 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
   let firstItemId: string;
   let secondItemId: string;
   let fileId: string;
+  let contentSourceId: string | undefined;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -56,6 +59,16 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
   });
 
   afterAll(async () => {
+    if (prisma) {
+      await prisma.uploadSession.deleteMany({
+        where: { storageKey: { startsWith: `e2e-${run}/` } },
+      });
+      if (contentSourceId) {
+        await prisma.newsItem.deleteMany({ where: { sourceId: contentSourceId } });
+        await prisma.changeLog.deleteMany({ where: { sourceId: contentSourceId } });
+        await prisma.source.deleteMany({ where: { id: contentSourceId } });
+      }
+    }
     if (prisma) await prisma.account.deleteMany({ where: { email: { in: testEmails } } });
     if (app) await app.close();
   });
@@ -552,5 +565,474 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
       .send({ secret, accessCode: 'E2EDOWNLOAD1' })
       .expect(201);
     expect(afterDelete.body.files).toHaveLength(0);
+  });
+
+  it('22. 免费额度会计入未完成上传，超额后仍保留读取通道', async () => {
+    const account = await prisma.account.findUniqueOrThrow({
+      where: { email: ownerEmail },
+      select: { id: true },
+    });
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { trialEndsAt: new Date(Date.now() - 60_000) },
+    });
+    const reservedUpload = await prisma.uploadSession.create({
+      data: {
+        id: randomUUID(),
+        projectId,
+        accountId: account.id,
+        storageKey: `e2e-${run}/reserved-free-quota`,
+        originalName: 'reserved.pdf',
+        contentType: 'application/pdf',
+        byteSize: BigInt(1024 ** 3),
+        sha256: 'a'.repeat(64),
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      },
+    });
+
+    const entitlement = await request(http)
+      .get('/v1/entitlements/me')
+      .set(as(ownerEmail))
+      .expect(200);
+    expect(entitlement.body.tier).toBe('FREE');
+    expect(entitlement.body.cloudStorageReservedBytes).toBe(String(1024 ** 3));
+    expect(entitlement.body.cloudStorageAllocatedBytes).toBe(String(1024 ** 3));
+
+    await request(http)
+      .post(`/v1/projects/${projectId}/uploads`)
+      .set(as(ownerEmail))
+      .send({
+        originalName: 'extra.pdf',
+        contentType: 'application/pdf',
+        byteSize: 1,
+        sha256: 'b'.repeat(64),
+        checklistItemId: firstItemId,
+      })
+      .expect(403)
+      .expect((response) => {
+        expect(response.body.message).toContain('云存储空间不足');
+      });
+
+    // 超额只限制新增上传，不影响用户读取并取回已有项目数据。
+    await request(http).get(`/v1/projects/${projectId}`).set(as(ownerEmail)).expect(200);
+    await prisma.uploadSession.delete({ where: { id: reservedUpload.id } });
+  });
+
+  it('23. Worker 上报证据健康状态，新闻草稿只有明确发布后才进入 App API', async () => {
+    const sourceUrl = `https://migration.sa.gov.au/e2e/${run}`;
+    const checkedAt = new Date().toISOString();
+    const sourceCheck = await request(http)
+      .post('/v1/content/worker/source-checks')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send({
+        sourceUrl,
+        sourceName: `E2E source ${run}`,
+        jurisdiction: 'AU-SA',
+        status: 'SUCCESS',
+        checkedAt,
+        contentHash: 'c'.repeat(64),
+        snapshotKey: `e2e/${run}/snapshot`,
+        httpStatus: 200,
+      })
+      .expect(201);
+    contentSourceId = sourceCheck.body.sourceId;
+
+    const health = await request(http)
+      .get('/v1/content/admin/source-health')
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .expect(200);
+    const sourceHealth = health.body.find(
+      (item: { id: string }) => item.id === contentSourceId,
+    );
+    expect(sourceHealth.snapshots).toHaveLength(1);
+    expect(sourceHealth.lastSuccessAt).toBeTruthy();
+
+    const draft = await request(http)
+      .post('/v1/content/admin/news')
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({
+        sourceId: contentSourceId,
+        titleZh: `E2E 南澳新闻 ${run}`,
+        summaryZh: '仅概述官方事实，并要求用户回到原文核对。',
+        sourceTitle: 'E2E official update',
+        sourceUrl,
+        tags: ['SA', '190'],
+        publishedAt: checkedAt,
+        isPublished: false,
+      })
+      .expect(201);
+
+    const beforePublish = await request(http).get('/v1/content/news').expect(200);
+    expect(beforePublish.body.some((item: { id: string }) => item.id === draft.body.id)).toBe(false);
+
+    await request(http)
+      .patch(`/v1/content/admin/news/${draft.body.id}`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({ isPublished: true })
+      .expect(200);
+    const afterPublish = await request(http).get('/v1/content/news').expect(200);
+    expect(afterPublish.body.some((item: { id: string }) => item.id === draft.body.id)).toBe(true);
+  });
+
+  it('24. 重要变化幂等入队，必须有编辑摘要才能发布，更正保留审计记录', async () => {
+    const candidate = {
+      sourceUrl: `https://migration.sa.gov.au/e2e/${run}`,
+      sourceName: `E2E source ${run}`,
+      titleZh: `E2E 重要变化 ${run}`,
+      oldExcerpt: '旧版本要求。',
+      newExcerpt: '新版本要求。',
+      context: '只描述页面差异，不判断个人影响。',
+      importance: 'IMPORTANT',
+      discoveredAt: new Date().toISOString(),
+      tags: ['SA', '491'],
+    };
+    const first = await request(http)
+      .post('/v1/content/worker/changes')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send(candidate)
+      .expect(201);
+    const retried = await request(http)
+      .post('/v1/content/worker/changes')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send(candidate)
+      .expect(201);
+    expect(retried.body.id).toBe(first.body.id);
+
+    const unpublished = await request(http).get('/v1/content/changes').expect(200);
+    expect(unpublished.body.some((item: { id: string }) => item.id === first.body.id)).toBe(false);
+
+    await request(http)
+      .patch(`/v1/content/admin/changes/${first.body.id}/review`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({ status: 'VERIFIED' })
+      .expect(400);
+    await request(http)
+      .patch(`/v1/content/admin/changes/${first.body.id}/review`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({ status: 'VERIFIED', editorSummaryZh: '官方页面出现已人工核对的重要文字变化。' })
+      .expect(200);
+
+    const published = await request(http).get('/v1/content/changes').expect(200);
+    expect(published.body.some((item: { id: string }) => item.id === first.body.id)).toBe(true);
+
+    await request(http)
+      .patch(`/v1/content/admin/changes/${first.body.id}/review`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({
+        status: 'CORRECTED',
+        editorSummaryZh: '更正后的事实性摘要。',
+        correctionNote: '修正了首次摘要中的日期表述；页面证据未删除。',
+      })
+      .expect(200);
+    const corrections = await request(http)
+      .get('/v1/content/admin/corrections')
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .expect(200);
+    expect(corrections.body.some((item: { id: string }) => item.id === first.body.id)).toBe(true);
+  });
+
+  it('25. 离线操作可按同一 ID 安全重试，旧版本必须由用户处理冲突', async () => {
+    const current = await request(http)
+      .get(`/v1/projects/${projectId}`)
+      .set(as(ownerEmail))
+      .expect(200);
+    const operationId = randomUUID();
+    const operation = {
+      operationId,
+      baseVersion: current.body.version,
+      kind: 'UPDATE_CHECKLIST',
+      clientItemId: 'local-second-item',
+      remoteItemId: secondItemId,
+      status: 'CONFIRMED',
+      note: '本机离线完成，恢复联网后提交。',
+      clearDueAt: true,
+      clearReminderAt: true,
+    };
+
+    const first = await request(http)
+      .post(`/v1/projects/${projectId}/sync-operations`)
+      .set(as(ownerEmail))
+      .send(operation)
+      .expect(201);
+    const retried = await request(http)
+      .post(`/v1/projects/${projectId}/sync-operations`)
+      .set(as(ownerEmail))
+      .send(operation)
+      .expect(201);
+    expect(retried.body).toEqual(first.body);
+
+    const afterRetry = await request(http)
+      .get(`/v1/projects/${projectId}`)
+      .set(as(ownerEmail))
+      .expect(200);
+    expect(afterRetry.body.version).toBe(current.body.version + 1);
+    expect(
+      afterRetry.body.checklist.find((item: { id: string }) => item.id === secondItemId).status,
+    ).toBe('CONFIRMED');
+    expect(await prisma.syncOperation.count({ where: { id: operationId } })).toBe(1);
+
+    await request(http)
+      .post(`/v1/projects/${projectId}/sync-operations`)
+      .set(as(ownerEmail))
+      .send({ ...operation, status: 'SENT' })
+      .expect(409);
+
+    const stale = await request(http)
+      .post(`/v1/projects/${projectId}/sync-operations`)
+      .set(as(ownerEmail))
+      .send({
+        ...operation,
+        operationId: randomUUID(),
+        baseVersion: current.body.version,
+      })
+      .expect(409);
+    const conflict =
+      typeof stale.body.message === 'object' ? stale.body.message : stale.body;
+    expect(conflict.code).toBe('PROJECT_VERSION_CONFLICT');
+    expect(conflict.serverVersion).toBe(afterRetry.body.version);
+  });
+
+  it('26. 预签名直传不经过 API 内存，完成响应丢失时可幂等恢复', async () => {
+    const created = await request(http)
+      .post('/v1/projects')
+      .set(as(ownerEmail))
+      .send({ name: '预签名上传验收', template: 'SA_190', applicantName: '申请人 A' })
+      .expect(201);
+    await request(http)
+      .patch(`/v1/projects/${created.body.id}/cloud-files`)
+      .set(as(ownerEmail))
+      .send({ enabled: true })
+      .expect(200);
+
+    const session = await request(http)
+      .post(`/v1/projects/${created.body.id}/uploads`)
+      .set(as(ownerEmail))
+      .send({
+        originalName: 'presigned-passport.pdf',
+        contentType: 'application/pdf',
+        byteSize: samplePdf.length,
+        sha256: samplePdfSha256,
+        checklistItemId: created.body.checklist[0].id,
+      })
+      .expect(201);
+    const uploaded = await fetch(session.body.uploadUrl, {
+      method: 'PUT',
+      headers: session.body.requiredHeaders,
+      body: samplePdf,
+    });
+    expect(uploaded.status).toBe(200);
+
+    const completed = await request(http)
+      .post(`/v1/uploads/${session.body.uploadId}/complete`)
+      .set(as(ownerEmail))
+      .send({ checklistItemId: created.body.checklist[0].id })
+      .expect(201);
+    expect(completed.body.scanStatus).toBe('CLEAN');
+    expect(completed.body.sha256).toBe(samplePdfSha256);
+
+    const retried = await request(http)
+      .post(`/v1/uploads/${session.body.uploadId}/complete`)
+      .set(as(ownerEmail))
+      .send({ checklistItemId: created.body.checklist[0].id })
+      .expect(201);
+    expect(retried.body.id).toBe(completed.body.id);
+    expect(retried.body.idempotent).toBe(true);
+    expect(
+      await prisma.fileRecord.count({ where: { projectId: created.body.id } }),
+    ).toBe(1);
+
+    await request(http)
+      .delete(`/v1/files/${completed.body.id}`)
+      .set(as(ownerEmail))
+      .expect(200);
+  });
+
+  it('27. 人工核实后按关注规则写入幂等通知 Outbox，锁屏载荷不含政策正文', async () => {
+    await request(http)
+      .patch('/v1/notification-preferences')
+      .set(as(ownerEmail))
+      .send({
+        policyUpdates: true,
+        productUpdates: false,
+        jurisdictions: ['AU-SA'],
+        tags: ['491'],
+        importantOnly: true,
+        timezone: 'Australia/Adelaide',
+      })
+      .expect(200);
+    const candidate = await request(http)
+      .post('/v1/content/worker/changes')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send({
+        sourceUrl: `https://migration.sa.gov.au/e2e/${run}`,
+        sourceName: `E2E source ${run}`,
+        titleZh: `通知验收变化 ${run}`,
+        oldExcerpt: '不应进入锁屏通知的旧正文。',
+        newExcerpt: '不应进入锁屏通知的新正文。',
+        context: '通知只携带内容 ID 和泛化文案。',
+        importance: 'IMPORTANT',
+        discoveredAt: new Date().toISOString(),
+        tags: ['491'],
+      })
+      .expect(201);
+    await request(http)
+      .patch(`/v1/content/admin/changes/${candidate.body.id}/review`)
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({ status: 'VERIFIED', editorSummaryZh: '仅在 App 内打开后展示的编辑摘要。' })
+      .expect(200);
+
+    const claimed = await request(http)
+      .post('/v1/notification-worker/claim')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send({ batchSize: 10 })
+      .expect(201);
+    const task = claimed.body.find(
+      (item: { payload: { route: string } }) =>
+        item.payload.route === `/changes/${candidate.body.id}`,
+    );
+    expect(task).toBeTruthy();
+    const serialised = JSON.stringify(task);
+    expect(serialised).not.toContain('旧正文');
+    expect(serialised).not.toContain('新正文');
+    expect(serialised).not.toContain('编辑摘要');
+
+    await request(http)
+      .post(`/v1/notification-worker/${task.id}/result`)
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send({ status: 'SENT' })
+      .expect(201);
+    const repeated = await request(http)
+      .post(`/v1/notification-worker/${task.id}/result`)
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .send({ status: 'SENT' })
+      .expect(201);
+    expect(repeated.body.idempotent).toBe(true);
+    expect(
+      await prisma.notificationOutbox.count({
+        where: { entityId: candidate.body.id },
+      }),
+    ).toBe(1);
+  });
+
+  it('28. 账号删除有 7 天撤回窗口，到期作业先清对象再保留最小删除证明', async () => {
+    await request(http).get('/v1/auth/me').set(as(deletionEmail)).expect(200);
+    const created = await request(http)
+      .post('/v1/projects')
+      .set(as(deletionEmail))
+      .send({ name: '待删除项目', template: 'SA_190', applicantName: '待删除申请人' })
+      .expect(201);
+    await request(http)
+      .patch(`/v1/projects/${created.body.id}/cloud-files`)
+      .set(as(deletionEmail))
+      .send({ enabled: true })
+      .expect(200);
+    const uploaded = await request(http)
+      .post(`/v1/projects/${created.body.id}/files`)
+      .set(as(deletionEmail))
+      .field('checklistItemId', created.body.checklist[0].id)
+      .attach('file', samplePdf, {
+        filename: 'deletion-proof.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+
+    const requested = await request(http)
+      .delete('/v1/auth/me')
+      .set(as(deletionEmail))
+      .expect(200);
+    expect(new Date(requested.body.scheduledFor).getTime()).toBeGreaterThan(Date.now());
+    await request(http)
+      .post('/v1/auth/me/deletion/cancel')
+      .set(as(deletionEmail))
+      .expect(201);
+    const afterCancel = await request(http)
+      .get('/v1/auth/me')
+      .set(as(deletionEmail))
+      .expect(200);
+    expect(afterCancel.body.deletionRequestedAt).toBeNull();
+
+    await request(http).delete('/v1/auth/me').set(as(deletionEmail)).expect(200);
+    const deletionAccount = await prisma.account.findUniqueOrThrow({
+      where: { email: deletionEmail },
+      select: { id: true },
+    });
+    await prisma.account.update({
+      where: { id: deletionAccount.id },
+      data: { deletionRequestedAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) },
+    });
+    const worker = await request(http)
+      .post('/v1/account-worker/run-due-deletions')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .expect(201);
+    expect(worker.body.deleted).toBe(1);
+    expect(worker.body.failed).toBe(0);
+    expect(await prisma.account.count({ where: { id: deletionAccount.id } })).toBe(0);
+    expect(await prisma.project.count({ where: { id: created.body.id } })).toBe(0);
+    expect(await prisma.fileRecord.count({ where: { id: uploaded.body.id } })).toBe(0);
+    const ledger = await prisma.accountDeletionLedger.findFirst({
+      orderBy: { deletedAt: 'desc' },
+    });
+    expect(ledger?.accountHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(ledger?.objectCount).toBeGreaterThanOrEqual(1);
+    await prisma.accountDeletionLedger.delete({
+      where: { id: ledger!.id },
+    });
+  });
+
+  it('29. 过期未完成上传会清除隔离对象和会话', async () => {
+    const created = await request(http)
+      .post('/v1/projects')
+      .set(as(ownerEmail))
+      .send({ name: '过期上传清理', template: 'SA_491', applicantName: '申请人 A' })
+      .expect(201);
+    await request(http)
+      .patch(`/v1/projects/${created.body.id}/cloud-files`)
+      .set(as(ownerEmail))
+      .send({ enabled: true })
+      .expect(200);
+    const upload = await request(http)
+      .post(`/v1/projects/${created.body.id}/uploads`)
+      .set(as(ownerEmail))
+      .send({
+        originalName: 'abandoned.pdf',
+        contentType: 'application/pdf',
+        byteSize: samplePdf.length,
+        sha256: samplePdfSha256,
+        checklistItemId: created.body.checklist[0].id,
+      })
+      .expect(201);
+    const uploaded = await fetch(upload.body.uploadUrl, {
+      method: 'PUT',
+      headers: upload.body.requiredHeaders,
+      body: samplePdf,
+    });
+    expect(uploaded.status).toBe(200);
+    const session = await prisma.uploadSession.update({
+      where: { id: upload.body.uploadId },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+      select: { id: true, storageKey: true },
+    });
+
+    const cleanup = await request(http)
+      .post('/v1/file-worker/cleanup-expired-uploads')
+      .set('x-worker-key', process.env.WORKER_API_KEY as string)
+      .expect(201);
+    expect(cleanup.body.deleted).toBeGreaterThanOrEqual(1);
+    expect(await prisma.uploadSession.count({ where: { id: session.id } })).toBe(0);
+
+    const s3 = new S3Client({
+      region: process.env.S3_REGION,
+      endpoint: process.env.S3_ENDPOINT,
+      forcePathStyle: true,
+    });
+    await expect(
+      s3.send(
+        new HeadObjectCommand({
+          Bucket: process.env.S3_USER_BUCKET,
+          Key: session.storageKey,
+        }),
+      ),
+    ).rejects.toBeTruthy();
+    s3.destroy();
   });
 });

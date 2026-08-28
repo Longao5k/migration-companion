@@ -1,7 +1,19 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { CollaboratorRole, ProjectTemplate } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { CollaboratorRole, Prisma, ProjectTemplate } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
-import { CreateChecklistItemDto, CreateProjectDto, UpdateChecklistDto } from './projects.dto';
+import {
+  CreateChecklistItemDto,
+  CreateProjectDto,
+  SyncOperationDto,
+  UpdateChecklistDto,
+} from './projects.dto';
 
 const SA_SOURCE_URL = 'https://migration.sa.gov.au/how-to-apply/documents-required';
 
@@ -95,7 +107,8 @@ export class ProjectsService {
   }
 
   async get(accountId: string, projectId: string) {
-    await this.assertReadable(accountId, projectId);
+    const currentRole = await this.membership(accountId, projectId);
+    if (!currentRole) throw new ForbiddenException('无权查看项目');
     const project = await this.prisma.project.findUniqueOrThrow({
       where: { id: projectId },
       include: {
@@ -127,8 +140,123 @@ export class ProjectsService {
     // The storage key never leaves the server: it is an internal locator, not an authorisation.
     return {
       ...project,
+      currentRole,
       files: project.files.map((file) => ({ ...file, byteSize: file.byteSize.toString() })),
     };
+  }
+
+  async applySyncOperation(accountId: string, projectId: string, dto: SyncOperationDto) {
+    await this.assertWritable(accountId, projectId);
+    this.validateSyncOperation(dto);
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify(dto))
+      .digest('hex');
+    const existing = await this.prisma.syncOperation.findUnique({ where: { id: dto.operationId } });
+    if (existing) {
+      if (
+        existing.accountId !== accountId ||
+        existing.projectId !== projectId ||
+        existing.payloadHash !== payloadHash
+      ) {
+        throw new ConflictException('同步操作 ID 已被其他内容使用');
+      }
+      return existing.result;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { version: true, applicantName: true },
+      });
+      if (!current) throw new NotFoundException('未找到项目');
+      if (current.version !== dto.baseVersion) {
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          message: '项目已有新版本，请先比较差异',
+          serverVersion: current.version,
+        });
+      }
+
+      const changed = await tx.project.updateMany({
+        where: { id: projectId, version: dto.baseVersion },
+        data: { version: { increment: 1 } },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('项目已有新版本，请先比较差异');
+      }
+
+      let itemResult: Record<string, unknown> | undefined;
+      if (dto.kind === 'ADD_CHECKLIST') {
+        const last = await tx.checklistItem.aggregate({
+          where: { projectId },
+          _max: { position: true },
+        });
+        const item = await tx.checklistItem.create({
+          data: {
+            projectId,
+            title: dto.title!,
+            category: dto.category!,
+            person: current.applicantName,
+            position: (last._max.position ?? -1) + 1,
+          },
+        });
+        itemResult = {
+          id: item.id,
+          clientItemId: dto.clientItemId,
+          title: item.title,
+          category: item.category,
+          status: item.status,
+        };
+      } else {
+        const item = await tx.checklistItem.updateMany({
+          where: { id: dto.remoteItemId!, projectId },
+          data: {
+            status: dto.status!,
+            note: dto.note ?? '',
+            ...(dto.clearDueAt
+              ? { dueAt: null }
+              : dto.dueAt !== undefined
+                ? { dueAt: new Date(dto.dueAt) }
+                : {}),
+            ...(dto.clearReminderAt
+              ? { reminderAt: null }
+              : dto.reminderAt !== undefined
+                ? { reminderAt: new Date(dto.reminderAt) }
+                : {}),
+          },
+        });
+        if (item.count !== 1) throw new NotFoundException('未找到材料项');
+      }
+
+      const result: Prisma.InputJsonObject = {
+        operationId: dto.operationId,
+        projectVersion: dto.baseVersion + 1,
+        ...(itemResult ? { item: itemResult as Prisma.InputJsonObject } : {}),
+      };
+      await tx.auditEvent.create({
+        data: {
+          accountId,
+          projectId,
+          action:
+            dto.kind === 'ADD_CHECKLIST'
+              ? 'sync.checklist_created'
+              : 'sync.checklist_updated',
+          targetType: 'checklist_item',
+          targetId: dto.remoteItemId,
+          safeMetadata: { operationKind: dto.kind },
+        },
+      });
+      await tx.syncOperation.create({
+        data: {
+          id: dto.operationId,
+          projectId,
+          accountId,
+          payloadHash,
+          result,
+        },
+      });
+      return result;
+    });
   }
 
   async updateChecklist(
@@ -284,6 +412,15 @@ export class ProjectsService {
   private async assertOwner(accountId: string, projectId: string) {
     if ((await this.membership(accountId, projectId)) !== CollaboratorRole.OWNER) {
       throw new ForbiddenException('只有所有者可以执行此操作');
+    }
+  }
+
+  private validateSyncOperation(dto: SyncOperationDto) {
+    if (dto.kind === 'ADD_CHECKLIST' && (!dto.title?.trim() || !dto.category?.trim())) {
+      throw new BadRequestException('新增材料项缺少标题或分类');
+    }
+    if (dto.kind === 'UPDATE_CHECKLIST' && (!dto.remoteItemId || !dto.status)) {
+      throw new BadRequestException('更新材料项缺少远端 ID 或状态');
     }
   }
 }

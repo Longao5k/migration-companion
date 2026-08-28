@@ -19,6 +19,13 @@ import { ProjectsController } from './projects/projects.controller';
 import { ProjectsService } from './projects/projects.service';
 import { SharesController } from './shares/shares.controller';
 import { SharesService } from './shares/shares.service';
+import { AccountDeletionService } from './account-deletion/account-deletion.service';
+import { AccountDeletionWorkerController } from './account-deletion/account-deletion.controller';
+import {
+  NotificationPreferencesController,
+  NotificationWorkerController,
+} from './notifications/notifications.controller';
+import { NotificationsService } from './notifications/notifications.service';
 
 @Module({
   imports: [],
@@ -33,6 +40,9 @@ import { SharesService } from './shares/shares.service';
     CollaborationController,
     EntitlementsController,
     StoreEventsController,
+    AccountDeletionWorkerController,
+    NotificationPreferencesController,
+    NotificationWorkerController,
   ],
   providers: [
     PrismaService,
@@ -45,6 +55,8 @@ import { SharesService } from './shares/shares.service';
     FilesService,
     CollaborationService,
     EntitlementsService,
+    AccountDeletionService,
+    NotificationsService,
   ],
 })
 export class AppModule {}

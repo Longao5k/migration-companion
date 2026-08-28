@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -73,12 +75,20 @@ class _RemoteSection<T> extends StatefulWidget {
     required this.load,
     required this.builder,
     this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 32),
+    this.pollWhile,
+    this.pollInterval = const Duration(seconds: 3),
   });
 
   final Future<T> Function() load;
-  final Widget Function(BuildContext context, T data, Future<void> Function() reload)
+  final Widget Function(
+    BuildContext context,
+    T data,
+    Future<void> Function() reload,
+  )
   builder;
   final EdgeInsets padding;
+  final bool Function(T data)? pollWhile;
+  final Duration pollInterval;
 
   @override
   State<_RemoteSection<T>> createState() => _RemoteSectionState<T>();
@@ -86,15 +96,35 @@ class _RemoteSection<T> extends StatefulWidget {
 
 class _RemoteSectionState<T> extends State<_RemoteSection<T>> {
   late Future<T> _future;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.load();
+    _future = _loadAndSchedule();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<T> _loadAndSchedule() async {
+    final data = await widget.load();
+    _pollTimer?.cancel();
+    if (mounted && (widget.pollWhile?.call(data) ?? false)) {
+      _pollTimer = Timer(widget.pollInterval, () {
+        if (!mounted) return;
+        setState(() => _future = _loadAndSchedule());
+      });
+    }
+    return data;
   }
 
   Future<void> _reload() async {
-    final next = widget.load();
+    _pollTimer?.cancel();
+    final next = _loadAndSchedule();
     setState(() => _future = next);
     // 刷新失败由 FutureBuilder 呈现为可重试的失败状态，不再抛回调用方，
     // 否则“操作已成功但刷新失败”会被错误地报成操作失败。
@@ -123,7 +153,7 @@ class _RemoteSectionState<T> extends State<_RemoteSection<T>> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton.tonal(
-                  onPressed: () => setState(() => _future = widget.load()),
+                  onPressed: () => setState(() => _future = _loadAndSchedule()),
                   child: const Text('重试'),
                 ),
               ],
@@ -131,7 +161,7 @@ class _RemoteSectionState<T> extends State<_RemoteSection<T>> {
           );
         }
         return RefreshIndicator(
-          onRefresh: () async => setState(() => _future = widget.load()),
+          onRefresh: () async => setState(() => _future = _loadAndSchedule()),
           child: ListView(
             padding: widget.padding,
             children: [widget.builder(context, snapshot.data as T, _reload)],
@@ -154,6 +184,9 @@ class _CloudFilesTab extends ConsumerWidget {
     final store = ref.read(appStoreProvider.notifier);
     return _RemoteSection<List<Map<String, dynamic>>>(
       load: () => store.refreshCloudFileStatuses(project.id),
+      pollWhile: (files) => files.any(
+        (file) => (file['scanStatus'] as String? ?? 'PENDING') == 'PENDING',
+      ),
       builder: (context, files, reload) {
         if (files.isEmpty) {
           return const EmptyState(
@@ -241,9 +274,8 @@ class _CloudFileTile extends ConsumerWidget {
                   scanStatus == 'REJECTED'
                       ? '安全扫描拒绝了这个文件，云端副本不可用。本机原件未受影响。'
                       : '安全扫描未完成。可以稍后刷新，或删除云副本后重新上传。',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             Row(
@@ -279,10 +311,11 @@ class _CloudFileTile extends ConsumerWidget {
     try {
       await ref
           .read(appStoreProvider.notifier)
-          .downloadCloudFile(projectId: project.id, fileId: file['id'] as String);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('已下载到 App 私有目录')),
-      );
+          .downloadCloudFile(
+            projectId: project.id,
+            fileId: file['id'] as String,
+          );
+      messenger.showSnackBar(const SnackBar(content: Text('已下载到 App 私有目录')));
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text('下载失败：$error')));
     }
@@ -359,11 +392,8 @@ class _SharesTab extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             ...shares.map(
-              (share) => _ShareTile(
-                project: project,
-                share: share,
-                onChanged: reload,
-              ),
+              (share) =>
+                  _ShareTile(project: project, share: share, onChanged: reload),
             ),
           ],
         );
@@ -388,7 +418,8 @@ class _ShareTile extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final status = share['status'] as String? ?? 'ACTIVE';
     final scope = share['scope'] as Map<String, dynamic>? ?? const {};
-    final itemCount = (scope['checklistItemIds'] as List<dynamic>? ?? const []).length;
+    final itemCount =
+        (scope['checklistItemIds'] as List<dynamic>? ?? const []).length;
     final fileCount = (scope['fileIds'] as List<dynamic>? ?? const []).length;
     final lastAccessedAt = share['lastAccessedAt'] as String?;
     return Card(
@@ -440,7 +471,9 @@ class _ShareTile extends ConsumerWidget {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: status == 'ACTIVE' ? () => _revoke(context, ref) : null,
+                onPressed: status == 'ACTIVE'
+                    ? () => _revoke(context, ref)
+                    : null,
                 icon: const Icon(Icons.block_outlined, size: 18),
                 label: const Text('立即撤销'),
               ),
@@ -456,9 +489,7 @@ class _ShareTile extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('立即撤销这个入口？'),
-        content: const Text(
-          '撤销后，持有链接和访问码的人无法再访问。已经下载或截屏的副本无法收回。',
-        ),
+        content: const Text('撤销后，持有链接和访问码的人无法再访问。已经下载或截屏的副本无法收回。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -600,9 +631,7 @@ class _CollaborationTab extends ConsumerWidget {
           controller: controller,
           maxLines: 4,
           maxLength: 2000,
-          decoration: const InputDecoration(
-            hintText: '例如：工作证明已经补齐第二页',
-          ),
+          decoration: const InputDecoration(hintText: '例如：工作证明已经补齐第二页'),
         ),
         actions: [
           TextButton(
@@ -658,7 +687,8 @@ class _MemberTile extends ConsumerWidget {
     final role = member['role'] as String? ?? 'VIEWER';
     final accountId = member['accountId'] as String;
     final email =
-        (member['account'] as Map<String, dynamic>?)?['email'] as String? ?? '成员';
+        (member['account'] as Map<String, dynamic>?)?['email'] as String? ??
+        '成员';
     final accepted = member['acceptedAt'] != null;
     final isOwner = role == 'OWNER';
     return Card(
@@ -847,4 +877,3 @@ String _formatDateTime(String? iso) {
   if (parsed == null) return '未知';
   return DateFormat('yyyy年M月d日 HH:mm').format(parsed.toLocal());
 }
-

@@ -24,7 +24,16 @@ class AppState {
     this.trialEndsAt,
     this.cloudStorageBytes = 1024 * 1024 * 1024,
     this.cloudStorageUsedBytes = 0,
+    this.cloudStorageReservedBytes = 0,
     this.noticeDismissed = false,
+    this.isContentRefreshing = false,
+    this.contentError,
+    this.contentUpdatedAt,
+    this.deletionRequestedAt,
+    this.policyNotificationsEnabled = false,
+    this.followedJurisdictions = const ['AU-SA'],
+    this.followedTags = const [],
+    this.importantNotificationsOnly = true,
   });
 
   final List<NewsItem> news;
@@ -37,7 +46,26 @@ class AppState {
   final DateTime? trialEndsAt;
   final int cloudStorageBytes;
   final int cloudStorageUsedBytes;
+  final int cloudStorageReservedBytes;
   final bool noticeDismissed;
+  final bool isContentRefreshing;
+  final String? contentError;
+  final DateTime? contentUpdatedAt;
+  final DateTime? deletionRequestedAt;
+  final bool policyNotificationsEnabled;
+  final List<String> followedJurisdictions;
+  final List<String> followedTags;
+  final bool importantNotificationsOnly;
+
+  int get cloudStorageAllocatedBytes =>
+      cloudStorageUsedBytes + cloudStorageReservedBytes;
+
+  bool get isCloudStorageOverLimit =>
+      cloudStorageAllocatedBytes >= cloudStorageBytes;
+
+  int get cloudStorageRemainingBytes => isCloudStorageOverLimit
+      ? 0
+      : cloudStorageBytes - cloudStorageAllocatedBytes;
 
   AppState copyWith({
     List<NewsItem>? news,
@@ -52,7 +80,19 @@ class AppState {
     bool clearTrialEndsAt = false,
     int? cloudStorageBytes,
     int? cloudStorageUsedBytes,
+    int? cloudStorageReservedBytes,
     bool? noticeDismissed,
+    bool? isContentRefreshing,
+    String? contentError,
+    bool clearContentError = false,
+    DateTime? contentUpdatedAt,
+    bool clearContentUpdatedAt = false,
+    DateTime? deletionRequestedAt,
+    bool clearDeletionRequestedAt = false,
+    bool? policyNotificationsEnabled,
+    List<String>? followedJurisdictions,
+    List<String>? followedTags,
+    bool? importantNotificationsOnly,
   }) => AppState(
     news: news ?? this.news,
     changes: changes ?? this.changes,
@@ -64,7 +104,23 @@ class AppState {
     trialEndsAt: clearTrialEndsAt ? null : trialEndsAt ?? this.trialEndsAt,
     cloudStorageBytes: cloudStorageBytes ?? this.cloudStorageBytes,
     cloudStorageUsedBytes: cloudStorageUsedBytes ?? this.cloudStorageUsedBytes,
+    cloudStorageReservedBytes:
+        cloudStorageReservedBytes ?? this.cloudStorageReservedBytes,
     noticeDismissed: noticeDismissed ?? this.noticeDismissed,
+    isContentRefreshing: isContentRefreshing ?? this.isContentRefreshing,
+    contentError: clearContentError ? null : contentError ?? this.contentError,
+    contentUpdatedAt: clearContentUpdatedAt
+        ? null
+        : contentUpdatedAt ?? this.contentUpdatedAt,
+    deletionRequestedAt: clearDeletionRequestedAt
+        ? null
+        : deletionRequestedAt ?? this.deletionRequestedAt,
+    policyNotificationsEnabled:
+        policyNotificationsEnabled ?? this.policyNotificationsEnabled,
+    followedJurisdictions: followedJurisdictions ?? this.followedJurisdictions,
+    followedTags: followedTags ?? this.followedTags,
+    importantNotificationsOnly:
+        importantNotificationsOnly ?? this.importantNotificationsOnly,
   );
 }
 
@@ -88,46 +144,106 @@ class AppStore extends StateNotifier<AppState> {
            isHydrated: false,
          ),
        ) {
-    _hydrate();
+    ready = _hydrate();
   }
 
   static const _projectsKey = 'migration_companion.projects.v1';
   static const _accountEmailKey = 'migration_companion.account_email.v1';
   static const _noticeKey = 'migration_companion.notice_dismissed.v1';
   static const _bookmarksKey = 'migration_companion.bookmarks.v1';
+  static const _contentCacheKey = 'migration_companion.content_cache.v1';
+  static const _pendingSyncKey = 'migration_companion.pending_sync.v1';
   final _uuid = const Uuid();
+  final List<PendingSyncOperation> _pendingSyncOperations = [];
   final LocalRepository _repository;
   final AttachmentStorage _attachmentStorage;
   final NotificationService _notificationService;
 
+  /// 完成本机状态恢复。测试和启动期流程可等待它，避免和异步 hydrate 竞争。
+  late final Future<void> ready;
+
   /// 所有服务端调用都经过这个工厂，测试可以注入带 mock 传输层的客户端。
   final ApiClient Function(String accountEmail) _apiClientFactory;
 
+  List<PendingSyncOperation> get pendingSyncOperations =>
+      List.unmodifiable(_pendingSyncOperations);
+
   Future<void> _hydrate() async {
     final raw = await _repository.read(_projectsKey);
-    final projects = raw == null
+    var projects = raw == null
         ? <VisaProject>[]
         : (jsonDecode(raw) as List<dynamic>)
               .map((item) => VisaProject.fromJson(item as Map<String, dynamic>))
               .toList();
+    final pendingRaw = await _repository.read(_pendingSyncKey);
+    if (pendingRaw != null) {
+      try {
+        _pendingSyncOperations
+          ..clear()
+          ..addAll(
+            (jsonDecode(pendingRaw) as List<dynamic>).map(
+              (item) =>
+                  PendingSyncOperation.fromJson(item as Map<String, dynamic>),
+            ),
+          );
+      } catch (_) {
+        _pendingSyncOperations.clear();
+      }
+    }
+    projects = projects.map((project) {
+      final pendingCount = _pendingSyncOperations
+          .where((operation) => operation.projectId == project.id)
+          .length;
+      if (pendingCount == 0) return project;
+      return project.copyWith(
+        pendingSyncCount: pendingCount,
+        syncStatus: project.syncStatus == ProjectSyncStatus.conflict
+            ? ProjectSyncStatus.conflict
+            : ProjectSyncStatus.pending,
+      );
+    }).toList();
     final accountEmail = await _repository.read(_accountEmailKey);
     final bookmarksRaw = await _repository.read(_bookmarksKey);
     final bookmarks = bookmarksRaw == null
         ? <String>{}
         : (jsonDecode(bookmarksRaw) as List<dynamic>).cast<String>().toSet();
+    final cachedContentRaw = await _repository.read(_contentCacheKey);
+    var hydratedNews = state.news;
+    var hydratedChanges = state.changes;
+    DateTime? contentUpdatedAt;
+    if (cachedContentRaw != null) {
+      try {
+        final cached = jsonDecode(cachedContentRaw) as Map<String, dynamic>;
+        hydratedNews = (cached['news'] as List<dynamic>? ?? const [])
+            .map((item) => NewsItem.fromJson(item as Map<String, dynamic>))
+            .toList();
+        hydratedChanges = (cached['changes'] as List<dynamic>? ?? const [])
+            .map((item) => PolicyChange.fromJson(item as Map<String, dynamic>))
+            .toList();
+        contentUpdatedAt = DateTime.tryParse(
+          cached['updatedAt']?.toString() ?? '',
+        );
+      } catch (_) {
+        // 损坏的内容缓存不会阻塞本机项目；下一次联网刷新会覆盖它。
+      }
+    }
     state = state.copyWith(
-      news: state.news
+      news: hydratedNews
           .map((item) => item.copyWith(bookmarked: bookmarks.contains(item.id)))
           .toList(),
+      changes: hydratedChanges,
       projects: projects,
       isSignedIn: accountEmail != null,
       accountEmail: accountEmail,
       noticeDismissed: await _repository.read(_noticeKey) == 'true',
+      contentUpdatedAt: contentUpdatedAt,
       isHydrated: true,
     );
     if (accountEmail != null) {
       try {
+        await refreshAccount();
         await refreshEntitlements();
+        await refreshNotificationPreferences();
       } catch (_) {
         // Offline use remains available. The profile screen can retry explicitly.
       }
@@ -138,6 +254,474 @@ class AppStore extends StateNotifier<AppState> {
     await _repository.write(
       _projectsKey,
       jsonEncode(state.projects.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  Future<void> _persistSyncQueue() async {
+    await _repository.write(
+      _pendingSyncKey,
+      jsonEncode(
+        _pendingSyncOperations.map((operation) => operation.toJson()).toList(),
+      ),
+    );
+  }
+
+  Future<void> _enqueueChecklistUpdate({
+    required String projectId,
+    required String itemId,
+    required ChecklistStatus status,
+    required String note,
+    required DateTime? dueAt,
+    required DateTime? reminderAt,
+  }) => _enqueueSyncOperation(
+    PendingSyncOperation(
+      id: _uuid.v4(),
+      projectId: projectId,
+      itemId: itemId,
+      kind: SyncOperationKind.updateChecklist,
+      createdAt: DateTime.now(),
+      status: status,
+      note: note,
+      dueAt: dueAt,
+      reminderAt: reminderAt,
+    ),
+  );
+
+  Future<void> _enqueueSyncOperation(PendingSyncOperation operation) async {
+    _pendingSyncOperations.add(operation);
+    final pendingCount = _pendingSyncOperations
+        .where((candidate) => candidate.projectId == operation.projectId)
+        .length;
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != operation.projectId) return project;
+        return project.copyWith(
+          syncStatus: ProjectSyncStatus.pending,
+          pendingSyncCount: pendingCount,
+          syncMessage: '有 $pendingCount 项本机修改等待同步',
+        );
+      }).toList(),
+    );
+    await Future.wait([_persistProjects(), _persistSyncQueue()]);
+  }
+
+  Future<void> _tryFlushProject(String projectId) async {
+    final email = state.accountEmail;
+    if (email == null) return;
+    var project = state.projects.firstWhere(
+      (candidate) => candidate.id == projectId,
+    );
+    if (!project.isCloudSyncEnabled || project.remoteId == null) return;
+    if (project.syncStatus == ProjectSyncStatus.conflict) return;
+    final api = _apiClientFactory(email);
+
+    while (true) {
+      final operation = _pendingSyncOperations
+          .where((candidate) => candidate.projectId == projectId)
+          .firstOrNull;
+      if (operation == null) break;
+      project = state.projects.firstWhere(
+        (candidate) => candidate.id == projectId,
+      );
+      final item = project.items
+          .where((candidate) => candidate.id == operation.itemId)
+          .firstOrNull;
+      if (item == null) {
+        await _setProjectSyncState(
+          projectId,
+          ProjectSyncStatus.error,
+          '待同步的材料项已不存在，请选择使用云端版本或重新创建。',
+        );
+        return;
+      }
+      if (operation.kind == SyncOperationKind.updateChecklist &&
+          item.remoteId == null) {
+        await _setProjectSyncState(
+          projectId,
+          ProjectSyncStatus.error,
+          '材料项尚未建立云端映射，无法继续同步。',
+        );
+        return;
+      }
+
+      try {
+        final response = await api.post(
+          '/projects/${project.remoteId}/sync-operations',
+          {
+            'operationId': operation.id,
+            'baseVersion': project.cloudVersion,
+            'kind': operation.kind == SyncOperationKind.addChecklist
+                ? 'ADD_CHECKLIST'
+                : 'UPDATE_CHECKLIST',
+            'clientItemId': operation.itemId,
+            if (operation.kind == SyncOperationKind.addChecklist) ...{
+              'title': operation.title,
+              'category': operation.category,
+            } else ...{
+              'remoteItemId': item.remoteId,
+              'status': _serverChecklistStatus(operation.status!),
+              'note': operation.note ?? '',
+              if (operation.dueAt != null)
+                'dueAt': operation.dueAt!.toUtc().toIso8601String()
+              else
+                'clearDueAt': true,
+              if (operation.reminderAt != null)
+                'reminderAt': operation.reminderAt!.toUtc().toIso8601String()
+              else
+                'clearReminderAt': true,
+            },
+          },
+        );
+        final remoteItem = response['item'] as Map<String, dynamic>?;
+        _pendingSyncOperations.removeWhere(
+          (candidate) => candidate.id == operation.id,
+        );
+        final remaining = _pendingSyncOperations
+            .where((candidate) => candidate.projectId == projectId)
+            .length;
+        state = state.copyWith(
+          projects: state.projects.map((candidate) {
+            if (candidate.id != projectId) return candidate;
+            return candidate.copyWith(
+              items: remoteItem == null
+                  ? candidate.items
+                  : candidate.items
+                        .map(
+                          (candidateItem) =>
+                              candidateItem.id == operation.itemId
+                              ? candidateItem.copyWith(
+                                  remoteId: remoteItem['id'] as String,
+                                )
+                              : candidateItem,
+                        )
+                        .toList(),
+              cloudVersion: response['projectVersion'] as int,
+              syncStatus: remaining == 0
+                  ? ProjectSyncStatus.synced
+                  : ProjectSyncStatus.pending,
+              pendingSyncCount: remaining,
+              syncMessage: remaining == 0 ? null : '还有 $remaining 项本机修改等待同步',
+              clearSyncMessage: remaining == 0,
+              lastSyncedAt: DateTime.now(),
+            );
+          }).toList(),
+        );
+        await Future.wait([_persistProjects(), _persistSyncQueue()]);
+      } on ApiException catch (error) {
+        if (error.statusCode == 409) {
+          final rawMessage = error.details?['message'];
+          final serverVersion =
+              (rawMessage is Map<String, dynamic>
+                  ? rawMessage['serverVersion']
+                  : null) ??
+              error.details?['serverVersion'];
+          await _setProjectSyncState(
+            projectId,
+            ProjectSyncStatus.conflict,
+            serverVersion == null
+                ? '云端已有其他修改，请比较差异后选择处理方式。'
+                : '云端已更新到版本 $serverVersion，请比较差异后选择处理方式。',
+          );
+        } else if (error.statusCode == 0 || error.statusCode >= 500) {
+          await _setProjectSyncState(
+            projectId,
+            ProjectSyncStatus.pending,
+            '当前离线或服务暂不可用，本机修改已安全排队。',
+          );
+        } else {
+          await _setProjectSyncState(
+            projectId,
+            ProjectSyncStatus.error,
+            '同步被服务端拒绝：${error.message}',
+          );
+        }
+        return;
+      }
+    }
+  }
+
+  Future<void> _setProjectSyncState(
+    String projectId,
+    ProjectSyncStatus status,
+    String message,
+  ) async {
+    final pendingCount = _pendingSyncOperations
+        .where((operation) => operation.projectId == projectId)
+        .length;
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != projectId) return project;
+        return project.copyWith(
+          syncStatus: status,
+          pendingSyncCount: pendingCount,
+          syncMessage: message,
+        );
+      }).toList(),
+    );
+    await Future.wait([_persistProjects(), _persistSyncQueue()]);
+  }
+
+  Future<void> syncProject(String projectId) async {
+    final project = _requireCloudProject(projectId);
+    if (project.syncStatus == ProjectSyncStatus.conflict) {
+      throw const FormatException('请先查看并处理版本冲突');
+    }
+    await _tryFlushProject(projectId);
+    final refreshed = state.projects.firstWhere(
+      (candidate) => candidate.id == projectId,
+    );
+    if (refreshed.pendingSyncCount == 0 &&
+        refreshed.syncStatus != ProjectSyncStatus.error) {
+      await _pullCloudProject(projectId);
+    }
+  }
+
+  Future<void> resumeCloudSync() async {
+    if (!state.isSignedIn) return;
+    try {
+      await restoreCloudProjects();
+    } catch (_) {
+      // 本机项目仍然可用；每个项目的手动同步入口可以再次尝试。
+    }
+    final projectIds = _pendingSyncOperations
+        .map((operation) => operation.projectId)
+        .toSet();
+    for (final projectId in projectIds) {
+      await _tryFlushProject(projectId);
+    }
+  }
+
+  /// 恢复账号可见的云端项目。带有本机待同步修改的项目不会被静默覆盖。
+  Future<void> restoreCloudProjects() async {
+    final email = state.accountEmail;
+    if (email == null) return;
+    final api = _apiClientFactory(email);
+    final summaries = await api.getList('/projects');
+    for (final summary in summaries.cast<Map<String, dynamic>>()) {
+      final remoteId = summary['id'] as String;
+      final existing = state.projects
+          .where((project) => project.remoteId == remoteId)
+          .firstOrNull;
+      if (existing != null &&
+          (existing.pendingSyncCount > 0 ||
+              existing.syncStatus == ProjectSyncStatus.conflict)) {
+        continue;
+      }
+      final remote = await api.getMap('/projects/$remoteId');
+      final restored = _projectFromRemote(remote, existing: existing);
+      state = state.copyWith(
+        projects: [
+          ...state.projects.where((project) => project.id != restored.id),
+          restored,
+        ],
+      );
+    }
+    await _persistProjects();
+  }
+
+  Future<void> _pullCloudProject(String projectId) async {
+    final project = _requireCloudProject(projectId);
+    final remote = await _requireApi().getMap('/projects/${project.remoteId}');
+    final restored = _projectFromRemote(remote, existing: project);
+    state = state.copyWith(
+      projects: state.projects
+          .map((candidate) => candidate.id == projectId ? restored : candidate)
+          .toList(),
+    );
+    await _persistProjects();
+  }
+
+  /// 返回可向用户展示的字段级差异。备注只报告“不同”，绝不把敏感内容放进摘要。
+  Future<List<String>> compareCloudProject(String projectId) async {
+    final project = _requireCloudProject(projectId);
+    final remote = await _requireApi().getMap('/projects/${project.remoteId}');
+    final differences = <String>[];
+    if (remote['version'] != project.cloudVersion) {
+      differences.add(
+        '项目版本：本机 ${project.cloudVersion}，云端 ${remote['version']}',
+      );
+    }
+    final remoteItems = (remote['checklist'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final remoteById = {
+      for (final item in remoteItems) item['id'] as String: item,
+    };
+    for (final item in project.items) {
+      if (item.remoteId == null) {
+        differences.add('“${item.title}”：仅存在于本机');
+        continue;
+      }
+      final cloud = remoteById.remove(item.remoteId);
+      if (cloud == null) {
+        differences.add('“${item.title}”：云端已不存在');
+        continue;
+      }
+      final changedFields = <String>[];
+      if (_localChecklistStatus(cloud['status'] as String?) != item.status) {
+        changedFields.add('状态');
+      }
+      if ((cloud['note'] as String? ?? '') != item.note) {
+        changedFields.add('备注');
+      }
+      if (!_sameInstant(cloud['dueAt'], item.dueDate)) {
+        changedFields.add('目标日期');
+      }
+      if (!_sameInstant(cloud['reminderAt'], item.reminderAt)) {
+        changedFields.add('提醒时间');
+      }
+      if (changedFields.isNotEmpty) {
+        differences.add('“${item.title}”：${changedFields.join('、')}不同');
+      }
+    }
+    for (final cloud in remoteById.values) {
+      differences.add('“${cloud['title']}”：仅存在于云端');
+    }
+    if (differences.isEmpty) differences.add('材料字段没有差异，可以安全重试同步。');
+    return differences;
+  }
+
+  /// 放弃此项目的排队修改并采用云端元数据；本机附件字节不会被删除。
+  Future<void> useCloudProjectVersion(String projectId) async {
+    final project = _requireCloudProject(projectId);
+    final remote = await _requireApi().getMap('/projects/${project.remoteId}');
+    _pendingSyncOperations.removeWhere(
+      (operation) => operation.projectId == projectId,
+    );
+    final restored = _projectFromRemote(
+      remote,
+      existing: project,
+      preserveUnmappedAttachments: true,
+    );
+    state = state.copyWith(
+      projects: state.projects
+          .map((candidate) => candidate.id == projectId ? restored : candidate)
+          .toList(),
+    );
+    await Future.wait([_persistProjects(), _persistSyncQueue()]);
+  }
+
+  /// 以最新云端版本为基线，按原操作 ID 顺序重放本机排队修改。
+  Future<void> keepLocalProjectVersion(String projectId) async {
+    final project = _requireCloudProject(projectId);
+    final remote = await _requireApi().getMap('/projects/${project.remoteId}');
+    state = state.copyWith(
+      projects: state.projects.map((candidate) {
+        if (candidate.id != projectId) return candidate;
+        return candidate.copyWith(
+          cloudVersion: remote['version'] as int,
+          syncStatus: ProjectSyncStatus.pending,
+          syncMessage: '正在把本机修改应用到最新云端版本',
+        );
+      }).toList(),
+    );
+    await _persistProjects();
+    await _tryFlushProject(projectId);
+    final current = state.projects.firstWhere(
+      (candidate) => candidate.id == projectId,
+    );
+    if (current.pendingSyncCount == 0 &&
+        current.syncStatus == ProjectSyncStatus.synced) {
+      await _pullCloudProject(projectId);
+    }
+  }
+
+  VisaProject _projectFromRemote(
+    Map<String, dynamic> remote, {
+    VisaProject? existing,
+    bool preserveUnmappedAttachments = false,
+  }) {
+    final remoteItems = (remote['checklist'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final remoteFiles = (remote['files'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final existingByRemoteId = {
+      for (final item in existing?.items ?? const <ChecklistItem>[])
+        if (item.remoteId != null) item.remoteId!: item,
+    };
+    final items = remoteItems.map((cloudItem) {
+      final remoteItemId = cloudItem['id'] as String;
+      final local = existingByRemoteId[remoteItemId];
+      final files = remoteFiles
+          .where((file) => file['checklistItemId'] == remoteItemId)
+          .toList();
+      final existingAttachments =
+          local?.attachments ?? const <LocalAttachment>[];
+      final existingFiles = {
+        for (final attachment in existingAttachments)
+          if (attachment.remoteId != null) attachment.remoteId!: attachment,
+      };
+      final attachments = <LocalAttachment>[
+        ...existingAttachments.where(
+          (attachment) => attachment.remoteId == null,
+        ),
+        ...files.map((file) {
+          final remoteFileId = file['id'] as String;
+          final known = existingFiles[remoteFileId];
+          final byteSize = int.tryParse(file['byteSize'].toString()) ?? 0;
+          return LocalAttachment(
+            id: known?.id ?? 'cloud-$remoteFileId',
+            name: file['originalName'] as String? ?? '云端文件',
+            contentType:
+                file['contentType'] as String? ?? 'application/octet-stream',
+            byteSize: byteSize,
+            sha256: file['sha256'] as String? ?? '',
+            createdAt:
+                DateTime.tryParse(file['createdAt']?.toString() ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0),
+            localPath: known?.localPath,
+            remoteId: remoteFileId,
+            syncStatus: _syncStatusFromScan(file['scanStatus'] as String?),
+          );
+        }),
+      ];
+      return ChecklistItem(
+        id: local?.id ?? _uuid.v4(),
+        title: cloudItem['title'] as String? ?? '未命名材料',
+        owner: cloudItem['person'] as String? ?? '主申请人',
+        category: cloudItem['category'] as String? ?? '其他',
+        status: _localChecklistStatus(cloudItem['status'] as String?),
+        dueDate: _optionalDate(cloudItem['dueAt']),
+        reminderAt: _optionalDate(cloudItem['reminderAt']),
+        note: cloudItem['note'] as String? ?? '',
+        attachments: attachments,
+        remoteId: remoteItemId,
+      );
+    }).toList();
+    if (preserveUnmappedAttachments && existing != null) {
+      items.addAll(
+        existing.items.where(
+          (item) => item.remoteId == null && item.attachments.isNotEmpty,
+        ),
+      );
+    }
+    final template = remote['template'] as String? ?? 'BLANK';
+    return VisaProject(
+      id: existing?.id ?? _uuid.v4(),
+      name: remote['name'] as String? ?? existing?.name ?? '云端项目',
+      visaType: switch (template) {
+        'SA_190' => 'SA 190',
+        'SA_491' => 'SA 491',
+        _ => existing?.visaType ?? '空白项目',
+      },
+      applicant:
+          remote['applicantName'] as String? ?? existing?.applicant ?? '主申请人',
+      status: existing?.status ?? ProjectStatus.active,
+      items: items,
+      targetDate: _optionalDate(remote['targetDate']),
+      // 该对象本身来自账号云端；cloudFilesEnabled 仅表示附件上传授权。
+      isCloudSyncEnabled: true,
+      allowViewerDownload: remote['allowViewerDownload'] as bool? ?? false,
+      remoteId: remote['id'] as String,
+      cloudVersion: remote['version'] as int? ?? 1,
+      activities: [
+        ...(existing?.activities ?? const <ProjectActivity>[]),
+        _activity(existing == null ? '从账号恢复了云端项目' : '完成了云端同步'),
+      ],
+      syncStatus: ProjectSyncStatus.synced,
+      pendingSyncCount: 0,
+      lastSyncedAt: DateTime.now(),
+      cloudRole:
+          remote['currentRole'] as String? ?? existing?.cloudRole ?? 'VIEWER',
     );
   }
 
@@ -160,6 +744,58 @@ class AppStore extends StateNotifier<AppState> {
             .toList(),
       ),
     );
+  }
+
+  Future<void> refreshContent() async {
+    if (state.isContentRefreshing) return;
+    state = state.copyWith(isContentRefreshing: true, clearContentError: true);
+    try {
+      final api = _apiClientFactory(
+        state.accountEmail ?? 'public@migration-companion.invalid',
+      );
+      final payloads = await Future.wait([
+        api.getList('/content/news'),
+        api.getList('/content/changes'),
+      ]);
+      final bookmarkedIds = state.news
+          .where((item) => item.bookmarked)
+          .map((item) => item.id)
+          .toSet();
+      final news = payloads[0]
+          .cast<Map<String, dynamic>>()
+          .map(
+            (item) => _newsFromApi(
+              item,
+              bookmarked: bookmarkedIds.contains(item['id']),
+            ),
+          )
+          .toList();
+      final changes = payloads[1]
+          .cast<Map<String, dynamic>>()
+          .map(_changeFromApi)
+          .toList();
+      final updatedAt = DateTime.now().toUtc();
+      state = state.copyWith(
+        news: news,
+        changes: changes,
+        isContentRefreshing: false,
+        clearContentError: true,
+        contentUpdatedAt: updatedAt,
+      );
+      await _repository.write(
+        _contentCacheKey,
+        jsonEncode({
+          'updatedAt': updatedAt.toIso8601String(),
+          'news': news.map((item) => item.toJson()).toList(),
+          'changes': changes.map((item) => item.toJson()).toList(),
+        }),
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isContentRefreshing: false,
+        contentError: '无法更新官方内容，当前继续显示本机缓存：$error',
+      );
+    }
   }
 
   Future<VisaProject> addProject({
@@ -186,19 +822,7 @@ class AppStore extends StateNotifier<AppState> {
     final existingProject = state.projects.firstWhere(
       (project) => project.id == projectId,
     );
-    String? remoteItemId;
-    var cloudVersion = existingProject.cloudVersion;
-    if (existingProject.isCloudSyncEnabled &&
-        existingProject.remoteId != null) {
-      final email = state.accountEmail;
-      if (email == null) throw const FormatException('云同步项目需要登录账号');
-      final remote = await _apiClientFactory(email).post(
-        '/projects/${existingProject.remoteId}/checklist',
-        {'title': title, 'category': '自定义'},
-      );
-      remoteItemId = (remote['item'] as Map<String, dynamic>)['id'] as String;
-      cloudVersion = remote['projectVersion'] as int;
-    }
+    final itemId = _uuid.v4();
     state = state.copyWith(
       projects: state.projects.map((project) {
         if (project.id != projectId) return project;
@@ -206,20 +830,33 @@ class AppStore extends StateNotifier<AppState> {
           items: [
             ...project.items,
             ChecklistItem(
-              id: _uuid.v4(),
+              id: itemId,
               title: title,
               owner: project.applicant,
               category: '自定义',
               status: ChecklistStatus.notStarted,
-              remoteId: remoteItemId,
             ),
           ],
-          cloudVersion: cloudVersion,
           activities: [...project.activities, _activity('添加了材料项：$title')],
         );
       }).toList(),
     );
     await _persistProjects();
+    if (existingProject.isCloudSyncEnabled &&
+        existingProject.remoteId != null) {
+      await _enqueueSyncOperation(
+        PendingSyncOperation(
+          id: _uuid.v4(),
+          projectId: projectId,
+          itemId: itemId,
+          kind: SyncOperationKind.addChecklist,
+          createdAt: DateTime.now(),
+          title: title,
+          category: '自定义',
+        ),
+      );
+      await _tryFlushProject(projectId);
+    }
   }
 
   Future<void> advanceChecklistItem(String projectId, String itemId) async {
@@ -230,21 +867,6 @@ class AppStore extends StateNotifier<AppState> {
       (item) => item.id == itemId,
     );
     final nextStatus = currentItem.status.next;
-    var cloudVersion = currentProject.cloudVersion;
-    if (currentProject.isCloudSyncEnabled &&
-        currentProject.remoteId != null &&
-        currentItem.remoteId != null) {
-      final email = state.accountEmail;
-      if (email == null) throw const FormatException('云同步项目需要登录账号');
-      final remote = await _apiClientFactory(email).patch(
-        '/projects/${currentProject.remoteId}/checklist/${currentItem.remoteId}',
-        {
-          'status': _serverChecklistStatus(nextStatus),
-          'expectedProjectVersion': currentProject.cloudVersion,
-        },
-      );
-      cloudVersion = remote['projectVersion'] as int;
-    }
     state = state.copyWith(
       projects: state.projects.map((project) {
         if (project.id != projectId) return project;
@@ -256,7 +878,6 @@ class AppStore extends StateNotifier<AppState> {
                     : item,
               )
               .toList(),
-          cloudVersion: cloudVersion,
           activities: [
             ...project.activities,
             _activity('将“${currentItem.title}”更新为“${nextStatus.label}”'),
@@ -265,6 +886,17 @@ class AppStore extends StateNotifier<AppState> {
       }).toList(),
     );
     await _persistProjects();
+    if (currentProject.isCloudSyncEnabled && currentProject.remoteId != null) {
+      await _enqueueChecklistUpdate(
+        projectId: projectId,
+        itemId: itemId,
+        status: nextStatus,
+        note: currentItem.note,
+        dueAt: currentItem.dueDate,
+        reminderAt: currentItem.reminderAt,
+      );
+      await _tryFlushProject(projectId);
+    }
   }
 
   Future<void> setChecklistDates({
@@ -285,27 +917,6 @@ class AppStore extends StateNotifier<AppState> {
     final nextReminder = clearReminderAt
         ? null
         : reminderAt ?? currentItem.reminderAt;
-    var cloudVersion = currentProject.cloudVersion;
-    if (currentProject.isCloudSyncEnabled &&
-        currentProject.remoteId != null &&
-        currentItem.remoteId != null) {
-      final email = state.accountEmail;
-      if (email == null) throw const FormatException('云同步项目需要登录账号');
-      final remote = await _apiClientFactory(email).patch(
-        '/projects/${currentProject.remoteId}/checklist/${currentItem.remoteId}',
-        {
-          'status': _serverChecklistStatus(currentItem.status),
-          'expectedProjectVersion': currentProject.cloudVersion,
-          if (nextDueDate != null)
-            'dueAt': nextDueDate.toUtc().toIso8601String(),
-          if (nextReminder != null)
-            'reminderAt': nextReminder.toUtc().toIso8601String(),
-          if (clearDueDate) 'clearDueAt': true,
-          if (clearReminderAt) 'clearReminderAt': true,
-        },
-      );
-      cloudVersion = remote['projectVersion'] as int;
-    }
     if (clearReminderAt || nextReminder == null) {
       await _notificationService.cancel('$projectId:$itemId');
     } else {
@@ -328,7 +939,6 @@ class AppStore extends StateNotifier<AppState> {
               clearReminderAt: nextReminder == null,
             );
           }).toList(),
-          cloudVersion: cloudVersion,
           activities: [
             ...project.activities,
             _activity(
@@ -345,6 +955,17 @@ class AppStore extends StateNotifier<AppState> {
       }).toList(),
     );
     await _persistProjects();
+    if (currentProject.isCloudSyncEnabled && currentProject.remoteId != null) {
+      await _enqueueChecklistUpdate(
+        projectId: projectId,
+        itemId: itemId,
+        status: currentItem.status,
+        note: currentItem.note,
+        dueAt: nextDueDate,
+        reminderAt: nextReminder,
+      );
+      await _tryFlushProject(projectId);
+    }
   }
 
   Future<LocalAttachment> addAttachment({
@@ -455,6 +1076,16 @@ class AppStore extends StateNotifier<AppState> {
     final attachment = item.attachments.firstWhere(
       (candidate) => candidate.id == attachmentId,
     );
+    await refreshEntitlements();
+    try {
+      await refreshNotificationPreferences();
+    } catch (_) {
+      // 登录本身不依赖推送偏好服务；用户可稍后在“我的”中重试。
+    }
+    if (state.cloudStorageAllocatedBytes + attachment.byteSize >
+        state.cloudStorageBytes) {
+      throw const FormatException('云空间不足。你仍可下载、导出或删除已有文件；本机原件不会被锁定。');
+    }
     final bytes = await _attachmentStorage.read(attachment.localPath);
     if (bytes == null ||
         sha256.convert(bytes).toString() != attachment.sha256) {
@@ -465,21 +1096,73 @@ class AppStore extends StateNotifier<AppState> {
       itemId,
       attachment.copyWith(syncStatus: AttachmentSyncStatus.uploading),
     );
+    var activeAttachment = attachment.copyWith(
+      syncStatus: AttachmentSyncStatus.uploading,
+    );
     try {
-      final remote = await _apiClientFactory(email).uploadFile(
-        '/projects/${project.remoteId}/files',
-        fieldName: 'file',
-        fileName: attachment.name,
-        contentType: attachment.contentType,
-        bytes: bytes,
-        fields: {'checklistItemId': item.remoteId!},
-      );
+      final api = _apiClientFactory(email);
+      Map<String, dynamic>? remote;
+
+      // App 在 PUT 已完成、complete 响应丢失时可能被关闭。只持久化会话 ID，
+      // 不保存带签名的短时 URL；重试先完成旧会话，避免重复上传字节。
+      if (activeAttachment.uploadSessionId != null &&
+          activeAttachment.uploadSessionUploaded) {
+        try {
+          remote = await api.post(
+            '/uploads/${activeAttachment.uploadSessionId}/complete',
+            {'checklistItemId': item.remoteId!},
+          );
+        } on ApiException catch (error) {
+          if (error.statusCode != 400 && error.statusCode != 404) rethrow;
+          activeAttachment = activeAttachment.copyWith(
+            clearUploadSession: true,
+          );
+          await _updateAttachment(projectId, itemId, activeAttachment);
+        }
+      }
+
+      if (remote == null) {
+        final session = await api.post(
+          '/projects/${project.remoteId}/uploads',
+          {
+            'originalName': activeAttachment.name,
+            'contentType': activeAttachment.contentType,
+            'byteSize': activeAttachment.byteSize,
+            'sha256': activeAttachment.sha256,
+            'checklistItemId': item.remoteId!,
+          },
+        );
+        activeAttachment = activeAttachment.copyWith(
+          uploadSessionId: session['uploadId'] as String,
+          uploadSessionUploaded: false,
+          syncStatus: AttachmentSyncStatus.uploading,
+        );
+        await _updateAttachment(projectId, itemId, activeAttachment);
+        final requiredHeaders =
+            (session['requiredHeaders'] as Map<String, dynamic>? ??
+                    const <String, dynamic>{})
+                .map((key, value) => MapEntry(key, value.toString()));
+        await api.putSignedUrl(
+          session['uploadUrl'] as String,
+          bytes,
+          headers: requiredHeaders,
+        );
+        activeAttachment = activeAttachment.copyWith(
+          uploadSessionUploaded: true,
+        );
+        await _updateAttachment(projectId, itemId, activeAttachment);
+        remote = await api.post(
+          '/uploads/${activeAttachment.uploadSessionId}/complete',
+          {'checklistItemId': item.remoteId!},
+        );
+      }
       final scanStatus = remote['scanStatus'] as String? ?? 'PENDING';
       await _updateAttachment(
         projectId,
         itemId,
-        attachment.copyWith(
+        activeAttachment.copyWith(
           remoteId: remote['id'] as String,
+          clearUploadSession: true,
           syncStatus: scanStatus == 'CLEAN'
               ? AttachmentSyncStatus.available
               : AttachmentSyncStatus.scanning,
@@ -490,7 +1173,7 @@ class AppStore extends StateNotifier<AppState> {
       await _updateAttachment(
         projectId,
         itemId,
-        attachment.copyWith(syncStatus: AttachmentSyncStatus.failed),
+        activeAttachment.copyWith(syncStatus: AttachmentSyncStatus.failed),
       );
       rethrow;
     }
@@ -543,22 +1226,6 @@ class AppStore extends StateNotifier<AppState> {
     final currentItem = currentProject.items.firstWhere(
       (item) => item.id == itemId,
     );
-    var cloudVersion = currentProject.cloudVersion;
-    if (currentProject.isCloudSyncEnabled &&
-        currentProject.remoteId != null &&
-        currentItem.remoteId != null) {
-      final email = state.accountEmail;
-      if (email == null) throw const FormatException('云同步项目需要登录账号');
-      final remote = await _apiClientFactory(email).patch(
-        '/projects/${currentProject.remoteId}/checklist/${currentItem.remoteId}',
-        {
-          'status': _serverChecklistStatus(currentItem.status),
-          'expectedProjectVersion': currentProject.cloudVersion,
-          'note': note,
-        },
-      );
-      cloudVersion = remote['projectVersion'] as int;
-    }
     state = state.copyWith(
       projects: state.projects.map((project) {
         if (project.id != projectId) return project;
@@ -568,12 +1235,22 @@ class AppStore extends StateNotifier<AppState> {
                 (item) => item.id == itemId ? item.copyWith(note: note) : item,
               )
               .toList(),
-          cloudVersion: cloudVersion,
           activities: [...project.activities, _activity('更新了一个材料项的备注')],
         );
       }).toList(),
     );
     await _persistProjects();
+    if (currentProject.isCloudSyncEnabled && currentProject.remoteId != null) {
+      await _enqueueChecklistUpdate(
+        projectId: projectId,
+        itemId: itemId,
+        status: currentItem.status,
+        note: note,
+        dueAt: currentItem.dueDate,
+        reminderAt: currentItem.reminderAt,
+      );
+      await _tryFlushProject(projectId);
+    }
   }
 
   Future<Map<String, Object?>> buildProjectBackup(String projectId) async {
@@ -646,11 +1323,28 @@ class AppStore extends StateNotifier<AppState> {
           bytes: bytes,
         );
         if (localPath == null) throw const FormatException('当前平台不能恢复附件');
-        restoredAttachments.add(attachment.copyWith(localPath: localPath));
+        restoredAttachments.add(
+          attachment.copyWith(
+            localPath: localPath,
+            clearRemoteId: true,
+            syncStatus: AttachmentSyncStatus.localOnly,
+          ),
+        );
       }
-      restoredItems.add(item.copyWith(attachments: restoredAttachments));
+      restoredItems.add(
+        item.copyWith(attachments: restoredAttachments, clearRemoteId: true),
+      );
     }
-    await importProject(decoded.copyWith(items: restoredItems));
+    await importProject(
+      decoded.copyWith(
+        items: restoredItems,
+        isCloudSyncEnabled: false,
+        allowViewerDownload: false,
+        clearRemoteId: true,
+        cloudVersion: 1,
+        activities: [...decoded.activities, _activity('从完整备份恢复到本机；云端引用未导入')],
+      ),
+    );
   }
 
   Future<void> enableCloudSync(String projectId) async {
@@ -708,6 +1402,11 @@ class AppStore extends StateNotifier<AppState> {
           isCloudSyncEnabled: true,
           remoteId: remote['id'] as String,
           cloudVersion: resultingCloudVersion,
+          syncStatus: ProjectSyncStatus.synced,
+          pendingSyncCount: 0,
+          clearSyncMessage: true,
+          lastSyncedAt: DateTime.now(),
+          cloudRole: 'OWNER',
           activities: [...candidate.activities, _activity('明确开启了项目云同步')],
         );
       }).toList(),
@@ -847,10 +1546,7 @@ class AppStore extends StateNotifier<AppState> {
       '/projects/${project.remoteId}/collaborators/$accountId',
       {'role': role},
     );
-    _appendActivity(
-      projectId,
-      role == 'VIEWER' ? '把一位成员降为仅查看' : '把一位成员设为可协作',
-    );
+    _appendActivity(projectId, role == 'VIEWER' ? '把一位成员降为仅查看' : '把一位成员设为可协作');
     await _persistProjects();
   }
 
@@ -1054,9 +1750,14 @@ class AppStore extends StateNotifier<AppState> {
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(normalized)) {
       throw const FormatException('请输入有效邮箱地址');
     }
-    await _apiClientFactory(normalized).getMap('/auth/me');
+    final account = await _apiClientFactory(normalized).getMap('/auth/me');
     await _repository.write(_accountEmailKey, normalized);
-    state = state.copyWith(isSignedIn: true, accountEmail: normalized);
+    state = state.copyWith(
+      isSignedIn: true,
+      accountEmail: normalized,
+      deletionRequestedAt: _optionalDate(account['deletionRequestedAt']),
+      clearDeletionRequestedAt: account['deletionRequestedAt'] == null,
+    );
     await refreshEntitlements();
   }
 
@@ -1069,14 +1770,29 @@ class AppStore extends StateNotifier<AppState> {
       clearTrialEndsAt: true,
       cloudStorageBytes: 1024 * 1024 * 1024,
       cloudStorageUsedBytes: 0,
+      cloudStorageReservedBytes: 0,
+      clearDeletionRequestedAt: true,
+      policyNotificationsEnabled: false,
+      followedJurisdictions: const ['AU-SA'],
+      followedTags: const [],
+      importantNotificationsOnly: true,
+    );
+  }
+
+  Future<void> refreshAccount() async {
+    final email = state.accountEmail;
+    if (email == null) return;
+    final account = await _apiClientFactory(email).getMap('/auth/me');
+    state = state.copyWith(
+      deletionRequestedAt: _optionalDate(account['deletionRequestedAt']),
+      clearDeletionRequestedAt: account['deletionRequestedAt'] == null,
     );
   }
 
   Future<void> refreshEntitlements() async {
     final email = state.accountEmail;
     if (email == null) return;
-    final payload = await _apiClientFactory(email)
-        .getMap('/entitlements/me');
+    final payload = await _apiClientFactory(email).getMap('/entitlements/me');
     state = state.copyWith(
       entitlementTier: payload['tier'] as String? ?? 'FREE',
       trialEndsAt: payload['trialEndsAt'] == null
@@ -1087,6 +1803,11 @@ class AppStore extends StateNotifier<AppState> {
           payload['cloudStorageBytes'] as int? ?? 1024 * 1024 * 1024,
       cloudStorageUsedBytes:
           int.tryParse(payload['cloudStorageUsedBytes']?.toString() ?? '') ?? 0,
+      cloudStorageReservedBytes:
+          int.tryParse(
+            payload['cloudStorageReservedBytes']?.toString() ?? '',
+          ) ??
+          0,
     );
   }
 
@@ -1122,8 +1843,60 @@ class AppStore extends StateNotifier<AppState> {
   Future<void> requestAccountDeletion() async {
     final email = state.accountEmail;
     if (email == null) throw const FormatException('请先登录账号');
-    await _apiClientFactory(email).delete('/auth/me');
-    await signOut();
+    final result = await _apiClientFactory(email).delete('/auth/me');
+    state = state.copyWith(
+      deletionRequestedAt:
+          _optionalDate(result['requestedAt']) ?? DateTime.now(),
+    );
+  }
+
+  Future<void> refreshNotificationPreferences() async {
+    final email = state.accountEmail;
+    if (email == null) return;
+    final payload = await _apiClientFactory(email)
+        .getMap('/notification-preferences');
+    state = state.copyWith(
+      policyNotificationsEnabled: payload['policyUpdates'] as bool? ?? false,
+      followedJurisdictions:
+          (payload['jurisdictions'] as List<dynamic>? ?? const ['AU-SA'])
+              .cast<String>(),
+      followedTags: (payload['tags'] as List<dynamic>? ?? const [])
+          .cast<String>(),
+      importantNotificationsOnly: payload['importantOnly'] as bool? ?? true,
+    );
+  }
+
+  Future<void> updateNotificationPreferences({
+    required bool enabled,
+    required List<String> jurisdictions,
+    required List<String> tags,
+    required bool importantOnly,
+  }) async {
+    final email = state.accountEmail;
+    if (email == null) throw const FormatException('请先登录账号');
+    final payload = await _apiClientFactory(email)
+        .patch('/notification-preferences', {
+          'policyUpdates': enabled,
+          'productUpdates': false,
+          'jurisdictions': jurisdictions,
+          'tags': tags,
+          'importantOnly': importantOnly,
+          'timezone': 'Australia/Adelaide',
+        });
+    state = state.copyWith(
+      policyNotificationsEnabled: payload['policyUpdates'] as bool,
+      followedJurisdictions: (payload['jurisdictions'] as List<dynamic>)
+          .cast<String>(),
+      followedTags: (payload['tags'] as List<dynamic>).cast<String>(),
+      importantNotificationsOnly: payload['importantOnly'] as bool,
+    );
+  }
+
+  Future<void> cancelAccountDeletion() async {
+    final email = state.accountEmail;
+    if (email == null) throw const FormatException('请先登录账号');
+    await _apiClientFactory(email).post('/auth/me/deletion/cancel');
+    state = state.copyWith(clearDeletionRequestedAt: true);
   }
 
   Future<void> dismissNotice() async {
@@ -1156,3 +1929,74 @@ String _serverChecklistStatus(ChecklistStatus status) => switch (status) {
   ChecklistStatus.sent => 'SENT',
   ChecklistStatus.confirmed => 'CONFIRMED',
 };
+
+ChecklistStatus _localChecklistStatus(String? status) => switch (status) {
+  'PREPARING' => ChecklistStatus.preparing,
+  'READY' => ChecklistStatus.ready,
+  'SENT' => ChecklistStatus.sent,
+  'CONFIRMED' => ChecklistStatus.confirmed,
+  _ => ChecklistStatus.notStarted,
+};
+
+DateTime? _optionalDate(Object? raw) {
+  if (raw == null) return null;
+  return DateTime.tryParse(raw.toString())?.toLocal();
+}
+
+bool _sameInstant(Object? remote, DateTime? local) {
+  final remoteDate = _optionalDate(remote);
+  if (remoteDate == null || local == null) return remoteDate == local;
+  return remoteDate.toUtc() == local.toUtc();
+}
+
+NewsItem _newsFromApi(Map<String, dynamic> json, {required bool bookmarked}) {
+  final source = json['source'] as Map<String, dynamic>? ?? const {};
+  final sourceType = switch (source['sourceType']?.toString().toLowerCase()) {
+    'industry' => NewsSourceType.industry,
+    'editorial' => NewsSourceType.editorial,
+    'change_log' || 'changelog' => NewsSourceType.changeLog,
+    _ => NewsSourceType.official,
+  };
+  return NewsItem(
+    id: json['id'] as String,
+    title: json['titleZh'] as String,
+    summary: json['summaryZh'] as String,
+    sourceName:
+        source['name'] as String? ?? json['sourceTitle'] as String? ?? '官方来源',
+    sourceUrl: json['sourceUrl'] as String,
+    publishedAt: DateTime.parse(json['publishedAt'] as String).toLocal(),
+    sourceType: sourceType,
+    tags: (json['tags'] as List<dynamic>? ?? const []).cast<String>(),
+    bookmarked: bookmarked,
+  );
+}
+
+PolicyChange _changeFromApi(Map<String, dynamic> json) {
+  final source = json['source'] as Map<String, dynamic>? ?? const {};
+  final verification = switch (json['reviewStatus'] as String?) {
+    'VERIFIED' => VerificationStatus.verified,
+    'CORRECTED' => VerificationStatus.corrected,
+    _ => VerificationStatus.pendingReview,
+  };
+  final severity = switch (json['importance'] as String?) {
+    'MAJOR' => ChangeSeverity.critical,
+    'IMPORTANT' => ChangeSeverity.important,
+    _ => ChangeSeverity.general,
+  };
+  final context = json['context'] as String?;
+  return PolicyChange(
+    id: json['id'] as String,
+    pageTitle: json['titleZh'] as String,
+    sourceUrl: source['url'] as String? ?? '',
+    discoveredAt: DateTime.parse(json['discoveredAt'] as String).toLocal(),
+    summary:
+        json['editorSummaryZh'] as String? ??
+        context ??
+        '监控器发现页面变化，当前只展示证据，不判断对个人申请的影响。',
+    beforeText: json['oldExcerpt'] as String? ?? '没有可展示的上一版本文字片段。',
+    afterText: json['newExcerpt'] as String? ?? '没有可展示的当前版本文字片段。',
+    severity: severity,
+    verification: verification,
+    tags: (json['tags'] as List<dynamic>? ?? const []).cast<String>(),
+  );
+}

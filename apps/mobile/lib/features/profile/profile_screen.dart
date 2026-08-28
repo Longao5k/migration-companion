@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/state/app_store.dart';
@@ -63,6 +64,31 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
           ),
+          if (state.deletionRequestedAt != null)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '账号删除已排期',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '预计 ${DateFormat('yyyy-MM-dd').format(state.deletionRequestedAt!.add(const Duration(days: 7)))} 清除云端主数据。此前可撤回；本机项目不会自动删除。',
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => _cancelAccountDeletion(context, ref),
+                      child: const Text('撤回删除申请'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SectionHeader(title: '数据与隐私'),
           _SettingsTile(
             icon: Icons.cloud_outlined,
@@ -84,8 +110,24 @@ class ProfileScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.delete_outline,
             title: '删除账号与数据',
-            subtitle: 'App 内可发起；订阅需单独管理',
-            onTap: state.isSignedIn ? () => _deleteAccount(context, ref) : null,
+            subtitle: state.deletionRequestedAt == null
+                ? 'App 内可发起；订阅需单独管理'
+                : '已提交，可在计划清除前撤回',
+            onTap: state.isSignedIn && state.deletionRequestedAt == null
+                ? () => _deleteAccount(context, ref)
+                : null,
+          ),
+          _SettingsTile(
+            icon: Icons.notifications_active_outlined,
+            title: '政策通知与关注',
+            subtitle: state.isSignedIn
+                ? state.policyNotificationsEnabled
+                      ? '已开启 · ${state.followedTags.isEmpty ? '全部南澳主题' : state.followedTags.join(' / ')}'
+                      : '已关闭；可按 190/491 关注'
+                : '登录后同步关注规则；本机材料提醒不受影响',
+            onTap: state.isSignedIn
+                ? () => _showNotificationPreferences(context, ref)
+                : null,
           ),
           const SectionHeader(title: '订阅'),
           _SettingsTile(
@@ -248,3 +290,127 @@ Future<void> _showInfo(BuildContext context, String title, String body) =>
         ],
       ),
     );
+
+Future<void> _cancelAccountDeletion(BuildContext context, WidgetRef ref) async {
+  try {
+    await ref.read(appStoreProvider.notifier).cancelAccountDeletion();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('删除申请已撤回')));
+    }
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('撤回失败：$error')));
+    }
+  }
+}
+
+Future<void> _showNotificationPreferences(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final current = ref.read(appStoreProvider);
+  var enabled = current.policyNotificationsEnabled;
+  var importantOnly = current.importantNotificationsOnly;
+  var includeSa = current.followedJurisdictions.contains('AU-SA');
+  var includeFederal = current.followedJurisdictions.contains('AU-FED');
+  final tags = current.followedTags.toSet();
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('政策通知与关注'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('接收已核实的政策通知'),
+                subtitle: const Text('重大与重要变化必须先经人工核实。'),
+                value: enabled,
+                onChanged: (value) => setState(() => enabled = value),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('南澳州担保'),
+                value: includeSa,
+                onChanged: enabled
+                    ? (value) => setState(() => includeSa = value ?? false)
+                    : null,
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('必要的联邦上游'),
+                value: includeFederal,
+                onChanged: enabled
+                    ? (value) => setState(() => includeFederal = value ?? false)
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              const Text('签证主题（不选表示全部）'),
+              for (final tag in const ['190', '491'])
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(tag),
+                  value: tags.contains(tag),
+                  onChanged: enabled
+                      ? (value) => setState(
+                          () =>
+                              value == true ? tags.add(tag) : tags.remove(tag),
+                        )
+                      : null,
+                ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('只通知重大与重要变化'),
+                value: importantOnly,
+                onChanged: enabled
+                    ? (value) => setState(() => importantOnly = value)
+                    : null,
+              ),
+              const Text(
+                '锁屏只显示泛化文案，不显示资格判断、材料名称或政策正文。生产推送通道仍需 APNs/FCM 凭据。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: enabled && !includeSa && !includeFederal
+                ? null
+                : () => Navigator.pop(dialogContext, true),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (result != true || !context.mounted) return;
+  try {
+    await ref
+        .read(appStoreProvider.notifier)
+        .updateNotificationPreferences(
+          enabled: enabled,
+          jurisdictions: [if (includeSa) 'AU-SA', if (includeFederal) 'AU-FED'],
+          tags: tags.toList()..sort(),
+          importantOnly: importantOnly,
+        );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('关注规则已保存')));
+    }
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+    }
+  }
+}

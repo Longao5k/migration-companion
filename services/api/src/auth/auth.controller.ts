@@ -1,5 +1,6 @@
-import { Controller, Delete, Get, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { AccountDeletionService } from '../account-deletion/account-deletion.service';
 import { CurrentUser } from './current-user.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AuthenticatedUser } from './auth.types';
@@ -7,7 +8,10 @@ import { AuthenticatedUser } from './auth.types';
 @Controller('auth')
 @UseGuards(JwtAuthGuard)
 export class AuthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly deletion: AccountDeletionService,
+  ) {}
 
   @Get('me')
   async me(@CurrentUser() user: AuthenticatedUser) {
@@ -19,17 +23,19 @@ export class AuthController {
         id: true,
         email: true,
         createdAt: true,
+        deletionRequestedAt: true,
         subscription: { select: { status: true, productId: true, currentPeriodEndsAt: true } },
       },
     });
   }
 
   @Delete('me')
-  async deleteMe(@CurrentUser() user: AuthenticatedUser) {
-    await this.prisma.account.update({
-      where: { id: user.accountId },
-      data: { deletionRequestedAt: new Date() },
-    });
-    return { accepted: true, targetDeletionDays: 7, backupRemovalDays: 35 };
+  deleteMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.deletion.request(user.accountId);
+  }
+
+  @Post('me/deletion/cancel')
+  cancelDeletion(@CurrentUser() user: AuthenticatedUser) {
+    return this.deletion.cancel(user.accountId);
   }
 }

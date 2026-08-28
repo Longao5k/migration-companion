@@ -146,7 +146,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   LinearProgressIndicator(
                     value: account.cloudStorageBytes == 0
                         ? 0
-                        : (account.cloudStorageUsedBytes /
+                        : (account.cloudStorageAllocatedBytes /
                                   account.cloudStorageBytes)
                               .clamp(0, 1),
                   ),
@@ -154,6 +154,22 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   Text(
                     '云文件 ${_storageLabel(account.cloudStorageUsedBytes)} / ${_storageLabel(account.cloudStorageBytes)}',
                   ),
+                  if (account.cloudStorageReservedBytes > 0)
+                    Text(
+                      '另有 ${_storageLabel(account.cloudStorageReservedBytes)} 正在上传或等待完成',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  if (account.isCloudStorageOverLimit) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '当前已达到云空间上限。你仍可查看、下载、导出和删除已有文件，'
+                      '本机原件不会被锁定；清理空间前不能继续上传。',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

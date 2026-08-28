@@ -341,6 +341,7 @@ class ProjectDetailScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
           _ProjectSummary(project: project),
+          if (project.isCloudSyncEnabled) _ProjectSyncCard(project: project),
           SectionHeader(
             title: '材料清单',
             trailing: IconButton(
@@ -396,6 +397,200 @@ class ProjectDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+class _ProjectSyncCard extends ConsumerWidget {
+  const _ProjectSyncCard({required this.project});
+
+  final VisaProject project;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, title, fallback, color) = switch (project.syncStatus) {
+      ProjectSyncStatus.synced => (
+        Icons.cloud_done_outlined,
+        '云端已同步',
+        project.lastSyncedAt == null
+            ? '项目元数据已连接账号'
+            : '上次同步 ${DateFormat('MM-dd HH:mm').format(project.lastSyncedAt!)}',
+        scheme.primary,
+      ),
+      ProjectSyncStatus.pending => (
+        Icons.cloud_upload_outlined,
+        '${project.pendingSyncCount} 项修改等待同步',
+        '本机修改已保存，联网后会按顺序重试。',
+        scheme.tertiary,
+      ),
+      ProjectSyncStatus.conflict => (
+        Icons.sync_problem_outlined,
+        '发现版本冲突',
+        '先比较字段差异，再选择云端或本机版本。',
+        scheme.error,
+      ),
+      ProjectSyncStatus.error => (
+        Icons.cloud_off_outlined,
+        '同步需要处理',
+        '本机数据仍然安全，可手动重试。',
+        scheme.error,
+      ),
+      ProjectSyncStatus.localOnly => (
+        Icons.cloud_queue_outlined,
+        '等待建立云端连接',
+        '本机数据不会被自动覆盖。',
+        scheme.outline,
+      ),
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(project.syncMessage ?? fallback),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (project.syncStatus == ProjectSyncStatus.conflict)
+              FilledButton.tonal(
+                onPressed: () => _showSyncConflict(context, ref, project),
+                child: const Text('比较'),
+              )
+            else
+              IconButton(
+                tooltip: '立即同步',
+                onPressed: () => _syncNow(context, ref, project.id),
+                icon: const Icon(Icons.sync),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _syncNow(
+  BuildContext context,
+  WidgetRef ref,
+  String projectId,
+) async {
+  try {
+    await ref.read(appStoreProvider.notifier).syncProject(projectId);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('同步完成')));
+    }
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('暂时无法同步：$error')));
+    }
+  }
+}
+
+Future<void> _showSyncConflict(
+  BuildContext context,
+  WidgetRef ref,
+  VisaProject project,
+) async {
+  List<String> differences;
+  try {
+    differences = await ref
+        .read(appStoreProvider.notifier)
+        .compareCloudProject(project.id);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('无法读取云端差异：$error')));
+    }
+    return;
+  }
+  if (!context.mounted) return;
+  final choice = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('比较本机与云端'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('只列出发生变化的字段，不展示备注等敏感内容。'),
+              const SizedBox(height: 12),
+              ...differences.map(
+                (difference) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('• $difference'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('稍后处理'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, 'cloud'),
+          child: const Text('使用云端版本'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, 'local'),
+          child: const Text('保留本机修改'),
+        ),
+      ],
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'cloud') {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('确认使用云端版本？'),
+        content: const Text('此项目等待同步的清单修改会被放弃；已经保存在设备上的附件字节不会删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认使用云端'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+  }
+  try {
+    final store = ref.read(appStoreProvider.notifier);
+    if (choice == 'cloud') {
+      await store.useCloudProjectVersion(project.id);
+    } else {
+      await store.keepLocalProjectVersion(project.id);
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('冲突已处理')));
+    }
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('冲突尚未处理：$error')));
+    }
   }
 }
 
@@ -1050,12 +1245,21 @@ Future<void> _uploadAttachment(
   String itemId,
   LocalAttachment attachment,
 ) async {
+  final account = ref.read(appStoreProvider);
+  if (account.cloudStorageAllocatedBytes + attachment.byteSize >
+      account.cloudStorageBytes) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('云空间不足。你仍可下载、导出或删除已有文件；本机原件不会被锁定。')),
+    );
+    return;
+  }
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('上传这个附件？'),
       content: Text(
-        '${attachment.name}\n\n文件将上传到此项目的云端隔离区，占用订阅存储空间；安全扫描通过前不能下载或分享。',
+        '${attachment.name}\n\n文件将上传到此项目的云端隔离区，占用订阅存储空间；'
+        '当前剩余约 ${formatBytes(account.cloudStorageRemainingBytes)}。安全扫描通过前不能下载或分享。',
       ),
       actions: [
         TextButton(
@@ -1118,7 +1322,6 @@ String _attachmentStatusLabel(AttachmentSyncStatus status) => switch (status) {
   AttachmentSyncStatus.available => '云端可用',
   AttachmentSyncStatus.failed => '上传失败',
 };
-
 
 Future<void> _addItem(
   BuildContext context,
@@ -1314,9 +1517,8 @@ Future<void> _directShare(BuildContext context, VisaProject project) async {
                   child: Text(
                     '你正在直接发出 ${selectedFiles.length} 个材料文件的副本。'
                     '对方可以永久保存这些文件，你无法远程收回。',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
                   ),
                 ),
             ],
@@ -1381,9 +1583,10 @@ Future<void> _secureShare(
   var cloudFiles = const <Map<String, dynamic>>[];
   String? cloudFilesError;
   try {
-    cloudFiles = (await ref.read(appStoreProvider.notifier).listCloudFiles(
-      project.id,
-    )).where((file) => file['scanStatus'] == 'CLEAN').toList();
+    cloudFiles =
+        (await ref.read(appStoreProvider.notifier).listCloudFiles(project.id))
+            .where((file) => file['scanStatus'] == 'CLEAN')
+            .toList();
   } catch (error) {
     cloudFilesError = '$error';
   }

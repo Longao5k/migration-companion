@@ -9,7 +9,7 @@ describe('ContentService publication guardrails', () => {
       upsert: jest.fn().mockResolvedValue(source),
     },
     changeLog: {
-      create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+      upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve(create)),
       update: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
       findMany: jest.fn(),
     },
@@ -28,8 +28,8 @@ describe('ContentService publication guardrails', () => {
     });
 
     expect(result.publishedAt).toBeUndefined();
-    expect(prisma.changeLog.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ importance: ChangeImportance.IMPORTANT }) }),
+    expect(prisma.changeLog.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ importance: ChangeImportance.IMPORTANT }) }),
     );
   });
 
@@ -51,4 +51,3 @@ describe('ContentService publication guardrails', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
-

@@ -64,6 +64,9 @@ model Account {
   sentInvitations     CollaborationInvite[] @relation("InviteSender")
   comments            ProjectComment[]
   uploadedFiles       FileRecord[]          @relation("FileUploader")
+  syncOperations      SyncOperation[]
+  notificationPreference NotificationPreference?
+  notificationOutbox NotificationOutbox[]
 }
 
 model Project {
@@ -86,6 +89,7 @@ model Project {
   auditEvents         AuditEvent[]
   invitations         CollaborationInvite[]
   comments            ProjectComment[]
+  syncOperations      SyncOperation[]
 
   @@index([ownerId, updatedAt])
 }
@@ -180,9 +184,24 @@ model UploadSession {
   sha256       String
   expiresAt    DateTime
   completedAt  DateTime?
+  fileId       String?   @unique
   createdAt    DateTime  @default(now())
 
   @@index([projectId, accountId, expiresAt])
+}
+
+model SyncOperation {
+  id          String   @id
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  payloadHash String
+  result      Json
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([accountId, createdAt])
 }
 
 model Collaborator {
@@ -235,19 +254,22 @@ model AuditEvent {
 }
 
 model Source {
-  id            String         @id @default(cuid())
-  name          String
-  url           String         @unique
-  jurisdiction  String
-  sourceType    String         @default("official")
-  enabled       Boolean        @default(true)
-  licenseNote   String?
-  lastCheckedAt DateTime?
-  snapshots     PageSnapshot[]
-  news          NewsItem[]
-  changes       ChangeLog[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id              String         @id @default(cuid())
+  name            String
+  url             String         @unique
+  jurisdiction    String
+  sourceType      String         @default("official")
+  enabled         Boolean        @default(true)
+  licenseNote     String?
+  lastCheckedAt   DateTime?
+  lastSuccessAt   DateTime?
+  lastFailureAt   DateTime?
+  lastFailureCode String?
+  snapshots       PageSnapshot[]
+  news            NewsItem[]
+  changes         ChangeLog[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model PageSnapshot {
@@ -268,6 +290,7 @@ model PageSnapshot {
 
 model ChangeLog {
   id              String           @id @default(cuid())
+  candidateHash   String?
   sourceId        String
   source          Source           @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   titleZh         String
@@ -282,6 +305,7 @@ model ChangeLog {
   verifiedAt      DateTime?
   publishedAt     DateTime?
   correctionNote  String?
+  tags            String[]         @default([])
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -297,11 +321,13 @@ model NewsItem {
   sourceTitle String
   sourceUrl   String
   tags        String[]
+  isPublished Boolean  @default(false)
   publishedAt DateTime
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 
   @@index([publishedAt])
+  @@index([isPublished, publishedAt])
 }
 
 model Subscription {
@@ -316,4 +342,50 @@ model Subscription {
   currentPeriodEndsAt DateTime?
   updatedAt           DateTime  @updatedAt
   createdAt           DateTime  @default(now())
+}
+
+/// 最小删除证明，不保留邮箱、账号 ID、文件名或材料内容。
+model AccountDeletionLedger {
+  id          String   @id @default(cuid())
+  accountHash String
+  requestedAt DateTime
+  deletedAt   DateTime @default(now())
+  objectCount Int
+  status      String   @default("COMPLETED")
+
+  @@index([accountHash, deletedAt])
+}
+
+model NotificationPreference {
+  accountId      String   @id
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  policyUpdates  Boolean  @default(false)
+  productUpdates Boolean  @default(false)
+  jurisdictions  String[] @default(["AU-SA"])
+  tags           String[] @default([])
+  importantOnly  Boolean  @default(true)
+  timezone       String   @default("Australia/Adelaide")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model NotificationOutbox {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind        String
+  entityId    String
+  payload     Json
+  dedupeKey   String   @unique
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  errorCode   String?
+  availableAt DateTime @default(now())
+  claimedAt   DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, availableAt])
+  @@index([accountId, createdAt])
 }

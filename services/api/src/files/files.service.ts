@@ -88,9 +88,14 @@ export class FilesService {
 
   async complete(accountId: string, uploadId: string, dto: CompleteUploadDto) {
     const session = await this.prisma.uploadSession.findFirst({
-      where: { id: uploadId, accountId, completedAt: null },
+      where: { id: uploadId, accountId },
     });
     if (!session) throw new NotFoundException('未找到上传会话');
+    if (session.completedAt && session.fileId) {
+      const existing = await this.prisma.fileRecord.findUnique({ where: { id: session.fileId } });
+      if (!existing) throw new NotFoundException('已完成上传对应的文件已不存在');
+      return { ...existing, byteSize: existing.byteSize.toString(), idempotent: true };
+    }
     if (session.expiresAt <= new Date()) throw new BadRequestException('上传会话已过期');
     await this.assertCanUpload(accountId, session.projectId);
     await this.assertChecklistScope(session.projectId, dto.checklistItemId);
@@ -125,7 +130,10 @@ export class FilesService {
           compatibility,
         },
       });
-      await tx.uploadSession.update({ where: { id: session.id }, data: { completedAt: new Date() } });
+      await tx.uploadSession.update({
+        where: { id: session.id },
+        data: { completedAt: new Date(), fileId: record.id },
+      });
       await tx.auditEvent.create({
         data: {
           accountId,
@@ -138,6 +146,18 @@ export class FilesService {
       });
       return record;
     });
+    if (process.env.NODE_ENV !== 'production' && process.env.DEV_AUTO_SCAN === 'true') {
+      const scanned = await this.applyScanResult(result.id, {
+        status: FileScanStatus.CLEAN,
+        scannerVersion: 'local-development-simulation',
+      });
+      return {
+        ...result,
+        byteSize: result.byteSize.toString(),
+        scanStatus: 'scanStatus' in scanned ? scanned.scanStatus : scanned.status,
+        localDevelopmentScan: true,
+      };
+    }
     return { ...result, byteSize: result.byteSize.toString() };
   }
 
@@ -412,6 +432,36 @@ export class FilesService {
       },
     });
     return updated;
+  }
+
+  async cleanupExpiredUploads() {
+    const sessions = await this.prisma.uploadSession.findMany({
+      where: { completedAt: null, expiresAt: { lt: new Date() } },
+      select: { id: true, storageKey: true },
+      orderBy: { expiresAt: 'asc' },
+      take: 100,
+    });
+    let deleted = 0;
+    let failed = 0;
+    for (const session of sessions) {
+      try {
+        if (!this.bucket) {
+          throw new ServiceUnavailableException('文件存储尚未配置');
+        }
+        // S3 DeleteObject is idempotent, so a retry is safe when the client
+        // never uploaded bytes or another worker already removed the object.
+        await this.s3.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: session.storageKey }),
+        );
+        const removed = await this.prisma.uploadSession.deleteMany({
+          where: { id: session.id, completedAt: null },
+        });
+        deleted += removed.count;
+      } catch {
+        failed++;
+      }
+    }
+    return { examined: sessions.length, deleted, failed };
   }
 
   private async assertCanUpload(accountId: string, projectId: string) {

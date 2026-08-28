@@ -24,6 +24,7 @@ class InMemoryRepository implements LocalRepository {
 
 class RecordingAttachmentStorage implements AttachmentStorage {
   final persisted = <String, Uint8List>{};
+  final paths = <String, Uint8List>{};
 
   @override
   Future<String?> persist({
@@ -32,15 +33,24 @@ class RecordingAttachmentStorage implements AttachmentStorage {
     required String originalName,
     required Uint8List bytes,
   }) async {
-    persisted[attachmentId] = bytes;
-    return '/private/$projectId/$attachmentId';
+    final copy = Uint8List.fromList(bytes);
+    final path = '/private/$projectId/$attachmentId';
+    persisted[attachmentId] = copy;
+    paths[path] = copy;
+    return path;
   }
 
   @override
-  Future<void> remove(String? localPath) async {}
+  Future<void> remove(String? localPath) async {
+    if (localPath != null) paths.remove(localPath);
+  }
 
   @override
-  Future<Uint8List?> read(String? localPath) async => null;
+  Future<Uint8List?> read(String? localPath) async => localPath == null
+      ? null
+      : paths[localPath] == null
+      ? null
+      : Uint8List.fromList(paths[localPath]!);
 }
 
 class SilentNotificationService implements NotificationService {
@@ -59,16 +69,18 @@ class SilentNotificationService implements NotificationService {
 Future<AppStore> signedInStore({
   required Future<http.Response> Function(http.Request request) handler,
   AttachmentStorage? attachments,
+  InMemoryRepository? repository,
   VisaProject? project,
   String email = 'owner@migration-companion.invalid',
 }) async {
   final store = AppStore(
-    InMemoryRepository(),
+    repository ?? InMemoryRepository(),
     attachments ?? RecordingAttachmentStorage(),
     SilentNotificationService(),
     (accountEmail) =>
         ApiClient(accountEmail: accountEmail, httpClient: MockClient(handler)),
   );
+  await store.ready;
   await store.signIn(email);
   if (project != null) await store.importProject(project);
   return store;
@@ -78,6 +90,7 @@ Future<AppStore> signedInStore({
 VisaProject cloudProject({
   required String attachmentSha256,
   String? attachmentLocalPath,
+  String? attachmentRemoteId = 'remote-file',
   AttachmentSyncStatus syncStatus = AttachmentSyncStatus.scanning,
 }) => VisaProject(
   id: 'local-project',
@@ -104,7 +117,7 @@ VisaProject cloudProject({
           sha256: attachmentSha256,
           createdAt: DateTime(2026, 8, 27),
           localPath: attachmentLocalPath,
-          remoteId: 'remote-file',
+          remoteId: attachmentRemoteId,
           syncStatus: syncStatus,
         ),
       ],

@@ -10,6 +10,10 @@ enum ChecklistStatus { notStarted, preparing, ready, sent, confirmed }
 
 enum AttachmentSyncStatus { localOnly, uploading, scanning, available, failed }
 
+enum ProjectSyncStatus { localOnly, synced, pending, conflict, error }
+
+enum SyncOperationKind { addChecklist, updateChecklist }
+
 class ProjectActivity {
   const ProjectActivity({
     required this.id,
@@ -46,6 +50,8 @@ class LocalAttachment {
     this.localPath,
     this.remoteId,
     this.syncStatus = AttachmentSyncStatus.localOnly,
+    this.uploadSessionId,
+    this.uploadSessionUploaded = false,
   });
 
   final String id;
@@ -57,6 +63,8 @@ class LocalAttachment {
   final String? localPath;
   final String? remoteId;
   final AttachmentSyncStatus syncStatus;
+  final String? uploadSessionId;
+  final bool uploadSessionUploaded;
 
   LocalAttachment copyWith({
     String? localPath,
@@ -64,6 +72,9 @@ class LocalAttachment {
     String? remoteId,
     bool clearRemoteId = false,
     AttachmentSyncStatus? syncStatus,
+    String? uploadSessionId,
+    bool clearUploadSession = false,
+    bool? uploadSessionUploaded,
   }) => LocalAttachment(
     id: id,
     name: name,
@@ -74,6 +85,12 @@ class LocalAttachment {
     localPath: clearLocalPath ? null : localPath ?? this.localPath,
     remoteId: clearRemoteId ? null : remoteId ?? this.remoteId,
     syncStatus: syncStatus ?? this.syncStatus,
+    uploadSessionId: clearUploadSession
+        ? null
+        : uploadSessionId ?? this.uploadSessionId,
+    uploadSessionUploaded: clearUploadSession
+        ? false
+        : uploadSessionUploaded ?? this.uploadSessionUploaded,
   );
 
   Map<String, Object?> toJson() => {
@@ -86,6 +103,8 @@ class LocalAttachment {
     'localPath': localPath,
     'remoteId': remoteId,
     'syncStatus': syncStatus.name,
+    'uploadSessionId': uploadSessionId,
+    'uploadSessionUploaded': uploadSessionUploaded,
   };
 
   factory LocalAttachment.fromJson(Map<String, dynamic> json) =>
@@ -104,6 +123,8 @@ class LocalAttachment {
         syncStatus: AttachmentSyncStatus.values.byName(
           json['syncStatus'] as String? ?? AttachmentSyncStatus.localOnly.name,
         ),
+        uploadSessionId: json['uploadSessionId'] as String?,
+        uploadSessionUploaded: json['uploadSessionUploaded'] as bool? ?? false,
       );
 }
 
@@ -154,6 +175,32 @@ class NewsItem {
     tags: tags,
     bookmarked: bookmarked ?? this.bookmarked,
   );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'title': title,
+    'summary': summary,
+    'sourceName': sourceName,
+    'sourceUrl': sourceUrl,
+    'publishedAt': publishedAt.toIso8601String(),
+    'sourceType': sourceType.name,
+    'tags': tags,
+    'bookmarked': bookmarked,
+  };
+
+  factory NewsItem.fromJson(Map<String, dynamic> json) => NewsItem(
+    id: json['id'] as String,
+    title: json['title'] as String,
+    summary: json['summary'] as String,
+    sourceName: json['sourceName'] as String,
+    sourceUrl: json['sourceUrl'] as String,
+    publishedAt: DateTime.parse(json['publishedAt'] as String),
+    sourceType: NewsSourceType.values.byName(
+      json['sourceType'] as String? ?? NewsSourceType.official.name,
+    ),
+    tags: (json['tags'] as List<dynamic>? ?? const []).cast<String>(),
+    bookmarked: json['bookmarked'] as bool? ?? false,
+  );
 }
 
 class PolicyChange {
@@ -180,6 +227,36 @@ class PolicyChange {
   final ChangeSeverity severity;
   final VerificationStatus verification;
   final List<String> tags;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'pageTitle': pageTitle,
+    'sourceUrl': sourceUrl,
+    'discoveredAt': discoveredAt.toIso8601String(),
+    'summary': summary,
+    'beforeText': beforeText,
+    'afterText': afterText,
+    'severity': severity.name,
+    'verification': verification.name,
+    'tags': tags,
+  };
+
+  factory PolicyChange.fromJson(Map<String, dynamic> json) => PolicyChange(
+    id: json['id'] as String,
+    pageTitle: json['pageTitle'] as String,
+    sourceUrl: json['sourceUrl'] as String,
+    discoveredAt: DateTime.parse(json['discoveredAt'] as String),
+    summary: json['summary'] as String,
+    beforeText: json['beforeText'] as String? ?? '',
+    afterText: json['afterText'] as String? ?? '',
+    severity: ChangeSeverity.values.byName(
+      json['severity'] as String? ?? ChangeSeverity.general.name,
+    ),
+    verification: VerificationStatus.values.byName(
+      json['verification'] as String? ?? VerificationStatus.pendingReview.name,
+    ),
+    tags: (json['tags'] as List<dynamic>? ?? const []).cast<String>(),
+  );
 }
 
 class ChecklistItem {
@@ -218,6 +295,7 @@ class ChecklistItem {
     String? note,
     List<LocalAttachment>? attachments,
     String? remoteId,
+    bool clearRemoteId = false,
   }) => ChecklistItem(
     id: id,
     title: title,
@@ -228,7 +306,7 @@ class ChecklistItem {
     reminderAt: clearReminderAt ? null : reminderAt ?? this.reminderAt,
     note: note ?? this.note,
     attachments: attachments ?? this.attachments,
-    remoteId: remoteId ?? this.remoteId,
+    remoteId: clearRemoteId ? null : remoteId ?? this.remoteId,
   );
 
   Map<String, Object?> toJson() => {
@@ -283,6 +361,11 @@ class VisaProject {
     this.remoteId,
     this.cloudVersion = 1,
     this.activities = const [],
+    this.syncStatus = ProjectSyncStatus.localOnly,
+    this.pendingSyncCount = 0,
+    this.syncMessage,
+    this.lastSyncedAt,
+    this.cloudRole = 'OWNER',
   });
 
   final String id;
@@ -297,6 +380,11 @@ class VisaProject {
   final String? remoteId;
   final int cloudVersion;
   final List<ProjectActivity> activities;
+  final ProjectSyncStatus syncStatus;
+  final int pendingSyncCount;
+  final String? syncMessage;
+  final DateTime? lastSyncedAt;
+  final String cloudRole;
 
   double get completion {
     if (items.isEmpty) return 0;
@@ -311,8 +399,16 @@ class VisaProject {
     bool? isCloudSyncEnabled,
     bool? allowViewerDownload,
     String? remoteId,
+    bool clearRemoteId = false,
     int? cloudVersion,
     List<ProjectActivity>? activities,
+    ProjectSyncStatus? syncStatus,
+    int? pendingSyncCount,
+    String? syncMessage,
+    bool clearSyncMessage = false,
+    DateTime? lastSyncedAt,
+    bool clearLastSyncedAt = false,
+    String? cloudRole,
   }) => VisaProject(
     id: id,
     name: name,
@@ -323,9 +419,14 @@ class VisaProject {
     targetDate: targetDate,
     isCloudSyncEnabled: isCloudSyncEnabled ?? this.isCloudSyncEnabled,
     allowViewerDownload: allowViewerDownload ?? this.allowViewerDownload,
-    remoteId: remoteId ?? this.remoteId,
+    remoteId: clearRemoteId ? null : remoteId ?? this.remoteId,
     cloudVersion: cloudVersion ?? this.cloudVersion,
     activities: activities ?? this.activities,
+    syncStatus: syncStatus ?? this.syncStatus,
+    pendingSyncCount: pendingSyncCount ?? this.pendingSyncCount,
+    syncMessage: clearSyncMessage ? null : syncMessage ?? this.syncMessage,
+    lastSyncedAt: clearLastSyncedAt ? null : lastSyncedAt ?? this.lastSyncedAt,
+    cloudRole: cloudRole ?? this.cloudRole,
   );
 
   Map<String, Object?> toJson() => {
@@ -341,6 +442,11 @@ class VisaProject {
     'remoteId': remoteId,
     'cloudVersion': cloudVersion,
     'activities': activities.map((activity) => activity.toJson()).toList(),
+    'syncStatus': syncStatus.name,
+    'pendingSyncCount': pendingSyncCount,
+    'syncMessage': syncMessage,
+    'lastSyncedAt': lastSyncedAt?.toIso8601String(),
+    'cloudRole': cloudRole,
   };
 
   factory VisaProject.fromJson(Map<String, dynamic> json) => VisaProject(
@@ -365,5 +471,80 @@ class VisaProject {
               ProjectActivity.fromJson(activity as Map<String, dynamic>),
         )
         .toList(),
+    syncStatus: ProjectSyncStatus.values.byName(
+      json['syncStatus'] as String? ??
+          ((json['isCloudSyncEnabled'] as bool? ?? false)
+              ? ProjectSyncStatus.synced.name
+              : ProjectSyncStatus.localOnly.name),
+    ),
+    pendingSyncCount: json['pendingSyncCount'] as int? ?? 0,
+    syncMessage: json['syncMessage'] as String?,
+    lastSyncedAt: json['lastSyncedAt'] == null
+        ? null
+        : DateTime.parse(json['lastSyncedAt'] as String),
+    cloudRole: json['cloudRole'] as String? ?? 'OWNER',
   );
+}
+
+class PendingSyncOperation {
+  const PendingSyncOperation({
+    required this.id,
+    required this.projectId,
+    required this.itemId,
+    required this.kind,
+    required this.createdAt,
+    this.title,
+    this.category,
+    this.status,
+    this.note,
+    this.dueAt,
+    this.reminderAt,
+  });
+
+  final String id;
+  final String projectId;
+  final String itemId;
+  final SyncOperationKind kind;
+  final DateTime createdAt;
+  final String? title;
+  final String? category;
+  final ChecklistStatus? status;
+  final String? note;
+  final DateTime? dueAt;
+  final DateTime? reminderAt;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'projectId': projectId,
+    'itemId': itemId,
+    'kind': kind.name,
+    'createdAt': createdAt.toIso8601String(),
+    'title': title,
+    'category': category,
+    'status': status?.name,
+    'note': note,
+    'dueAt': dueAt?.toIso8601String(),
+    'reminderAt': reminderAt?.toIso8601String(),
+  };
+
+  factory PendingSyncOperation.fromJson(Map<String, dynamic> json) =>
+      PendingSyncOperation(
+        id: json['id'] as String,
+        projectId: json['projectId'] as String,
+        itemId: json['itemId'] as String,
+        kind: SyncOperationKind.values.byName(json['kind'] as String),
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        title: json['title'] as String?,
+        category: json['category'] as String?,
+        status: json['status'] == null
+            ? null
+            : ChecklistStatus.values.byName(json['status'] as String),
+        note: json['note'] as String?,
+        dueAt: json['dueAt'] == null
+            ? null
+            : DateTime.parse(json['dueAt'] as String),
+        reminderAt: json['reminderAt'] == null
+            ? null
+            : DateTime.parse(json['reminderAt'] as String),
+      );
 }

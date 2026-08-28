@@ -41,11 +41,31 @@ class HomeScreen extends ConsumerWidget {
                       ref.read(appStoreProvider.notifier).dismissNotice(),
                 ),
               ],
-              const SectionHeader(title: '今天值得关注'),
-              _HeroUpdate(
-                item: state.news.first,
-                onTap: () => _showNews(context, ref, state.news.first),
+              const SizedBox(height: 12),
+              ContentRefreshStatus(
+                refreshing: state.isContentRefreshing,
+                error: state.contentError,
+                updatedAt: state.contentUpdatedAt,
+                onRefresh: () =>
+                    ref.read(appStoreProvider.notifier).refreshContent(),
               ),
+              const SectionHeader(title: '今天值得关注'),
+              if (state.news.isEmpty)
+                EmptyState(
+                  icon: Icons.newspaper_outlined,
+                  title: '暂时没有已发布资讯',
+                  body: '内容必须经过来源核对；请稍后刷新。材料项目仍可离线使用。',
+                  action: TextButton(
+                    onPressed: () =>
+                        ref.read(appStoreProvider.notifier).refreshContent(),
+                    child: const Text('重新加载'),
+                  ),
+                )
+              else
+                _HeroUpdate(
+                  item: state.news.first,
+                  onTap: () => _showNews(context, ref, state.news.first),
+                ),
               SectionHeader(
                 title: '我的下一步',
                 trailing: TextButton(
@@ -54,18 +74,20 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               _NextStepCard(project: nextProject, onTap: onOpenProjects),
-              const SectionHeader(title: '最新资讯'),
-              ...state.news
-                  .skip(1)
-                  .map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _NewsCard(
-                        item: item,
-                        onTap: () => _showNews(context, ref, item),
+              if (state.news.length > 1) ...[
+                const SectionHeader(title: '最新资讯'),
+                ...state.news
+                    .skip(1)
+                    .map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _NewsCard(
+                          item: item,
+                          onTap: () => _showNews(context, ref, item),
+                        ),
                       ),
                     ),
-                  ),
+              ],
               const SizedBox(height: 12),
               Text(
                 '内容仅作信息整理，不构成移民法律意见。请始终核对官方原文。',

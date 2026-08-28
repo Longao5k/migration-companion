@@ -13,6 +13,19 @@
 
 产品不提供个人签证资格判断、路径推荐、政府表格答案建议或代为递交。
 
+## 2026-08-28 可运行基线
+
+当前本地开发版已完成并验证：动态官方内容与离线缓存、来源/新闻/变更/更正/采集健康后台、
+访客完整备份恢复、云容量预留计费、扫描状态自动轮询、离线修改队列、幂等重试、409 字段级冲突处理、
+账号云项目拉取和换机元数据恢复、预签名直传与失败恢复、政策通知规则与事务 Outbox、7 天账号删除撤回及
+过期隔离文件清理。最新自动化证据为 Flutter **21 tests**、API 单元 **4 tests**、API 端到端 **29 tests**、
+爬虫 **7 tests**，并通过后台/公开网页生产构建、Flutter Web release 和 243.2 MB Android release APK 构建；
+此前也已完成 Pixel Fold API 35 模拟器安装启动检查。
+
+这仍是开发验收基线，不是“已可上架”：生产 Cognito、商店服务端核验与沙盒、APNs/FCM 实际投递、独立扫描 Worker、
+文档引擎授权/自研替换、真实 iOS 设备，以及法律/隐私专业复核仍是外部门槛。最新状态见
+[`docs/handoff/project-status-2026-08-28.md`](docs/handoff/project-status-2026-08-28.md)。
+
 ## Flutter 版本隔离
 
 项目固定 Flutter 3.47.1。所有 Flutter 命令必须通过 FVM 运行，禁止使用 `flutter upgrade`、`flutter channel` 或任何会修改本机全局 Flutter 的操作。

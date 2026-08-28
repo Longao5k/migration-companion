@@ -1,5 +1,8 @@
 # Migration Companion 工程交接（给 Claude）
 
+> 本文是 2026-08-27 历史交接快照。2026-08-28 的续建结果、当前绿色证据和剩余外部门槛已迁移到
+> [`project-status-2026-08-28.md`](project-status-2026-08-28.md)，后续以新文件为准。
+
 **交接日期：** 2026-08-27  
 **最近更新：** 2026-08-27（续建：P0-A 完成、P0-D 部分完成）  
 **项目目录：** `C:\Users\longa\Dev\migration-companion`  

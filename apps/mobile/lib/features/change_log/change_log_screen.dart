@@ -12,19 +12,39 @@ class ChangeLogScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final changes = ref.watch(appStoreProvider).changes;
+    final state = ref.watch(appStoreProvider);
+    final changes = state.changes;
+    final children = <Widget>[
+      const _EvidenceIntro(),
+      ContentRefreshStatus(
+        refreshing: state.isContentRefreshing,
+        error: state.contentError,
+        updatedAt: state.contentUpdatedAt,
+        onRefresh: () => ref.read(appStoreProvider.notifier).refreshContent(),
+      ),
+      if (changes.isEmpty)
+        EmptyState(
+          icon: Icons.change_circle_outlined,
+          title: '暂时没有可公开的变更证据',
+          body: '重大与重要变化必须人工核实；页面故障不会作为政策变化发布。',
+          action: TextButton(
+            onPressed: () =>
+                ref.read(appStoreProvider.notifier).refreshContent(),
+            child: const Text('重新加载'),
+          ),
+        )
+      else
+        ...changes.map((change) => _ChangeCard(change: change)),
+    ];
     return CustomScrollView(
       slivers: [
         const SliverAppBar.large(title: Text('政策变更证据')),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
           sliver: SliverList.separated(
-            itemCount: changes.length + 1,
+            itemCount: children.length,
             separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              if (index == 0) return const _EvidenceIntro();
-              return _ChangeCard(change: changes[index - 1]);
-            },
+            itemBuilder: (context, index) => children[index],
           ),
         ),
       ],

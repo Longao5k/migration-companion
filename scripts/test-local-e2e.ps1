@@ -37,7 +37,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL/MinIO 启动失败' }
 
     Write-Host '[2/4] 同步数据库结构 ...'
-    Invoke-Expression "$pnpm --filter @migration-companion/api exec prisma db push"
+    # This URL is pinned above to the disposable local acceptance database.
+    # Production deploys use checked-in migrations and `prisma migrate deploy`.
+    Invoke-Expression "$pnpm --filter @migration-companion/api exec prisma db push --accept-data-loss"
     if ($LASTEXITCODE -ne 0) { throw '数据库结构初始化失败' }
 
     Write-Host '[3/4] 准备本地文件桶 ...'

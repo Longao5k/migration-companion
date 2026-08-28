@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class SectionHeader extends StatelessWidget {
   const SectionHeader({super.key, required this.title, this.trailing});
@@ -97,6 +98,59 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: 22),
             action,
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class ContentRefreshStatus extends StatelessWidget {
+  const ContentRefreshStatus({
+    super.key,
+    required this.refreshing,
+    required this.onRefresh,
+    this.error,
+    this.updatedAt,
+  });
+
+  final bool refreshing;
+  final String? error;
+  final DateTime? updatedAt;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = error != null;
+    return Card(
+      color: hasError
+          ? Theme.of(context).colorScheme.errorContainer
+          : Theme.of(context).colorScheme.surfaceContainerLow,
+      child: ListTile(
+        leading: refreshing
+            ? const SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                hasError ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
+              ),
+        title: Text(
+          refreshing
+              ? '正在更新官方内容'
+              : hasError
+              ? '当前显示本机缓存'
+              : '官方内容已同步',
+        ),
+        subtitle: Text(
+          error ??
+              (updatedAt == null
+                  ? '首次联网后会保存离线缓存。'
+                  : '最近更新 ${DateFormat('yyyy-MM-dd HH:mm').format(updatedAt!.toLocal())}'),
+        ),
+        trailing: IconButton(
+          onPressed: refreshing ? null : onRefresh,
+          icon: const Icon(Icons.refresh),
+          tooltip: '刷新官方内容',
         ),
       ),
     );

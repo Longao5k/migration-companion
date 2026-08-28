@@ -66,6 +66,11 @@ export class FilesController {
 export class FileWorkerController {
   constructor(private readonly files: FilesService) {}
 
+  @Post('cleanup-expired-uploads')
+  cleanupExpiredUploads() {
+    return this.files.cleanupExpiredUploads();
+  }
+
   @Post(':fileId/scan-result')
   @UseGuards(WorkerApiKeyGuard)
   scanResult(@Param('fileId') fileId: string, @Body() body: ScanResultDto) {

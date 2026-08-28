@@ -30,8 +30,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL/MinIO 启动失败' }
 
     $env:DATABASE_URL = 'postgresql://migration:local-only-migration@localhost:55432/migration?schema=public'
-    Invoke-Expression "$pnpm --filter @migration-companion/api exec prisma db push"
+    # Local-only schema synchronisation. Production uses the checked-in
+    # migrations with `prisma migrate deploy`.
+    Invoke-Expression "$pnpm --filter @migration-companion/api exec prisma db push --accept-data-loss"
     if ($LASTEXITCODE -ne 0) { throw '数据库结构初始化失败' }
+    Invoke-Expression "$pnpm --filter @migration-companion/api content:seed"
+    if ($LASTEXITCODE -ne 0) { throw '内容来源注册表初始化失败' }
 
     $env:AWS_ACCESS_KEY_ID = 'localmigration'
     $env:AWS_SECRET_ACCESS_KEY = 'local-only-migration-storage'

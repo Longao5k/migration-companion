@@ -12,10 +12,25 @@ export class EntitlementsService {
 
   async get(accountId: string, email: string) {
     const account = await this.ensureAccount(accountId, email);
-    const storage = await this.prisma.fileRecord.aggregate({
-      where: { project: { ownerId: accountId } },
-      _sum: { byteSize: true },
+    const ownedProjects = await this.prisma.project.findMany({
+      where: { ownerId: accountId },
+      select: { id: true },
     });
+    const projectIds = ownedProjects.map((project) => project.id);
+    const [storage, reserved] = await Promise.all([
+      this.prisma.fileRecord.aggregate({
+        where: { project: { ownerId: accountId } },
+        _sum: { byteSize: true },
+      }),
+      this.prisma.uploadSession.aggregate({
+        where: {
+          projectId: { in: projectIds },
+          completedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        _sum: { byteSize: true },
+      }),
+    ]);
     const now = new Date();
     const subscriptionActive =
       account.subscription !== null &&
@@ -23,11 +38,15 @@ export class EntitlementsService {
       (!account.subscription.currentPeriodEndsAt || account.subscription.currentPeriodEndsAt > now);
     const trialActive = Boolean(account.trialEndsAt && account.trialEndsAt > now);
     const tier = subscriptionActive ? 'PREMIUM' : trialActive ? 'TRIAL' : 'FREE';
+    const storedBytes = storage._sum.byteSize ?? 0n;
+    const reservedBytes = reserved._sum.byteSize ?? 0n;
     return {
       tier,
       advancedEditing: tier !== 'FREE',
       cloudStorageBytes: tier === 'FREE' ? freeBytes : premiumBytes,
-      cloudStorageUsedBytes: (storage._sum.byteSize ?? 0n).toString(),
+      cloudStorageUsedBytes: storedBytes.toString(),
+      cloudStorageReservedBytes: reservedBytes.toString(),
+      cloudStorageAllocatedBytes: (storedBytes + reservedBytes).toString(),
       trialStartedAt: account.trialStartedAt,
       trialEndsAt: account.trialEndsAt,
       subscription: account.subscription,

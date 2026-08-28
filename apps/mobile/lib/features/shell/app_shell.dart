@@ -1,20 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/state/app_store.dart';
 import '../change_log/change_log_screen.dart';
 import '../home/home_screen.dart';
 import '../profile/profile_screen.dart';
 import '../projects/projects_screen.dart';
 import '../tools/tools_screen.dart';
 
-class AppShell extends StatefulWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(() async {
+      final store = ref.read(appStoreProvider.notifier);
+      await store.ready;
+      await store.refreshContent();
+      await store.resumeCloudSync();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -6,6 +6,7 @@ import {
   CloudFilesConsentDto,
   CreateChecklistItemDto,
   CreateProjectDto,
+  SyncOperationDto,
   UpdateChecklistDto,
   ViewerDownloadDto,
 } from './projects.dto';
@@ -66,5 +67,14 @@ export class ProjectsController {
     @Body() body: CreateChecklistItemDto,
   ) {
     return this.projects.addChecklistItem(user.accountId, projectId, body);
+  }
+
+  @Post(':projectId/sync-operations')
+  applySyncOperation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Body() body: SyncOperationDto,
+  ) {
+    return this.projects.applySyncOperation(user.accountId, projectId, body);
   }
 }
