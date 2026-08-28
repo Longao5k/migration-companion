@@ -17,7 +17,10 @@ void main() {
       });
       expect(item.sourceTitle, 'Income threshold update');
       // 收藏后仍要留着，否则详情页的英文原标题会在收藏时消失。
-      expect(item.copyWith(bookmarked: true).sourceTitle, 'Income threshold update');
+      expect(
+        item.copyWith(bookmarked: true).sourceTitle,
+        'Income threshold update',
+      );
     });
 
     test('缺失或空串都归一成 null，界面据此不显示这一块', () {
@@ -39,18 +42,15 @@ void main() {
   });
 
   group('下一步该做什么', () {
-    ChecklistItem item(
-      String id,
-      ChecklistStatus status, {
-      DateTime? due,
-    }) => ChecklistItem(
-      id: id,
-      title: id,
-      owner: '本人',
-      category: '材料',
-      status: status,
-      dueDate: due,
-    );
+    ChecklistItem item(String id, ChecklistStatus status, {DateTime? due}) =>
+        ChecklistItem(
+          id: id,
+          title: id,
+          owner: '本人',
+          category: '材料',
+          status: status,
+          dueDate: due,
+        );
 
     VisaProject project(List<ChecklistItem> items) => VisaProject(
       id: 'p1',
@@ -111,7 +111,11 @@ void main() {
         'unavailableCount': 3,
         'jurisdictions': [
           {'jurisdiction': 'AU-SA', 'monitoredCount': 4, 'unavailableCount': 0},
-          {'jurisdiction': 'AU-FED', 'monitoredCount': 1, 'unavailableCount': 3},
+          {
+            'jurisdiction': 'AU-FED',
+            'monitoredCount': 1,
+            'unavailableCount': 3,
+          },
         ],
       });
       expect(status.hasGap, isTrue);

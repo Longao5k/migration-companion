@@ -71,13 +71,22 @@ Google 下架的常见原因就是这张表跟实际行为对不上。以下是*
 - 不收集位置、通讯录、短信、通话记录、设备标识符
 - **不上传用户的材料文件**（`CLOUD_FILES_ENABLED=false`，服务端直接拒绝新增上传）
 
-**Android 权限**：`INTERNET`、`RECEIVE_BOOT_COMPLETED`（重启后恢复用户自己设的提醒），
-通知权限由 `flutter_local_notifications` 在 Android 13+ 合并进清单，只在用户主动设置提醒时请求。
+**Android 权限**（这是**合并后清单**的实际结果，不是源码里写了几行）：
 
-> `open_filex` 会往合并清单里塞 `READ_EXTERNAL_STORAGE` 和三个 `READ_MEDIA_*`。
-> 我们不读媒体库，已在 `AndroidManifest.xml` 用 `tools:node="remove"` 移除。
-> **上传前请用 `bundletool`/`aapt2 dump permissions` 核对一次实际合并结果**，
-> 表单要按合并后的清单填，不是按源码里写了几行填。
+| 权限 | 来自 | 用途 |
+| --- | --- | --- |
+| `INTERNET` | 我们 | 拉取官方资讯与政策变更 |
+| `ACCESS_NETWORK_STATE` | 依赖 | 网络状态判断 |
+| `RECEIVE_BOOT_COMPLETED` | 我们 | 重启后恢复用户自己设的提醒 |
+| `POST_NOTIFICATIONS` | `flutter_local_notifications` | Android 13+，只在用户主动设提醒时请求 |
+| `VIBRATE` | `flutter_local_notifications` | 提醒震动 |
+
+> `open_filex` 原本会塞进 `READ_EXTERNAL_STORAGE` 和三个 `READ_MEDIA_*`。我们不读媒体库，
+> 已用 `tools:node="remove"` 移除，核对过合并清单确认没了。
+> `in_app_purchase` 原本会塞进 `com.android.vending.BILLING` 和两个 `ProxyBillingActivity`——
+> 包里买不到任何东西却声明计费权限，和「无内购」的表单直接矛盾，因此整个依赖已移出发布构建。
+>
+> 换依赖或升级后，**上传前用 `aapt2 dump permissions` 重新核对一次**。
 
 清单里还声明了 `<queries>`（打开 https、Custom Tabs、PDF/Word 查看、文本分享）。
 Android 11 起没有这几行，「读官方原文」和「打开查看」会解析不到应用而**静默失败**。
@@ -131,7 +140,7 @@ Google 要求提供账号删除的**应用内入口和网页入口**，两个都
 
 **截图与描述里不能出现的东西**（都是这个构建做不到的，出现即为虚假宣称）：
 
-- 订阅、Premium、7 天试用、价格——`SUBSCRIPTIONS` 默认关闭，包里没有这些入口
+- 订阅、Premium、7 天试用、价格——计费依赖已整个移出发布构建，包里没有这些入口
 - PDF/Word 的编辑、批注、签名、表单填写、页面整理——这一版只能查看
 - 云端上传、云端备份——`CLOUD_FILES_ENABLED=false`，上传入口是关的
 
@@ -149,8 +158,9 @@ App 的资讯、政策变更、文档工具和本机材料清单**不需要登�
 - 提供一组**专供审核使用**的邮箱 + 访问码（用 `set-pilot-codes.sh` 单独生成一条，
   不要复用真实测试者的），并写明有效期
 
-**应用内购买：选「否」。** 包里没有任何计费入口。等订阅真正开放时再改这一项——
-先声明有内购、实际却买不到，会被判为误导。
+**应用内购买：选「否」。** `in_app_purchase` 已移出发布构建，合并清单里没有
+`com.android.vending.BILLING`，包里也没有任何计费入口，两边是一致的。
+等订阅真正开放时再改这一项——先声明有内购、实际却买不到，会被判为误导。
 
 ---
 

@@ -7,10 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/state/app_store.dart';
 import '../../core/api/web_config.dart';
 import '../../shared/widgets/common.dart';
-import '../subscription/subscription_screen.dart';
-
-/// 订阅入口是否可见。默认关闭：见下方入口处的说明。
-const subscriptionsEnabled = bool.fromEnvironment('SUBSCRIPTIONS');
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -114,7 +110,7 @@ class ProfileScreen extends ConsumerWidget {
             icon: Icons.delete_outline,
             title: '删除账号与数据',
             subtitle: state.deletionRequestedAt == null
-                ? 'App 内可发起；订阅需单独管理'
+                ? 'App 内可发起'
                 : '已提交，可在计划清除前撤回',
             onTap: state.isSignedIn && state.deletionRequestedAt == null
                 ? () => _deleteAccount(context, ref)
@@ -132,30 +128,6 @@ class ProfileScreen extends ConsumerWidget {
                 ? () => _showNotificationPreferences(context, ref)
                 : null,
           ),
-          // 订阅入口按构建开关关闭。Premium 原本的两项权益——高级文档编辑与云文件额度——
-          // 目前一项都不可用：评估版文档 SDK 已按 ADR-011 移出发布构建，云文件上传也已关闭。
-          // 卖出去却什么都不给，既违反商店计费政策，也踩澳洲消费者法。
-          // 权益真正可用后，用 --dart-define=SUBSCRIPTIONS=true 重新打开。
-          if (subscriptionsEnabled) ...[
-            const SectionHeader(title: '订阅'),
-            _SettingsTile(
-              icon: Icons.workspace_premium_outlined,
-              title: 'Migration Companion Premium',
-              subtitle:
-                  '${_tierLabel(state.entitlementTier)} · A\$11.99/月 · A\$89.99/年',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
-              ),
-            ),
-            _SettingsTile(
-              icon: Icons.restore,
-              title: '恢复购买',
-              subtitle: '从 Apple 或 Google 商店恢复权益',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
-              ),
-            ),
-          ],
           const SectionHeader(title: '关于'),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
@@ -172,7 +144,7 @@ class ProfileScreen extends ConsumerWidget {
           _SettingsTile(
             icon: Icons.support_agent_outlined,
             title: '帮助与支持',
-            subtitle: '订阅、退款、权限和数据问题',
+            subtitle: '权限、数据和账号问题',
             onTap: () => _showInfo(
               context,
               '帮助与支持',
@@ -206,12 +178,6 @@ class _SettingsTile extends StatelessWidget {
     onTap: onTap,
   );
 }
-
-String _tierLabel(String tier) => switch (tier) {
-  'PREMIUM' => 'Premium',
-  'TRIAL' => '高级试用中',
-  _ => '永久免费',
-};
 
 Future<void> _signIn(BuildContext context, WidgetRef ref) async {
   const pilotAuthEnabled = bool.fromEnvironment('PILOT_AUTH');
@@ -286,9 +252,7 @@ Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('申请删除账号与云端数据？'),
-      content: const Text(
-        '账号主数据目标在确认后 7 天内删除；备份轮换最长 35 天。本机项目不会在此步骤中自动删除。Apple 或 Google 订阅也不会自动取消，请另行前往商店管理。',
-      ),
+      content: const Text('账号主数据目标在确认后 7 天内删除；备份轮换最长 35 天。本机项目不会在此步骤中自动删除。'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
