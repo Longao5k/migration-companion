@@ -50,12 +50,12 @@ dependencies:
   path: 1.9.1
   cryptography: 2.9.0
   cross_file: 0.3.5+5
-  pdftron_flutter: 1.0.1-57
   http: ^1.6.0
   in_app_purchase: ^3.3.0
   http_parser: ^4.1.2
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.1
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:

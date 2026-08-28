@@ -525,6 +525,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.5.0"
+  open_filex:
+    dependency: "direct main"
+    description:
+      name: open_filex
+      sha256: "9976da61b6a72302cf3b1efbce259200cd40232643a467aac7370addf94d6900"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.7.0"
   package_config:
     dependency: transitive
     description:
@@ -589,14 +597,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
-  pdftron_flutter:
-    dependency: "direct main"
-    description:
-      name: pdftron_flutter
-      sha256: "12ab599790351184fb7db498634c204de7b031b33207691d4ead6b4bac8c490e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1-57"
   petitparser:
     dependency: transitive
     description:

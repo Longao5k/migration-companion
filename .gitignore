@@ -26,3 +26,9 @@ __pycache__/
 # 按冻结的版权与证据规则，这些只能留在独立的私有证据存储，不得作为自有内容提交或再发布。
 .local-live-check/
 .local-state/
+
+# Android 发布签名：密钥与口令由产品所有者保管，绝不进版本库。
+# 丢了 upload key 就无法再向 Google Play 更新同一个应用。
+apps/mobile/android/key.properties
+*.jks
+*.keystore

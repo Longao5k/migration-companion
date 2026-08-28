@@ -9,6 +9,9 @@ import '../../core/api/web_config.dart';
 import '../../shared/widgets/common.dart';
 import '../subscription/subscription_screen.dart';
 
+/// 订阅入口是否可见。默认关闭：见下方入口处的说明。
+const subscriptionsEnabled = bool.fromEnvironment('SUBSCRIPTIONS');
+
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
@@ -129,24 +132,30 @@ class ProfileScreen extends ConsumerWidget {
                 ? () => _showNotificationPreferences(context, ref)
                 : null,
           ),
-          const SectionHeader(title: '订阅'),
-          _SettingsTile(
-            icon: Icons.workspace_premium_outlined,
-            title: 'Migration Companion Premium',
-            subtitle:
-                '${_tierLabel(state.entitlementTier)} · A\$11.99/月 · A\$89.99/年',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+          // 订阅入口按构建开关关闭。Premium 原本的两项权益——高级文档编辑与云文件额度——
+          // 目前一项都不可用：评估版文档 SDK 已按 ADR-011 移出发布构建，云文件上传也已关闭。
+          // 卖出去却什么都不给，既违反商店计费政策，也踩澳洲消费者法。
+          // 权益真正可用后，用 --dart-define=SUBSCRIPTIONS=true 重新打开。
+          if (subscriptionsEnabled) ...[
+            const SectionHeader(title: '订阅'),
+            _SettingsTile(
+              icon: Icons.workspace_premium_outlined,
+              title: 'Migration Companion Premium',
+              subtitle:
+                  '${_tierLabel(state.entitlementTier)} · A\$11.99/月 · A\$89.99/年',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+              ),
             ),
-          ),
-          _SettingsTile(
-            icon: Icons.restore,
-            title: '恢复购买',
-            subtitle: '从 Apple 或 Google 商店恢复权益',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+            _SettingsTile(
+              icon: Icons.restore,
+              title: '恢复购买',
+              subtitle: '从 Apple 或 Google 商店恢复权益',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+              ),
             ),
-          ),
+          ],
           const SectionHeader(title: '关于'),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
