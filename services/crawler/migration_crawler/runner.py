@@ -52,12 +52,14 @@ def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
         news_result = _discover_news(source, fetcher, state_dir, api_url, worker_key)
         if not previous.content_hash:
             return _with_news("baseline-created", news_result)
-        candidate = make_candidate(previous.normalized_text, normalized, source.name)
+        candidate = make_candidate(
+            previous.normalized_text, normalized, source.name, len(normalized)
+        )
         if not candidate:
             return _with_news("unchanged", news_result)
 
         if api_url and worker_key:
-            submit_candidate(api_url, worker_key, source, candidate)
+            submit_candidate(api_url, worker_key, source, candidate, len(normalized))
             return _with_news(f"candidate-submitted:{candidate.importance}", news_result)
         output = state_dir / source.id / "pending-candidate.json"
         output.write_text(json.dumps(candidate.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")

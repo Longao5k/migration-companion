@@ -2,6 +2,13 @@ import difflib
 import re
 from .models import ChangeCandidate, Importance
 
+# 引用配额必须与 services/api/src/content/excerpt-quota.ts 保持一致。
+# 采集器如果按更宽的配额产出，API 会以 HTTP 400 拒绝，该来源本轮直接失败——
+# 也就是说真实政策变更会被我们自己的规则吃掉，而且只有在真的变更时才暴露。
+EXCERPT_PER_FIELD = 600
+EXCERPT_COMBINED = 1200
+EXCERPT_BODY_RATIO = 0.2
+
 MAJOR_TERMS = re.compile(r"\b(?:closed|suspended|ceased|withdrawn|abolished|not accepting)\b", re.I)
 IMPORTANT_TERMS = re.compile(
     r"\b(?:eligibility|requirement|occupation|invitation|nomination|fee|deadline|points?|income|age|English)\b",
@@ -17,7 +24,20 @@ def classify(changed_text: str) -> Importance:
     return "GENERAL"
 
 
-def make_candidate(old: str, new: str, source_name: str) -> ChangeCandidate | None:
+def excerpt_budget(body_chars: int) -> int:
+    """本次候选可以引用的官方原文总字符数。
+
+    固定上限挡长页面，比例上限挡短页面：只有固定上限时，两千多字的短页面
+    仍然可能被整页引用。
+    """
+    if body_chars > 0:
+        return max(0, min(EXCERPT_COMBINED, int(body_chars * EXCERPT_BODY_RATIO)))
+    return EXCERPT_COMBINED
+
+
+def make_candidate(
+    old: str, new: str, source_name: str, body_chars: int = 0
+) -> ChangeCandidate | None:
     if old == new:
         return None
     removed: list[str] = []
@@ -27,8 +47,12 @@ def make_candidate(old: str, new: str, source_name: str) -> ChangeCandidate | No
             removed.append(line[2:])
         elif line.startswith("+ "):
             added.append(line[2:])
-    old_excerpt = "\n".join(removed)[:2000]
-    new_excerpt = "\n".join(added)[:2000]
+
+    # 预算在改前/改后之间平分，各自再受单字段上限约束。
+    budget = excerpt_budget(body_chars)
+    per_field = min(EXCERPT_PER_FIELD, max(0, budget // 2))
+    old_excerpt = "\n".join(removed)[:per_field]
+    new_excerpt = "\n".join(added)[:per_field]
     combined = f"{old_excerpt}\n{new_excerpt}"
     return ChangeCandidate(
         title_zh=f"{source_name} 检测到页面变化",

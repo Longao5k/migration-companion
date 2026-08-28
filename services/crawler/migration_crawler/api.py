@@ -36,7 +36,13 @@ def submit_news_draft(
             raise RuntimeError(f"review API returned HTTP {response.status}")
 
 
-def submit_candidate(api_url: str, worker_key: str, source: Source, candidate: ChangeCandidate) -> None:
+def submit_candidate(
+    api_url: str,
+    worker_key: str,
+    source: Source,
+    candidate: ChangeCandidate,
+    body_chars: int = 0,
+) -> None:
     tags = ["SA" if source.jurisdiction == "AU-SA" else "联邦"]
     if "190" in source.url:
         tags.append("190")
@@ -52,7 +58,11 @@ def submit_candidate(api_url: str, worker_key: str, source: Source, candidate: C
         "importance": candidate.importance,
         "discoveredAt": datetime.now(timezone.utc).isoformat(),
         "tags": tags,
+        # 让服务端的「引用不超过正文 20%」真正生效：没有这个值时
+        # 服务端只能退回固定上限，短页面仍可能被整页引用。
+        "sourceBodyChars": body_chars or None,
     }
+    payload = {key: value for key, value in payload.items() if value is not None}
     request = Request(
         f"{api_url.rstrip('/')}/v1/content/worker/changes",
         data=json.dumps(payload).encode("utf-8"),

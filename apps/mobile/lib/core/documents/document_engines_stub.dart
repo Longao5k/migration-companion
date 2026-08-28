@@ -6,7 +6,7 @@ DocxDocumentEngine createDocxDocumentEngine() => _MetadataDocxEngine();
 
 class _BrowserPdfEngine implements PdfDocumentEngine {
   @override
-  String get implementationName => '设备端 PDF 引擎';
+  String get implementationName => '网页端（仅清单）';
 
   @override
   Future<String> openWorkingCopy({
@@ -28,7 +28,13 @@ class _BrowserPdfEngine implements PdfDocumentEngine {
 
 class _MetadataDocxEngine implements DocxDocumentEngine {
   @override
-  String get implementationName => 'DOCX 试用适配器';
+  String get implementationName => '网页端（仅清单）';
+
+  @override
+  Future<String> openWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  }) => throw UnsupportedError('网页端不打开设备文档');
 
   @override
   Future<DocumentPreflightResult> preflight({

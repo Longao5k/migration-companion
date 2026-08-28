@@ -42,4 +42,10 @@ abstract interface class DocxDocumentEngine {
     required String? localPath,
     required int byteSize,
   });
+
+  /// 与 PDF 相同：先复制出 App 自有的工作副本，再把副本交给外部程序。
+  Future<String> openWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  });
 }

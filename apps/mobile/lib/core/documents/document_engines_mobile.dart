@@ -88,7 +88,25 @@ class _SystemViewerDocxEngine implements DocxDocumentEngine {
     byteSize: byteSize,
     hasLocalPath: localPath != null,
   );
+
+  @override
+  Future<String> openWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  }) async {
+    final target = await _createWorkingCopy(sourcePath, displayName);
+    // 不传 type：DOC/DOCX 的 MIME 在两个平台上不一致，交给系统按扩展名选应用。
+    final result = await OpenFilex.open(target.path);
+    if (result.type != ResultType.done) {
+      throw FileSystemException('这台设备没有可以打开 Word 文档的应用。', target.path);
+    }
+    return target.path;
+  }
 }
+
+/// 工作副本的保留时长。副本是完整的申请材料（护照、成绩单、雇主信），
+/// 留在磁盘上没有意义，只是多一份可能泄露的拷贝。
+const workingCopyRetention = Duration(hours: 24);
 
 /// 永远只把副本交给外部程序，原件不出 App 的私有目录。
 Future<File> _createWorkingCopy(String sourcePath, String displayName) async {
@@ -97,6 +115,7 @@ Future<File> _createWorkingCopy(String sourcePath, String displayName) async {
     path.join(root.path, 'document-working-copies'),
   );
   await workingDirectory.create(recursive: true);
+  await pruneWorkingCopies(workingDirectory);
   final safeName = displayName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
   final target = File(
     path.join(
@@ -106,4 +125,20 @@ Future<File> _createWorkingCopy(String sourcePath, String displayName) async {
   );
   await File(sourcePath).copy(target.path);
   return target;
+}
+
+/// 删除过期的工作副本。此前这个目录只增不减：用户每打开一份材料就永久多留一份
+/// 明文拷贝，删掉原件也删不掉它。
+Future<void> pruneWorkingCopies(Directory workingDirectory) async {
+  if (!await workingDirectory.exists()) return;
+  final cutoff = DateTime.now().subtract(workingCopyRetention);
+  await for (final entity in workingDirectory.list()) {
+    if (entity is! File) continue;
+    try {
+      final stat = await entity.stat();
+      if (stat.modified.isBefore(cutoff)) await entity.delete();
+    } on FileSystemException {
+      // 副本可能正被外部阅读器占用；下一轮再删，不要因此打不开文件。
+    }
+  }
 }
