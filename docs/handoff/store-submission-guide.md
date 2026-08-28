@@ -152,13 +152,38 @@ Google 要求提供账号删除的**应用内入口和网页入口**，两个都
 
 | 项 | 要求 |
 | --- | --- |
-| 应用图标 | 512×512 PNG，32 位，无透明 |
+| 应用图标 | 512×512 PNG，32 位，无透明 —— **已生成**：`apps/mobile/store/play-icon-512.png` |
 | 功能图（Feature graphic） | 1024×500 PNG/JPG |
 | 手机截图 | 至少 2 张，建议 4–6 张（资讯、追踪、申请、文档） |
 | 简短描述 | ≤ 80 字符 |
 | 完整描述 | ≤ 4000 字符 |
 | 分类 | 工具 或 教育 |
 | 内容分级问卷 | 如实填写；无 UGC 时分级很低 |
+
+### 名称与图标（已落地）
+
+| 位置 | 内容 | 为什么 |
+| --- | --- | --- |
+| 桌面/主屏图标名 | `MigrationCo` | 启动器约 10-12 字符就截断，`Migration Companion` 一定会变成 `Migration…`。Android 在 `res/values/strings.xml`，iOS 在 `Info.plist` 的 `CFBundleDisplayName`。 |
+| 商店名称 | `Migration Companion` | 商店页不受启动器长度限制。 |
+
+图标是一条带转折的路径加三个节点，终点画成环——对应 App 里的「申请路线 / 下一步」。
+用现有品牌色（桉树绿 `#147B66`）。**不含任何徽章、盾牌、国旗或政府符号**，冻结规则
+禁止暗示官方身份。
+
+全部资源由 `apps/mobile/tool/generate_app_icon.py` 生成，要改就改脚本再跑一次，
+不要手改 PNG：
+
+- Android 旧版位图 `mipmap-{mdpi…xxxhdpi}/ic_launcher.png`
+- Android 自适应图标 `mipmap-anydpi-v26/ic_launcher.xml` + 前景 PNG + 背景色资源
+  （含 `monochrome`，支持 Android 13 主题图标）
+- iOS `AppIcon.appiconset` 全套 19 张，已压平 alpha（iOS 拒收带透明通道的图标）
+- Play 商店图标 `store/play-icon-512.png`
+
+自适应图标的前景单独缩到 0.76：保证可视区是 108dp 画布上**直径 66dp 的圆**，
+满幅画的图形在圆形启动器上会被切掉终点环和起点。脚本里注释了这个数怎么算出来的。
+
+---
 
 **文案红线**（冻结规则，写商店描述时必须遵守）：
 

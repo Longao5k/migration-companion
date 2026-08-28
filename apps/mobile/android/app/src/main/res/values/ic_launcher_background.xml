@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 桉树绿，与 lib/core/theme/app_theme.dart 的 _eucalyptus 一致。 -->
+    <color name="ic_launcher_background">#147B66</color>
+</resources>

@@ -58,11 +58,12 @@
         </intent>
     </queries>
     <application
-        android:label="Migration Companion"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:allowBackup="false"
         android:fullBackupContent="false"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"
