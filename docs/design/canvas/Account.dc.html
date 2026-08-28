@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    a { color: #147B66; } a:hover { color: #0F5E4E; }
+    .serif { font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #F7F8F5; color: #142231; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 20px 20px 16px;">
+    <div class="serif" style="font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">我的</div>
+  </div>
+
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 0 20px; overflow: hidden;">
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 20px; padding: 18px; display: flex; align-items: center; gap: 14px;">
+      <div style="width: 46px; height: 46px; border-radius: 23px; background: #E4EFE9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#147B66" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"></path></svg>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 15.5px; font-weight: 700;">还没登录</span>
+        <span style="font-size: 12px; line-height: 1.5; color: #7A837D;">登录后可以在换手机时找回你的清单</span>
+      </div>
+      <div style="height: 40px; border-radius: 12px; background: #147B66; display: flex; align-items: center; padding: 0 16px;">
+        <span style="font-size: 13.5px; font-weight: 600; color: #FFFFFF;">登录</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <span style="font-size: 12px; font-weight: 600; color: #8A928C; padding: 0 4px 8px;">我的内容</span>
+      <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 20px; overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v16l-6-4-6 4z"></path></svg>
+          <span style="flex: 1; font-size: 14.5px;">收藏的资讯</span>
+          <span style="font-size: 13px; color: #8A928C;">6</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+        <div style="height: 1px; background: #EDEFEC; margin-left: 48px;"></div>
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 6-2 7-2 7h16s-2-1-2-7"></path><path d="M10.5 20a2 2 0 003 0"></path></svg>
+          <span style="flex: 1; font-size: 14.5px;">提醒我的变化</span>
+          <span style="font-size: 13px; color: #8A928C;">南澳 190 / 491</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <span style="font-size: 12px; font-weight: 600; color: #8A928C; padding: 0 4px 8px;">数据</span>
+      <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 20px; overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"></path><path d="M8 10l4 4 4-4"></path><path d="M5 19h14"></path></svg>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 14.5px;">导出备份</span>
+            <span style="font-size: 11.5px; color: #8A928C;">上次导出：8月20日</span>
+          </div>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+        <div style="height: 1px; background: #EDEFEC; margin-left: 48px;"></div>
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0113.7-5.7L20 8"></path><path d="M20 4v4h-4"></path><path d="M20 12a8 8 0 01-13.7 5.7L4 16"></path><path d="M4 20v-4h4"></path></svg>
+          <span style="flex: 1; font-size: 14.5px;">从备份恢复</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <span style="font-size: 12px; font-weight: 600; color: #8A928C; padding: 0 4px 8px;">关于</span>
+      <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 20px; overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.6v.1"></path></svg>
+          <span style="flex: 1; font-size: 14.5px;">这个 App 能做什么</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+        <div style="height: 1px; background: #EDEFEC; margin-left: 48px;"></div>
+        <div style="display: flex; align-items: center; gap: 13px; padding: 15px 16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#46504A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 018 0v3"></path></svg>
+          <span style="flex: 1; font-size: 14.5px;">隐私与条款</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B4BCB6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding: 2px 4px; font-size: 11.5px; line-height: 1.6; color: #9AA39C; text-wrap: pretty;">
+      我们整理并翻译官方信息，不提供移民建议，也不代你递交申请。
+    </div>
+
+  </div>
+
+  <div style="height: 72px; background: #FFFFFF; border-top: 1px solid #E2E6E1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">资讯</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">追踪</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h9a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8"></path><path d="M4 8h5V3"></path><path d="M9 13l2 2 4-4"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">申请</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v13H6z"></path><path d="M13 3v5h5"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">文档</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <div style="width: 52px; height: 30px; border-radius: 15px; background: rgba(162,242,220,0.72); display: flex; align-items: center; justify-content: center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0A3F34" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"></path></svg>
+      </div>
+      <span style="font-size: 11px; font-weight: 700; color: #142231;">我的</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

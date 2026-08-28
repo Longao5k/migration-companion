@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    a { color: #147B66; } a:hover { color: #0F5E4E; }
+    .serif { font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; }
+    .cell { font-size: 13px; line-height: 1.6; }
+  </style>
+</helmet>
+
+<div style="width: 940px; background: #FFFFFF; color: #142231; padding: 40px 44px; display: flex; flex-direction: column; gap: 26px;">
+
+  <div style="display: flex; flex-direction: column; gap: 8px;">
+    <div class="serif" style="font-size: 30px; font-weight: 900; letter-spacing: -0.5px;">文案改写：从“说明书”到“产品”</div>
+    <div style="font-size: 14px; line-height: 1.6; color: #46504A; max-width: 720px; text-wrap: pretty;">
+      现在的文案在向审阅者解释产品边界，用户读到的是免责声明。改写原则：<b>必须披露的内容一条不删</b>，
+      但从「常驻的解释性文字」搬到「用户真正要做决定的那一刻」，并且用人话写。
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr); gap: 0; border: 1px solid #E2E6E1; border-radius: 16px; overflow: hidden;">
+
+    <div style="padding: 12px 16px; background: #F7F8F5; font-size: 12px; font-weight: 700; color: #5B6660;">位置</div>
+    <div style="padding: 12px 16px; background: #F7F8F5; font-size: 12px; font-weight: 700; color: #A2544F;">现在</div>
+    <div style="padding: 12px 16px; background: #F7F8F5; font-size: 12px; font-weight: 700; color: #0A3F34;">改成</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">首页常驻横幅</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">当前是本机模式。项目只保存在这台设备。你随时可以导出备份；注册不会自动上传敏感文件。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;"><b>整块删掉。</b>「只存在这台手机上」放在「我的文档」标题下一行；备份提醒在文档页出现一次即可。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">资讯详情</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">本摘要用于帮助理解发生了什么，不判断任何人的签证资格。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">内容摘自官方页面。是否适用于你的情况，请以官方原文为准。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">变更卡片</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">重要变化 · 已核实 ／ 最新页面变化</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">「已核实」「待核实」两个状态标签，配一行改前/改后对照。待核实补一句：系统发现这个页面变了，我们的编辑还在核对。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">项目进度</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">0% 已准备、已发送或已确认</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">4 / 12 ＋ 一行「下一步：职业评估结果，还有 9 天到期」。进度要能回答“我接下来干什么”。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">模板提示</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">模板仅用于整理材料，不代表完整、适用或满足签证要求。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">这是常见材料清单，请按你收到的邀请函核对。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">空状态</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">在材料项里逐个选择要上传的文件。上传不会因为登录自动发生。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">还没有文件 ＋ 一个「添加文件」按钮。空状态给出口，不做说明。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">协作讨论</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">讨论只用于协调材料准备。不要在这里填写证件号码、访问码或政府表格答案。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">输入框占位符：留言…（请勿填写证件号码）。提示写在会打字的地方，不写成一段公告。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">云同步入口</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">云文件、安全分享入口和 App 协作都需要先明确开启这个项目的云同步。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">不预先解释。用户点「分享给别人」时才说：需要先把这个申请同步到云端，才能生成链接。</div>
+
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #5B6660;">登录页</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC; color: #7A837D;">项目归属已保护；文件仍按项目决定是否上传。</div>
+    <div class="cell" style="padding: 14px 16px; border-top: 1px solid #EDEFEC;">登录后可以在换手机时找回你的清单。</div>
+
+  </div>
+
+  <div style="display: flex; gap: 18px;">
+    <div style="flex: 1; background: #F5FAF7; border: 1px solid #D5E8DE; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 9px;">
+      <div style="font-size: 14px; font-weight: 700; color: #0A3F34;">必须保留、但换位置的三条</div>
+      <div style="font-size: 12.5px; line-height: 1.65; color: #2C4A40; text-wrap: pretty;">
+        上传前的明确同意、分享前「发出去就收不回」的提示、以及「不构成移民建议」——
+        这三条是签核过的产品规则，不能删。改法是搬到确认弹窗和发送按钮旁边，
+        在用户真的要做这件事的那一刻出现一次。
+      </div>
+    </div>
+    <div style="flex: 1; background: #FFF8E9; border: 1px solid #F0E2C2; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 9px;">
+      <div style="font-size: 14px; font-weight: 700; color: #6B5416;">写文案时的三个检查</div>
+      <div style="font-size: 12.5px; line-height: 1.65; color: #8A6C21; text-wrap: pretty;">
+        一、这句话是在帮用户做下一步，还是在给我们免责？<br>
+        二、用户会不会在别的 App 里读到类似的话？不会的话多半是内部术语。<br>
+        三、删掉它，用户会不会做错事？不会就删。
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

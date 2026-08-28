@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    a { color: #147B66; } a:hover { color: #0F5E4E; }
+    .serif { font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #F7F8F5; color: #142231; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 20px 20px 16px; display: flex; align-items: flex-start; justify-content: space-between;">
+    <div class="serif" style="font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">我的申请</div>
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin: -8px -10px 0 0;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#142231" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </div>
+  </div>
+
+  <!-- 进度卡 -->
+  <div style="margin: 0 20px 16px; background: #142231; border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 16.5px; font-weight: 700; color: #FFFFFF;">南澳 491 州担保</span>
+        <span style="font-size: 12px; color: rgba(255,255,255,0.6);">主申请人 · 目标 12 月递交</span>
+      </div>
+      <span style="font-size: 12px; font-weight: 600; color: #7FE3C6;">4 / 12</span>
+    </div>
+    <div style="height: 6px; border-radius: 3px; background: rgba(255,255,255,0.14); overflow: hidden;">
+      <div style="width: 33%; height: 100%; border-radius: 3px; background: #7FE3C6;"></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7FE3C6" stroke-width="2" stroke-linecap="round"><path d="M12 7v5l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg>
+      <span style="font-size: 12.5px; color: rgba(255,255,255,0.82);">下一步：职业评估结果，还有 9 天到期</span>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 20px 10px;">
+    <span style="font-size: 12.5px; font-weight: 600; color: #5B6660;">材料清单</span>
+    <span style="font-size: 12.5px; color: #7A837D;">按官方要求整理</span>
+  </div>
+
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 0 20px; overflow: hidden;">
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 18px; padding: 15px; display: flex; align-items: center; gap: 13px;">
+      <div style="width: 26px; height: 26px; border-radius: 13px; background: #147B66; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"></path></svg>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 15px; font-weight: 600;">护照身份页</span>
+        <span style="font-size: 11.5px; color: #7A837D;">已确认 · 1 个文件</span>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 18px; padding: 15px; display: flex; align-items: center; gap: 13px;">
+      <div style="width: 26px; height: 26px; border-radius: 13px; border: 2px solid #D99B2B; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <div style="width: 8px; height: 8px; border-radius: 4px; background: #D99B2B;"></div>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 15px; font-weight: 600;">职业评估结果</span>
+        <span style="font-size: 11.5px; color: #B07C14;">准备中 · 9 天后到期</span>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 18px; padding: 15px; display: flex; align-items: center; gap: 13px;">
+      <div style="width: 26px; height: 26px; border-radius: 13px; border: 2px solid #CDD4CE; flex-shrink: 0;"></div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 15px; font-weight: 600;">英语成绩单</span>
+        <span style="font-size: 11.5px; color: #7A837D;">还没开始</span>
+      </div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E2E6E1; border-radius: 18px; padding: 15px; display: flex; align-items: center; gap: 13px;">
+      <div style="width: 26px; height: 26px; border-radius: 13px; border: 2px solid #CDD4CE; flex-shrink: 0;"></div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+        <span style="font-size: 15px; font-weight: 600;">南澳居住或工作证明</span>
+        <span style="font-size: 11.5px; color: #7A837D;">还没开始</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 9px; padding: 2px 4px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A928C" stroke-width="1.8" stroke-linecap="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.6v.1"></path></svg>
+      <span style="font-size: 11.5px; line-height: 1.55; color: #8A928C; text-wrap: pretty;">这是常见材料清单，请按你收到的邀请函核对。</span>
+    </div>
+
+  </div>
+
+  <div style="height: 72px; background: #FFFFFF; border-top: 1px solid #E2E6E1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">资讯</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">追踪</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <div style="width: 52px; height: 30px; border-radius: 15px; background: rgba(162,242,220,0.72); display: flex; align-items: center; justify-content: center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0A3F34" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h9a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8"></path><path d="M4 8h5V3"></path><path d="M9 13l2 2 4-4"></path></svg>
+      </div>
+      <span style="font-size: 11px; font-weight: 700; color: #142231;">申请</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v13H6z"></path><path d="M13 3v5h5"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">文档</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"></path></svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">我的</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

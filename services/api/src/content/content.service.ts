@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ChangeImportance, ReviewStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
+import { assertExcerptQuota } from './excerpt-quota';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -185,6 +186,8 @@ export class ContentService {
   }
 
   async ingest(dto: IngestChangeDto) {
+    // 写入端强制引用配额：DTO 只能挡住单个字段，挡不住合计，也挡不住短页面被整页引用。
+    assertExcerptQuota(dto);
     const source = await this.prisma.source.upsert({
       where: { url: dto.sourceUrl },
       create: {

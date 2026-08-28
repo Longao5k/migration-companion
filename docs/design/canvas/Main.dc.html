@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    a { color: #147B66; } a:hover { color: #0F5E4E; }
+    .serif { font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #F7F8F5; color: #142231; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- 报头 -->
+  <div style="display: flex; flex-direction: column; gap: 2px; padding: 20px 20px 12px;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <div class="serif" style="font-size: 26px; font-weight: 900; letter-spacing: -0.5px;">南澳今日</div>
+      <div style="display: flex; gap: 4px;">
+        <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#142231" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path>
+          </svg>
+        </div>
+        <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#142231" stroke-width="1.8" stroke-linecap="round">
+            <path d="M18 8a6 6 0 10-12 0c0 6-2 7-2 7h16s-2-1-2-7"></path><path d="M10.5 20a2 2 0 003 0"></path>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #5B6660;">
+      <span>8月28日 星期五</span>
+      <span style="width: 3px; height: 3px; border-radius: 50%; background: #B4BCB6;"></span>
+      <span>5 条更新</span>
+    </div>
+  </div>
+
+  <!-- 分类导航 -->
+  <div style="display: flex; gap: 18px; padding: 0 20px 14px; font-size: 14px; border-bottom: 1px solid #E2E6E1;">
+    <span style="font-weight: 700; color: #147B66; padding-bottom: 10px; box-shadow: inset 0 -2px 0 #147B66;">全部</span>
+    <span style="color: #5B6660; padding-bottom: 10px;">州担保</span>
+    <span style="color: #5B6660; padding-bottom: 10px;">职业清单</span>
+    <span style="color: #5B6660; padding-bottom: 10px;">审理进度</span>
+  </div>
+
+  <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+
+    <!-- 头条 -->
+    <div style="padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-size: 11px; font-weight: 700; color: #147B66; letter-spacing: 0.4px;">南澳州政府</span>
+        <span style="width: 3px; height: 3px; border-radius: 50%; background: #B4BCB6;"></span>
+        <span style="font-size: 11px; color: #7A837D;">7月2日</span>
+      </div>
+      <div class="serif" style="font-size: 25px; line-height: 1.28; font-weight: 700; letter-spacing: -0.3px; text-wrap: pretty;">
+        技术移民收入门槛上调至 A$79,423
+      </div>
+      <div style="font-size: 14px; line-height: 1.55; color: #46504A; text-wrap: pretty;">
+        自 7 月 1 日起，临时技术移民与核心技能收入门槛同步提高。已递交的申请按递交时的标准审理。
+      </div>
+      <div style="height: 132px; border-radius: 14px; background: linear-gradient(135deg, #147B66 0%, #0F5E4E 100%); display: flex; align-items: flex-end; padding: 14px;">
+        <span style="font-size: 12px; color: rgba(255,255,255,0.82);">薪资门槛 · 影响 482 / 186 / DAMA</span>
+      </div>
+    </div>
+
+    <div style="height: 1px; background: #E2E6E1; margin: 0 20px;"></div>
+
+    <!-- 列表 -->
+    <div style="display: flex; flex-direction: column;">
+
+      <div style="display: flex; gap: 14px; padding: 15px 20px; align-items: flex-start;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+          <div class="serif" style="font-size: 16px; line-height: 1.35; font-weight: 700; text-wrap: pretty;">
+            两项 DAMA 延长至 9 月 30 日
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7A837D;">
+            <span>南澳州政府</span>
+            <span style="width: 3px; height: 3px; border-radius: 50%; background: #C9CFC9;"></span>
+            <span>6月25日</span>
+          </div>
+        </div>
+        <div style="width: 66px; height: 66px; border-radius: 10px; background: #E4EFE9; flex-shrink: 0;"></div>
+      </div>
+
+      <div style="height: 1px; background: #E9ECE8; margin: 0 20px;"></div>
+
+      <div style="display: flex; gap: 14px; padding: 15px 20px; align-items: flex-start;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+          <div class="serif" style="font-size: 16px; line-height: 1.35; font-weight: 700; text-wrap: pretty;">
+            2025–26 年度意向登记已于 6 月 2 日关闭
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7A837D;">
+            <span>南澳州政府</span>
+            <span style="width: 3px; height: 3px; border-radius: 50%; background: #C9CFC9;"></span>
+            <span>5月29日</span>
+          </div>
+        </div>
+        <div style="width: 66px; height: 66px; border-radius: 10px; background: #F0EAD9; flex-shrink: 0;"></div>
+      </div>
+
+      <div style="height: 1px; background: #E9ECE8; margin: 0 20px;"></div>
+
+      <div style="display: flex; gap: 14px; padding: 15px 20px; align-items: flex-start;">
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+          <div class="serif" style="font-size: 16px; line-height: 1.35; font-weight: 700; text-wrap: pretty;">
+            5 月下旬州担保邀请数据公布
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #7A837D;">
+            <span>南澳州政府</span>
+            <span style="width: 3px; height: 3px; border-radius: 50%; background: #C9CFC9;"></span>
+            <span>5月21日</span>
+          </div>
+        </div>
+        <div style="width: 66px; height: 66px; border-radius: 10px; background: #E4EFE9; flex-shrink: 0;"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 底部导航 -->
+  <div style="height: 72px; background: #FFFFFF; border-top: 1px solid #E2E6E1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center;">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <div style="width: 52px; height: 30px; border-radius: 15px; background: rgba(162,242,220,0.72); display: flex; align-items: center; justify-content: center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0A3F34" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path>
+        </svg>
+      </div>
+      <span style="font-size: 11px; font-weight: 700; color: #142231;">资讯</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle>
+      </svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">追踪</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5h9a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8"></path><path d="M4 8h5V3"></path><path d="M9 13l2 2 4-4"></path>
+      </svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">申请</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 3h7l5 5v13H6z"></path><path d="M13 3v5h5"></path>
+      </svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">文档</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6660" stroke-width="1.7" stroke-linecap="round">
+        <circle cx="12" cy="8" r="4"></circle><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"></path>
+      </svg>
+      <span style="font-size: 11px; font-weight: 500; color: #5B6660;">我的</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
