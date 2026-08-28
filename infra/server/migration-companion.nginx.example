@@ -16,7 +16,34 @@ server {
     # 云文件关闭期间请求体很小；开放云存储后按最大文件调整。
     client_max_body_size 55m;
 
+    # 速率限制区定义在 migration-companion-ratelimit.conf，需 include 到 nginx.conf 的 http 块。
+    limit_conn mc_conn 20;
+
+    # 内测登录：服务端已按邮箱锁定，这里再按来源 IP 挡住换邮箱轮询与洪泛。
+    location = /v1/auth/pilot {
+        limit_req zone=mc_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:53101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 无账号的分享访问码交换：允许收件人输错几次，但不允许暴力枚举。
+    location ~ ^/v1/public/shares/[^/]+/access$ {
+        limit_req zone=mc_share burst=10 nodelay;
+        proxy_pass http://127.0.0.1:53101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
+        # App 同步会有突发，用较大的 burst 吸收，正常使用不会触发。
+        limit_req zone=mc_api burst=60 nodelay;
         proxy_pass http://127.0.0.1:53101;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
