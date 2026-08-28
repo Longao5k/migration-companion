@@ -37,24 +37,24 @@
     "name": "Department of Home Affairs — News",
     "url": "https://immi.homeaffairs.gov.au/news-subsite/Pages/News-page.aspx",
     "jurisdiction": "AU-FED",
-    "license_note": "Internal monitoring evidence only; do not republish Commonwealth content without a page-level permission review.",
-    "enabled": true
+    "license_note": "DISABLED 2026-08-28: immi.homeaffairs.gov.au 对本服务返回 HTTP 403（连 robots.txt 亦 403），从不同网络复现，非 IP 信誉问题。不得以伪装 UA、无头浏览器或更换出口等方式规避。联邦内容改为「链接 + 自撰中文摘要 + App 内浏览器查看原文」，政策变更监控改盯 legislation.gov.au 的法规原文。",
+    "enabled": false
   },
   {
     "id": "home-affairs-190",
     "name": "Skilled Nominated visa subclass 190",
     "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/skilled-nominated-190",
     "jurisdiction": "AU-FED",
-    "license_note": "Internal monitoring evidence only; publish source links and short original summaries.",
-    "enabled": true
+    "license_note": "DISABLED 2026-08-28: immi.homeaffairs.gov.au 对本服务返回 HTTP 403（连 robots.txt 亦 403），从不同网络复现，非 IP 信誉问题。不得以伪装 UA、无头浏览器或更换出口等方式规避。联邦内容改为「链接 + 自撰中文摘要 + App 内浏览器查看原文」，政策变更监控改盯 legislation.gov.au 的法规原文。",
+    "enabled": false
   },
   {
     "id": "home-affairs-491",
     "name": "Skilled Work Regional provisional visa subclass 491",
     "url": "https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-listing/skilled-work-regional-provisional-491",
     "jurisdiction": "AU-FED",
-    "license_note": "Internal monitoring evidence only; publish source links and short original summaries.",
-    "enabled": true
+    "license_note": "DISABLED 2026-08-28: immi.homeaffairs.gov.au 对本服务返回 HTTP 403（连 robots.txt 亦 403），从不同网络复现，非 IP 信誉问题。不得以伪装 UA、无头浏览器或更换出口等方式规避。联邦内容改为「链接 + 自撰中文摘要 + App 内浏览器查看原文」，政策变更监控改盯 legislation.gov.au 的法规原文。",
+    "enabled": false
   },
   {
     "id": "migration-act",
@@ -62,6 +62,46 @@
     "url": "https://www.legislation.gov.au/C1958A00062/latest/text",
     "jurisdiction": "AU-FED",
     "license_note": "Monitor metadata and version links; legislation interpretation requires legal review.",
+    "enabled": true
+  },
+  {
+    "id": "sa-home",
+    "name": "Move to South Australia — 首页与最新动态",
+    "url": "https://migration.sa.gov.au/",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "sa-skilled-migrants",
+    "name": "South Australia skilled migration overview",
+    "url": "https://migration.sa.gov.au/before-applying/visa-options-and-pathways/skilled-migrants",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "sa-occupation-list",
+    "name": "South Australia Skilled Occupation List",
+    "url": "https://migration.sa.gov.au/before-applying/work-in-sa/occupation-lists/occupations-list",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; occupation availability changes are high-impact and must clear human review before publishing.",
+    "enabled": true
+  },
+  {
+    "id": "sa-how-to-apply",
+    "name": "South Australia how to apply",
+    "url": "https://migration.sa.gov.au/how-to-apply",
+    "jurisdiction": "AU-SA",
+    "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
+    "enabled": true
+  },
+  {
+    "id": "migration-regulations",
+    "name": "Migration Regulations 1994",
+    "url": "https://www.legislation.gov.au/F1996B03551/latest/text",
+    "jurisdiction": "AU-FED",
+    "license_note": "Monitor metadata and version links; legislation interpretation requires legal review. Federal policy changes originate here, which is why this replaces the unreachable Home Affairs explainer pages.",
     "enabled": true
   }
 ]

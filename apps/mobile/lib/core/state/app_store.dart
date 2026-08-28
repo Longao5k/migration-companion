@@ -34,9 +34,13 @@ class AppState {
     this.followedJurisdictions = const ['AU-SA'],
     this.followedTags = const [],
     this.importantNotificationsOnly = true,
+    this.monitoring,
     this.cloudFileUploadsEnabled = true,
     this.cloudFileUploadsDisabledReason,
   });
+
+  /// 官方页面的监控状态。为空表示还没取到，界面此时不应断言「没有变化」。
+  final MonitoringStatus? monitoring;
 
   /// 服务端是否开放云文件上传。当前阶段材料文件只保存在设备上，云存储待澳洲区域上线后开放。
   /// 由 `/entitlements/me` 下发，避免用户在上传时才撞到失败。
@@ -100,6 +104,7 @@ class AppState {
     List<String>? followedJurisdictions,
     List<String>? followedTags,
     bool? importantNotificationsOnly,
+    MonitoringStatus? monitoring,
     bool? cloudFileUploadsEnabled,
     String? cloudFileUploadsDisabledReason,
     bool clearCloudFileUploadsDisabledReason = false,
@@ -131,6 +136,7 @@ class AppState {
     followedTags: followedTags ?? this.followedTags,
     importantNotificationsOnly:
         importantNotificationsOnly ?? this.importantNotificationsOnly,
+    monitoring: monitoring ?? this.monitoring,
     cloudFileUploadsEnabled:
         cloudFileUploadsEnabled ?? this.cloudFileUploadsEnabled,
     cloudFileUploadsDisabledReason: clearCloudFileUploadsDisabledReason
@@ -781,6 +787,16 @@ class AppStore extends StateNotifier<AppState> {
         api.getList('/content/news'),
         api.getList('/content/changes'),
       ]);
+      // 监控状态取不到不应让整次内容刷新失败：拿不到就保持未知，
+      // 界面在未知状态下同样不会断言「没有变化」。
+      MonitoringStatus? monitoring;
+      try {
+        monitoring = MonitoringStatus.fromJson(
+          await api.getMap('/content/monitoring'),
+        );
+      } catch (_) {
+        monitoring = state.monitoring;
+      }
       final bookmarkedIds = state.news
           .where((item) => item.bookmarked)
           .map((item) => item.id)
@@ -802,6 +818,7 @@ class AppStore extends StateNotifier<AppState> {
       state = state.copyWith(
         news: news,
         changes: changes,
+        monitoring: monitoring,
         isContentRefreshing: false,
         clearContentError: true,
         contentUpdatedAt: updatedAt,

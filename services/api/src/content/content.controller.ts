@@ -26,6 +26,11 @@ export class ContentController {
     return this.content.changes();
   }
 
+  @Get('monitoring')
+  monitoring() {
+    return this.content.monitoringStatus();
+  }
+
   @Get('admin/review-queue')
   @UseGuards(AdminApiKeyGuard)
   reviewQueue() {

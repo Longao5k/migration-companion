@@ -1088,6 +1088,51 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
     }
   });
 
+  it('34. 监控状态区分「已监控无变化」与「根本没在监控」', async () => {
+    const unreachable = `e2e-unreachable-${run}`;
+    const healthy = `e2e-healthy-${run}`;
+    await prisma.source.createMany({
+      data: [
+        {
+          name: unreachable,
+          url: `https://example.invalid/${unreachable}`,
+          jurisdiction: 'AU-FED',
+          sourceType: 'official',
+          enabled: false,
+        },
+        {
+          name: healthy,
+          url: `https://example.invalid/${healthy}`,
+          jurisdiction: 'AU-SA',
+          sourceType: 'official',
+          enabled: true,
+          lastSuccessAt: new Date(),
+        },
+      ],
+    });
+
+    try {
+      const status = await request(http).get('/v1/content/monitoring').expect(200);
+
+      const names = status.body.unavailableSources.map(
+        (item: { name: string }) => item.name,
+      );
+      expect(names).toContain(unreachable);
+      expect(names).not.toContain(healthy);
+      expect(status.body.unavailableJurisdictions).toContain('AU-FED');
+      expect(status.body.monitoredCount).toBeGreaterThan(0);
+
+      // 公开接口不得下发失败细节与内部标识。
+      const serialised = JSON.stringify(status.body);
+      expect(serialised).not.toContain('lastFailureCode');
+      expect(serialised).not.toContain('example.invalid');
+    } finally {
+      await prisma.source.deleteMany({
+        where: { name: { in: [unreachable, healthy] } },
+      });
+    }
+  });
+
   it('30. 公网内测登录签发受验证 JWT，不依赖可伪造的邮箱请求头', async () => {
     const accessCode = 'e2e-pilot-access';
     await withPilotAuth({ [pilotEmail]: accessCode }, async () => {

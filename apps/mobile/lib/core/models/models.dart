@@ -220,6 +220,56 @@ class NewsItem {
   );
 }
 
+/// 官方页面的监控状态。
+///
+/// 变更列表为空有两种完全不同的含义：「已在监控，确实没有变化」和「根本没在监控」。
+/// 对移民产品，把后者显示成前者等于告诉用户「政策没变」，因此必须区分。
+class MonitoringStatus {
+  const MonitoringStatus({
+    required this.monitoredCount,
+    required this.unavailableCount,
+    required this.unavailableJurisdictions,
+    this.lastSuccessAt,
+  });
+
+  final int monitoredCount;
+  final int unavailableCount;
+  final List<String> unavailableJurisdictions;
+  final DateTime? lastSuccessAt;
+
+  bool get hasGap => unavailableCount > 0;
+
+  /// 把辖区代码写成用户看得懂的说法。
+  String get unavailableLabel => unavailableJurisdictions
+      .map(
+        (code) => switch (code) {
+          'AU-SA' => '南澳',
+          'AU-FED' => '联邦',
+          _ => code,
+        },
+      )
+      .join('、');
+
+  Map<String, Object?> toJson() => {
+    'monitoredCount': monitoredCount,
+    'unavailableCount': unavailableCount,
+    'unavailableJurisdictions': unavailableJurisdictions,
+    'lastSuccessAt': lastSuccessAt?.toIso8601String(),
+  };
+
+  factory MonitoringStatus.fromJson(Map<String, dynamic> json) =>
+      MonitoringStatus(
+        monitoredCount: json['monitoredCount'] as int? ?? 0,
+        unavailableCount: json['unavailableCount'] as int? ?? 0,
+        unavailableJurisdictions:
+            (json['unavailableJurisdictions'] as List<dynamic>? ?? const [])
+                .cast<String>(),
+        lastSuccessAt: json['lastSuccessAt'] == null
+            ? null
+            : DateTime.tryParse(json['lastSuccessAt'] as String),
+      );
+}
+
 class PolicyChange {
   const PolicyChange({
     required this.id,

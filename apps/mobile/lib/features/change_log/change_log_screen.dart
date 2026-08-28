@@ -22,18 +22,13 @@ class ChangeLogScreen extends ConsumerWidget {
         updatedAt: state.contentUpdatedAt,
         onRefresh: () => ref.read(appStoreProvider.notifier).refreshContent(),
       ),
+      // 空列表有两种完全不同的含义。把「没在监控」显示成「没有变化」，
+      // 在移民产品上等于告诉用户政策没变——必须按真实监控状态分别措辞。
       if (changes.isEmpty)
-        EmptyState(
-          icon: Icons.change_circle_outlined,
-          title: '暂时没有可公开的变更证据',
-          body: '重大与重要变化必须人工核实；页面故障不会作为政策变化发布。',
-          action: TextButton(
-            onPressed: () =>
-                ref.read(appStoreProvider.notifier).refreshContent(),
-            child: const Text('重新加载'),
-          ),
-        )
-      else
+        _ChangesEmptyState(monitoring: state.monitoring)
+      else if (state.monitoring?.hasGap ?? false)
+        _MonitoringGapNotice(monitoring: state.monitoring!),
+      if (changes.isNotEmpty)
         ...changes.map((change) => _ChangeCard(change: change)),
     ];
     return CustomScrollView(
@@ -205,6 +200,85 @@ class _DiffBlock extends StatelessWidget {
           Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(text),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// 变更列表为空时的措辞，按真实监控状态区分。
+class _ChangesEmptyState extends ConsumerWidget {
+  const _ChangesEmptyState({required this.monitoring});
+
+  final MonitoringStatus? monitoring;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reload = TextButton(
+      onPressed: () => ref.read(appStoreProvider.notifier).refreshContent(),
+      child: const Text('重新加载'),
+    );
+
+    // 还没拿到监控状态：不能断言任何一种情况。
+    if (monitoring == null) {
+      return EmptyState(
+        icon: Icons.cloud_off_outlined,
+        title: '还没有取到变更记录',
+        body: '检查一下网络，或者稍后再看。',
+        action: reload,
+      );
+    }
+
+    if (monitoring!.hasGap) {
+      return EmptyState(
+        icon: Icons.error_outline,
+        title: '${monitoring!.unavailableLabel}页面暂时监控不到',
+        body:
+            '我们正在监控 ${monitoring!.monitoredCount} 个官方页面，'
+            '但${monitoring!.unavailableLabel}的页面当前取不到，'
+            '所以这里看不到那部分的变化。请直接查看官方网站。',
+        action: reload,
+      );
+    }
+
+    return EmptyState(
+      icon: Icons.check_circle_outline,
+      title: '这些页面暂时没有变化',
+      body:
+          '正在监控 ${monitoring!.monitoredCount} 个官方页面。'
+          '有改动会出现在这里，重要的改动我们会先人工核实。',
+      action: reload,
+    );
+  }
+}
+
+/// 有变更、但同时存在监控缺口时的提示：列表不完整这件事要说出来。
+class _MonitoringGapNotice extends StatelessWidget {
+  const _MonitoringGapNotice({required this.monitoring});
+
+  final MonitoringStatus monitoring;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${monitoring.unavailableLabel}页面暂时监控不到，下面只包含能监控到的部分。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
         ],
       ),
     );

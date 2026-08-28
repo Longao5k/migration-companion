@@ -28,6 +28,57 @@ export class ContentService {
     });
   }
 
+  /**
+   * 监控状态。变更列表为空有两种完全不同的含义：
+   * 「已在监控，确实没有变化」和「根本没在监控」。
+   * 对一个移民产品，把后者显示成前者等于告诉用户「政策没变」——必须区分。
+   *
+   * 只下发聚合信息与官方页面名称，不下发失败细节与内部标识。
+   */
+  async monitoringStatus() {
+    const sources = await this.prisma.source.findMany({
+      where: { sourceType: 'official' },
+      select: {
+        name: true,
+        jurisdiction: true,
+        enabled: true,
+        lastSuccessAt: true,
+        lastFailureAt: true,
+      },
+    });
+
+    // 连续三个抓取周期没有成功即视为过期，默认周期 6 小时。
+    const intervalSeconds = Number(process.env.CRAWLER_INTERVAL_SECONDS ?? 21_600);
+    const staleBefore = new Date(Date.now() - intervalSeconds * 3 * 1000);
+
+    const unavailable = sources.filter((source) => {
+      if (!source.enabled) return true;
+      if (!source.lastSuccessAt) return true;
+      if (source.lastFailureAt && source.lastFailureAt > source.lastSuccessAt) return true;
+      return source.lastSuccessAt < staleBefore;
+    });
+
+    const monitored = sources.filter((source) => !unavailable.includes(source));
+    const lastSuccessAt = monitored
+      .map((source) => source.lastSuccessAt)
+      .filter((value): value is Date => value !== null)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+
+    return {
+      monitoredCount: monitored.length,
+      unavailableCount: unavailable.length,
+      // 让 App 能说清「哪一部分看不到」，而不是笼统地说没有变化。
+      unavailableJurisdictions: [
+        ...new Set(unavailable.map((source) => source.jurisdiction)),
+      ].sort(),
+      unavailableSources: unavailable.map((source) => ({
+        name: source.name,
+        jurisdiction: source.jurisdiction,
+      })),
+      lastSuccessAt: lastSuccessAt ?? null,
+    };
+  }
+
   changes() {
     return this.prisma.changeLog.findMany({
       where: {
