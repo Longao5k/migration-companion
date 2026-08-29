@@ -348,7 +348,7 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
       .set(as(ownerEmail))
       .send({
         provider: 'LOCAL_SANDBOX',
-        productId: 'migration_companion_premium_monthly',
+        productId: 'waymark_premium_monthly',
         verificationData: `local-e2e-${run}`,
       })
       .expect(201);
@@ -369,7 +369,7 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
       .set(as(ownerEmail))
       .send({
         provider: 'APPLE',
-        productId: 'migration_companion_premium_monthly',
+        productId: 'waymark_premium_monthly',
         verificationData: 'client-supplied-receipt-not-verified',
       })
       .expect(201)
@@ -413,7 +413,7 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
       .set('x-worker-key', 'not-the-worker-key')
       .send({
         provider: 'GOOGLE',
-        productId: 'migration_companion_premium_monthly',
+        productId: 'waymark_premium_monthly',
         status: 'ACTIVE',
         originalTransaction: `forged-${run}`,
         accountEmail: ownerEmail,
