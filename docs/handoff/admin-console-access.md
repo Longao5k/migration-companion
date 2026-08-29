@@ -60,3 +60,39 @@ http://127.0.0.1:53202
 | 「后台身份验证失败」 | 密钥输错，或服务器上 `ADMIN_API_KEY` 变了 |
 | 页面出来但列表空 | 密钥还没输——顶部输入框留空时不会发请求 |
 | 隧道连不上 | `ssh tencent-light` 单独能不能通；不通是 SSH 配置或密钥问题，与后台无关 |
+
+---
+
+## 2026-08-29：历史政策回填后要做的一次性工作
+
+采集器补进了南澳官网 **2024-07 至今的 31 条**新闻，其中 26 条是草稿。
+我已经为其中 **18 条政策类**写好中文标题和摘要（存档在
+`docs/content/sa-news-backfill-editorial-2026-08-29.json`），但**没有发布**——
+发布是人工闸门，该由你按一遍。
+
+进「已发布内容」页签，草稿会标「草稿」。逐条看一眼中文摘要对不对得上官方原文，
+对了点「发布」。
+
+**剩下 8 条我故意没写文案**，都是已经过期的一次性活动，现在发出去只是噪音：
+
+- Skilled Migrants: Bridging the ICT Skills Gap（2024 年 8 月的活动）
+- Skilled and Business Migration Office holiday closure（2024 年圣诞闭馆）
+- Move to South Australia Roadshow in the UK（2025 年 10 月已结束）
+- Careers: Made in SA November 2025
+- Career Compass ×3（2025 年 10/11/12 月场次）
+- Event: Welcome to South Australia - November 2025
+
+要发的话自己写中文摘要即可；不发就留着，它们不会出现在 App 里。
+
+### 以后还要不要再跑回填
+
+不用。回填是一次性的，日常发现会接着往前走。只有在**南澳官网改版**导致列表页结构
+变化时才需要重跑，命令是：
+
+```bash
+docker exec -w /worker -e PYTHONPATH=/worker migration-companion-crawler-1 \
+  python -m migration_crawler --source sa-news --state-dir /data/evidence --backfill --dry-run
+```
+
+先 `--dry-run` 看会补哪些，确认无误再去掉这个参数。重复跑是安全的：按 `sourceUrl`
+去重，已有的条目只更新发布时间，不会产生重复，也不会覆盖你写好的中文文案。
