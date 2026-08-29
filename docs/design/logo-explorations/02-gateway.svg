@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Gateway app icon concept</title>
+  <desc id="desc">An open portal with a path leading to the next milestone.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#1F2F4A"/>
+  <path d="M300 750V300c0-35 28-63 63-63h298c35 0 63 28 63 63v450" fill="none" stroke="#FFF8EB" stroke-width="70" stroke-linecap="round"/>
+  <path d="M510 730V430" fill="none" stroke="#D97757" stroke-width="62" stroke-linecap="round"/>
+  <path d="m510 430-94 94m94-94 94 94" fill="none" stroke="#D97757" stroke-width="62" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="510" cy="730" r="48" fill="#A2F2DC"/>
+</svg>

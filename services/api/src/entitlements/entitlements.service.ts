@@ -52,8 +52,8 @@ export class EntitlementsService {
       trialEndsAt: account.trialEndsAt,
       subscription: account.subscription,
       products: {
-        monthly: process.env.STORE_MONTHLY_PRODUCT_ID ?? 'migration_companion_premium_monthly',
-        yearly: process.env.STORE_YEARLY_PRODUCT_ID ?? 'migration_companion_premium_yearly',
+        monthly: process.env.STORE_MONTHLY_PRODUCT_ID ?? 'waymark_premium_monthly',
+        yearly: process.env.STORE_YEARLY_PRODUCT_ID ?? 'waymark_premium_yearly',
       },
       trialDisclosure: '7 天高级试用不会自动转为付费，也不会创建商店订阅。',
       // 客户端据此显示“云文件暂未开放”，而不是让用户在上传时才撞到失败。
@@ -101,8 +101,8 @@ export class EntitlementsService {
 
   async submitPurchase(accountId: string, email: string, dto: SubmitPurchaseDto) {
     const allowedProducts = new Set([
-      process.env.STORE_MONTHLY_PRODUCT_ID ?? 'migration_companion_premium_monthly',
-      process.env.STORE_YEARLY_PRODUCT_ID ?? 'migration_companion_premium_yearly',
+      process.env.STORE_MONTHLY_PRODUCT_ID ?? 'waymark_premium_monthly',
+      process.env.STORE_YEARLY_PRODUCT_ID ?? 'waymark_premium_yearly',
     ]);
     if (!allowedProducts.has(dto.productId)) throw new BadRequestException('未知商店商品');
     await this.ensureAccount(accountId, email);
@@ -158,8 +158,8 @@ export class EntitlementsService {
 
   async applyVerifiedStoreEvent(dto: VerifiedStoreEventDto) {
     const allowedProducts = new Set([
-      process.env.STORE_MONTHLY_PRODUCT_ID ?? 'migration_companion_premium_monthly',
-      process.env.STORE_YEARLY_PRODUCT_ID ?? 'migration_companion_premium_yearly',
+      process.env.STORE_MONTHLY_PRODUCT_ID ?? 'waymark_premium_monthly',
+      process.env.STORE_YEARLY_PRODUCT_ID ?? 'waymark_premium_yearly',
     ]);
     if (!allowedProducts.has(dto.productId)) throw new BadRequestException('未知商店商品');
     const email = dto.accountEmail.toLowerCase();

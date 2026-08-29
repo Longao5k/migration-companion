@@ -18,8 +18,11 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
 }
 
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
-  static const monthlyId = 'migration_companion_premium_monthly';
-  static const yearlyId = 'migration_companion_premium_yearly';
+  // 商品 ID 在 Play / App Store 里一经创建就永久保留，删不掉也改不了名。
+  // 必须和服务端 entitlements.service.ts 的默认值一致，否则购买回来的收据
+  // 对不上权益。两边都还没在商店创建过，趁现在定成产品名。
+  static const monthlyId = 'waymark_premium_monthly';
+  static const yearlyId = 'waymark_premium_yearly';
   final _store = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
   List<ProductDetails> _products = const [];
@@ -267,7 +270,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           ],
           const SizedBox(height: 20),
           const Text(
-            '订阅会自动续订，除非你在商店规定的续订时间前取消。删除 Migration Companion 账号不会自动取消 Apple 或 Google 订阅；取消订阅也不会删除账号。试用结束或订阅到期后，仍可查看、导出和删除自己的原始文件与历史输出。',
+            '订阅会自动续订，除非你在商店规定的续订时间前取消。删除 Waymark 账号不会自动取消 Apple 或 Google 订阅；取消订阅也不会删除账号。试用结束或订阅到期后，仍可查看、导出和删除自己的原始文件与历史输出。',
             style: TextStyle(fontSize: 13, height: 1.5),
           ),
         ],

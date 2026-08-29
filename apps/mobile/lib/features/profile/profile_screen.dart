@@ -142,7 +142,7 @@ class ProfileScreen extends ConsumerWidget {
             const SectionHeader(title: '订阅'),
             _SettingsTile(
               icon: Icons.workspace_premium_outlined,
-              title: 'Migration Companion Premium',
+              title: 'Waymark Premium',
               subtitle:
                   '${_tierLabel(state.entitlementTier)} · A\$11.99/月 · A\$89.99/年',
               onTap: () => Navigator.of(context).push(

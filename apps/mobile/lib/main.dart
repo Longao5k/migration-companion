@@ -5,5 +5,5 @@ import 'app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: MigrationCompanionApp()));
+  runApp(const ProviderScope(child: WaymarkApp()));
 }

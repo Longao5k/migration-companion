@@ -2,10 +2,14 @@
 <!--
   Android 8 起启动器按设备形状裁切图标。没有这个文件，系统会把位图图标塞进一个
   白色圆底里再显示——圆形启动器上就是一圈白边。
-  monochrome 供 Android 13 的主题图标使用：前景是白色透明底，系统直接取形状上色。
+
+  背景层用位图而不是纯色，是为了保留设计稿里的蓝色渐变。
+
+  没有 monochrome：Android 13 的主题图标只取 alpha 通道再上色，而这张图的信息
+  （地球、对勾、清单行）全都画在不透明的白色文档**里面**，取完 alpha 只剩一个
+  实心板加两道弧线，认不出是什么。缺省时系统会回落到普通图标，比给一个糊的好。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
-    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>

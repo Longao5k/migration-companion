@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Private core symbol</title>
+  <desc id="desc">A protected inner core surrounded by a calm local boundary.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#0B3F3A"/>
+  <path d="M512 211c166 0 301 135 301 301S678 813 512 813 211 678 211 512s135-301 301-301zm0 83c-120 0-218 98-218 218s98 218 218 218 218-98 218-218-98-218-218-218z" fill="#F8F2E7"/>
+  <path d="M512 357c86 0 155 69 155 155s-69 155-155 155-155-69-155-155 69-155 155-155z" fill="#24324D"/>
+  <path d="M512 426c48 0 86 38 86 86s-38 86-86 86-86-38-86-86 38-86 86-86z" fill="#E17655"/>
+  <path d="M512 469c24 0 43 19 43 43s-19 43-43 43-43-19-43-43 19-43 43-43z" fill="#8FD4C0"/>
+</svg>

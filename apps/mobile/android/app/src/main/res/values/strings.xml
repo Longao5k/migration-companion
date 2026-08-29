@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-      桌面图标下面显示的名字。启动器大约 10-12 个字符就会截断，
-      "Migration Companion" 一定会被截成 "Migration…"。
-      商店里的完整名称仍然是 Migration Companion，那里不受这个限制。
-    -->
-    <string name="app_name">MigrationCo</string>
+    <!-- 桌面图标下面显示的名字。启动器约 10-12 个字符就会截断，Waymark 有余量。 -->
+    <string name="app_name">Waymark</string>
 </resources>

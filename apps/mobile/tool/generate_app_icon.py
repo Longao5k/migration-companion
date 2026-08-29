@@ -1,132 +1,138 @@
-"""生成 App 图标全套资源。
+"""从 assets/brand/app-icon.svg 生成 App 图标全套资源。
 
-图形：一条从左下走到右上的折线，三个节点——对应 App 里的「申请路线 / 下一步」。
-抽象线条，不用任何徽章、盾牌、国旗或政府符号：冻结规则禁止暗示官方身份。
+源文件是设计稿本身，这里只做光栅化和按平台切分，不重画图形。要改图形就改 SVG。
 
-品牌色沿用 lib/core/theme/app_theme.dart 里已有的桉树绿与墨色，不另起一套。
-
-设计稿是浅底绿线，这里改成深绿底 + 亮色路径。原因是尺寸：mdpi 的启动图标只有
-48×48 像素，浅底上的细绿线在这个尺寸下会糊成一团甚至断开。同一个图形，反过来配色
-在 48px 下仍然立得住。
+光栅化用 `npx sharp-cli`（sharp 内置 librsvg，Windows 有预编译二进制）。
+Windows 上没有可用的 cairo，cairosvg 装得上但加载不了 DLL；ImageMagick 也不在，
+`convert` 是系统自带的磁盘工具，不是 ImageMagick。
 
 用法（在 apps/mobile 下）：
     python tool/generate_app_icon.py
 """
 
 import json
-import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "assets/brand/app-icon.svg"
 
-INK = (20, 34, 49)
-EUCALYPTUS = (20, 123, 102)
-DEEP = (10, 63, 52)
-MINT = (162, 242, 220)
-WHITE = (255, 255, 255)
+# 渐变的深色端。iOS 与 Play 商店图标不能带 alpha，压平时用它做底，
+# 这样即使有半透明边缘也不会露出白边。
+FLATTEN = (6, 46, 112)
 
-# 先在放大 4 倍的画布上画，再缩小回目标尺寸——Pillow 没有抗锯齿绘图，
-# 超采样是拿到干净斜线的唯一办法。
-SS = 4
+# Android 自适应图标的保证可视区：108dp 画布上直径 66dp 的圆。
+# 超出这个圆的部分，在圆形启动器上会被裁掉。
+SAFE_RADIUS_RATIO = 33 / 108
 
-# 路径节点，坐标是画布边长的比例。
-#
-# 三点必须不共线，否则画出来是一条直线，不是「路线」。中间那个点定出一个明显的
-# 转折：先陡后缓，读起来像走过一段路。
-# 全部落在中心 66% 的安全区内：Android 自适应图标会按设备形状裁掉外圈，
-# 圆形启动器上超出安全区的部分会被切掉。
-NODES = [(0.262, 0.715), (0.437, 0.395), (0.747, 0.295)]
+# 光栅化的工作分辨率。前景层要先在高分辨率下量出图形的真实半径再缩放，
+# 分辨率太低会让边缘的抗锯齿像素影响测量结果。
+WORK = 2048
 
 
-def _lerp(a, b, t):
-    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+def rasterize(svg_text: str, size: int, out: Path) -> Image.Image:
+    """把一段 SVG 源码渲染成指定边长的 PNG。"""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".svg", delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write(svg_text)
+        temp = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [
+                "npx",
+                "-y",
+                "sharp-cli",
+                "--input",
+                str(temp),
+                "--output",
+                str(out),
+                "resize",
+                str(size),
+                str(size),
+            ],
+            capture_output=True,
+            text=True,
+            shell=sys.platform == "win32",
+        )
+        if result.returncode != 0 or not out.exists():
+            raise RuntimeError(f"sharp 光栅化失败：{result.stderr.strip()}")
+        return Image.open(out).convert("RGBA")
+    finally:
+        temp.unlink(missing_ok=True)
 
 
-def draw_mark(size, *, with_background, background_scale=1.0, mark_scale=1.0):
-    """画出图标。
+def variants(svg_text: str):
+    """派生出三种 SVG：满幅圆角、满幅方角、去背景的前景。"""
+    background = re.search(
+        r'<rect width="1024" height="1024" rx="\d+" fill="url\(#\w+\)"/>', svg_text
+    )
+    if background is None:
+        raise RuntimeError("找不到背景矩形，SVG 结构变了，需要更新这个脚本")
 
-    mark_scale 把图形整体向画布中心收缩，供 Android 自适应图标的前景层使用。
-    自适应图标的保证可视区是**中心直径 66dp 的圆**（108dp 画布上半径 0.3056）。
-    满幅画的图形在圆形启动器上会被切掉终点环和起点——必须单独缩一档，
-    不能和满幅的旧版图标共用一套坐标。
+    rounded = svg_text
+    # iOS 自己加圆角遮罩。如果图标本身就带圆角，iOS 会再切一次，
+    # 露出的直角区域会显示压平用的底色，看起来像一圈脏边。
+    square = svg_text.replace(background.group(0), background.group(0).replace('rx="220"', 'rx="0"'))
+    # 自适应图标的前景层不能自带背景——背景是独立的一层。
+    foreground = svg_text.replace(background.group(0), "")
+    return rounded, square, foreground
+
+
+def fit_to_safe_zone(foreground: Image.Image, canvas: int) -> Image.Image:
+    """把前景图形居中并缩放到自适应图标的安全区内。
+
+    不按外接矩形算，而是量出所有不透明像素到图形中心的**最大距离**——
+    这张图的图形接近方形，用矩形对角线会白白缩掉一圈。
     """
-    canvas = size * SS
-    image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
+    bbox = foreground.getbbox()
+    if bbox is None:
+        raise RuntimeError("前景是空的")
+    art = foreground.crop(bbox)
 
-    if with_background:
-        # 从深绿到桉树绿的对角渐变。纯色在大尺寸下显得平，渐变在 48px 下又看不出来，
-        # 两头都不吃亏。
-        inset = canvas * (1 - background_scale) / 2
-        box = (inset, inset, canvas - inset, canvas - inset)
-        side = box[2] - box[0]
-        gradient = Image.new("RGB", (int(side), int(side)))
-        gdraw = ImageDraw.Draw(gradient)
-        for y in range(int(side)):
-            gdraw.line(
-                [(0, y), (side, y)], fill=_lerp(EUCALYPTUS, DEEP, y / max(1, side - 1))
-            )
-        mask = Image.new("L", (int(side), int(side)), 0)
-        ImageDraw.Draw(mask).rounded_rectangle(
-            (0, 0, side - 1, side - 1), radius=side * 0.225, fill=255
-        )
-        image.paste(gradient, (int(box[0]), int(box[1])), mask)
+    alpha = art.getchannel("A")
+    width, height = art.size
+    cx, cy = width / 2, height / 2
+    max_radius = 0.0
+    # 只看边界像素就够了：最远点一定在轮廓上。逐行取最左最右、逐列取最上最下。
+    pixels = alpha.load()
+    for y in range(height):
+        for x in (range(width), reversed(range(width))):
+            for px in x:
+                if pixels[px, y] > 8:
+                    max_radius = max(max_radius, ((px - cx) ** 2 + (y - cy) ** 2) ** 0.5)
+                    break
+    for x in range(width):
+        for y in (range(height), reversed(range(height))):
+            for py in y:
+                if pixels[x, py] > 8:
+                    max_radius = max(max_radius, ((x - cx) ** 2 + (py - cy) ** 2) ** 0.5)
+                    break
 
-    points = [
-        (
-            (0.5 + (x - 0.5) * mark_scale) * canvas,
-            (0.5 + (y - 0.5) * mark_scale) * canvas,
-        )
-        for x, y in NODES
-    ]
-    line_width = max(1, int(canvas * 0.055 * mark_scale))
+    target_radius = canvas * SAFE_RADIUS_RATIO
+    scale = target_radius / max_radius
+    new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    scaled = art.resize(new_size, Image.LANCZOS)
 
-    # 折线本身。round join/cap 让转角不出现尖刺。
-    draw.line(points, fill=WHITE + (255,), width=line_width, joint="curve")
-    for point in (points[0], points[-1]):
-        r = line_width / 2
-        draw.ellipse(
-            (point[0] - r, point[1] - r, point[0] + r, point[1] + r),
-            fill=WHITE + (255,),
-        )
-
-    # 节点只比线略粗。之前给到 1.6 倍线宽，三个球把线盖住了，
-    # 图形读成「三个点」而不是「一条路」。
-    for index, point in enumerate(points):
-        last = index == len(points) - 1
-        outer = line_width * (1.34 if last else 0.92)
-        draw.ellipse(
-            (point[0] - outer, point[1] - outer, point[0] + outer, point[1] + outer),
-            fill=WHITE + (255,),
-        )
-        if last:
-            # 终点画成环：那是「下一步」，要和已经走过的实心点区分开。
-            #
-            # 前景层（自适应图标）必须把环心真正挖空，不能填色：Android 13 的主题
-            # 图标只取 alpha 通道再上色，填了色的环心在那里会变成一个实心点。
-            # 挖空之后，自适应图标透出的是背景层的桉树绿，主题图标也保留环形。
-            inner = outer * 0.46
-            box = (
-                point[0] - inner,
-                point[1] - inner,
-                point[0] + inner,
-                point[1] + inner,
-            )
-            if with_background:
-                draw.ellipse(box, fill=DEEP + (255,))
-            else:
-                draw.ellipse(box, fill=(0, 0, 0, 0))
-
-    return image.resize((size, size), Image.LANCZOS)
+    out = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    out.paste(
+        scaled,
+        ((canvas - new_size[0]) // 2, (canvas - new_size[1]) // 2),
+    )
+    return out
 
 
-def write(image, path, *, flatten_to=None):
+def save(image: Image.Image, path: Path, *, flatten: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if flatten_to is not None:
-        # iOS 拒收带 alpha 通道的图标，必须先压到不透明底上。
-        flat = Image.new("RGB", image.size, flatten_to)
+    if flatten:
+        flat = Image.new("RGB", image.size, FLATTEN)
         flat.paste(image, mask=image.split()[3])
         flat.save(path, "PNG")
     else:
@@ -134,68 +140,87 @@ def write(image, path, *, flatten_to=None):
     print(f"  {path.relative_to(ROOT)}  {image.size[0]}x{image.size[1]}")
 
 
-def main():
-    print("Android 启动图标（旧版位图）")
-    for bucket, size in [
-        ("mdpi", 48),
-        ("hdpi", 72),
-        ("xhdpi", 96),
-        ("xxhdpi", 144),
-        ("xxxhdpi", 192),
-    ]:
-        write(
-            draw_mark(size, with_background=True),
-            ROOT / f"android/app/src/main/res/mipmap-{bucket}/ic_launcher.png",
+ANDROID_BUCKETS = [
+    ("mdpi", 48, 108),
+    ("hdpi", 72, 162),
+    ("xhdpi", 96, 216),
+    ("xxhdpi", 144, 324),
+    ("xxxhdpi", 192, 432),
+]
+
+
+def main() -> None:
+    if not SOURCE.exists():
+        raise SystemExit(f"找不到源文件 {SOURCE}")
+    svg_text = SOURCE.read_text(encoding="utf-8")
+    rounded_svg, square_svg, foreground_svg = variants(svg_text)
+
+    work = Path(tempfile.mkdtemp(prefix="app-icon-"))
+    try:
+        rounded = rasterize(rounded_svg, WORK, work / "rounded.png")
+        square = rasterize(square_svg, WORK, work / "square.png")
+        foreground_full = rasterize(foreground_svg, WORK, work / "foreground.png")
+
+        print("Android 启动图标（旧版位图，自带圆角）")
+        for bucket, legacy, _ in ANDROID_BUCKETS:
+            save(
+                rounded.resize((legacy, legacy), Image.LANCZOS),
+                ROOT / f"android/app/src/main/res/mipmap-{bucket}/ic_launcher.png",
+            )
+
+        print("Android 自适应图标：背景层（满幅方角，圆角由系统遮罩决定）")
+        for bucket, _, adaptive in ANDROID_BUCKETS:
+            background = Image.new("RGBA", (adaptive, adaptive), (0, 0, 0, 0))
+            background.paste(square.resize((adaptive, adaptive), Image.LANCZOS))
+            save(
+                background,
+                ROOT
+                / f"android/app/src/main/res/mipmap-{bucket}/ic_launcher_background.png",
+            )
+
+        print("Android 自适应图标：前景层（缩放进 66dp 安全区）")
+        fitted = fit_to_safe_zone(foreground_full, WORK)
+        for bucket, _, adaptive in ANDROID_BUCKETS:
+            save(
+                fitted.resize((adaptive, adaptive), Image.LANCZOS),
+                ROOT
+                / f"android/app/src/main/res/mipmap-{bucket}/ic_launcher_foreground.png",
+            )
+
+        print("Play 商店图标（512×512，不带 alpha）")
+        save(
+            rounded.resize((512, 512), Image.LANCZOS),
+            ROOT / "store/play-icon-512.png",
+            flatten=True,
         )
 
-    print("Android 自适应图标前景（108dp 画布，图形只占中心安全区）")
-    for bucket, size in [
-        ("mdpi", 108),
-        ("hdpi", 162),
-        ("xhdpi", 216),
-        ("xxhdpi", 324),
-        ("xxxhdpi", 432),
-    ]:
-        write(
-            # 最远的节点中心在 0.32 半径处，加上终点环的 0.074，满幅伸展约 0.394，
-            # 超过 0.3056 的安全半径（108dp 画布上直径 66dp 的圆）。
-            # 0.76 之后约 0.30，刚好落在安全区内又不至于缩成一颗芝麻。
-            draw_mark(size, with_background=False, mark_scale=0.76),
-            ROOT
-            / f"android/app/src/main/res/mipmap-{bucket}/ic_launcher_foreground.png",
+        print("iOS（方角满幅，压平 alpha）")
+        appicon = ROOT / "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+        contents = json.loads((appicon / "Contents.json").read_text(encoding="utf-8"))
+        done = set()
+        for entry in contents["images"]:
+            filename = entry.get("filename")
+            if not filename or filename in done:
+                continue
+            done.add(filename)
+            base = float(entry["size"].split("x")[0])
+            size = int(round(base * int(entry["scale"].rstrip("x"))))
+            save(
+                square.resize((size, size), Image.LANCZOS),
+                appicon / filename,
+                flatten=True,
+            )
+
+        print("\n预览图")
+        save(
+            rounded.resize((1024, 1024), Image.LANCZOS),
+            ROOT / "store/icon-preview-1024.png",
         )
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
-    print("Play 商店图标")
-    write(
-        draw_mark(512, with_background=True),
-        ROOT / "store/play-icon-512.png",
-        flatten_to=DEEP,
-    )
-
-    print("iOS")
-    appicon = ROOT / "ios/Runner/Assets.xcassets/AppIcon.appiconset"
-    contents = json.loads((appicon / "Contents.json").read_text(encoding="utf-8"))
-    for entry in contents["images"]:
-        filename = entry.get("filename")
-        if not filename:
-            continue
-        base = float(entry["size"].split("x")[0])
-        scale = int(entry["scale"].rstrip("x"))
-        size = int(round(base * scale))
-        # iOS 自己加圆角，图标必须是方的、满幅的、不透明的。
-        write(
-            draw_mark(size, with_background=True, background_scale=1.0),
-            appicon / filename,
-            flatten_to=DEEP,
-        )
-
-    print("\n预览图")
-    write(draw_mark(1024, with_background=True), ROOT / "store/icon-preview-1024.png")
+    print("\n完成。")
 
 
 if __name__ == "__main__":
     main()
-    print("\n完成。")
-    print("提醒：Android 自适应图标还需要 mipmap-anydpi-v26/ic_launcher.xml，")
-    print("以及 values/ic_launcher_background.xml 里的背景色。")
-    os.sys.exit(0)

@@ -727,3 +727,67 @@ App 内浏览器看原文 → 双语 → 项目讨论提到主界面。
 | iOS 图标是否带 alpha | 全部 19 张均为 RGB（带 alpha 会被 App Store Connect 拒收） |
 | 66dp 安全区 | 前景图形完整落在圆内，留有余量 |
 | 圆形 / 方形 / squircle 三种遮罩 | 均无裁切 |
+
+---
+
+## M9 · 改名 Waymark，图标换成设计稿（2026-08-29）
+
+产品名从 `Migration Companion` / `MigrationCo` 改为 **Waymark**，7 个字符，启动器不会截。
+改到的地方：Android `strings.xml`、iOS `CFBundleDisplayName`、`MaterialApp.title`、
+订阅入口标题、订阅条款正文。
+
+图标改用用户提供的设计稿（蓝底 + 信号弧 + 材料清单文档），源文件放在
+`apps/mobile/assets/brand/app-icon.svg`。上一版我自己画的路径标作废。
+
+### 光栅化
+
+Windows 上没有现成的 SVG 渲染器：cairosvg 装得上但加载不了 cairo DLL，
+`convert` 是系统自带的磁盘工具不是 ImageMagick，rsvg / Inkscape / magick 都没有。
+最后用 `npx sharp-cli`（sharp 内置 librsvg，有 Windows 预编译二进制），渐变和
+`feDropShadow` 都渲染正确。
+
+### 三个变体不能混用
+
+同一张 SVG 派生出三种，脚本里自动处理：
+
+- **满幅 + 自带 `rx=220` 圆角** → Android 旧版位图、Play 512
+- **满幅方角**（把 `rx` 改成 0）→ iOS 全套、自适应背景层。
+  iOS 自己加圆角遮罩，图标再自带圆角就会被切两次，露出的直角区域显示压平底色，
+  看起来像一圈脏边；自适应背景层同理，圆角由系统遮罩决定。
+- **删掉背景矩形 + 缩进安全区** → 自适应前景层
+
+前景层的缩放量由脚本量出来：取所有不透明像素到图形中心的最大距离，按它缩到
+66dp 安全半径。用外接矩形对角线算会白白缩掉一圈——这张图接近方形，两者差不少。
+
+### 去掉了 monochrome
+
+Android 13 主题图标只取 alpha 通道再上色。这张图的信息（地球、对勾、清单行）
+全画在不透明的白色文档**里面**，取完 alpha 只剩一块实心板加两道弧线，认不出是什么。
+不提供 monochrome，系统回落到普通图标。
+
+### 已知取舍
+
+信息密度对启动图标偏高，mdpi（48×48）下清单行糊成噪点。mdpi 只用于很老的低密度
+设备，现代机走 xxhdpi/xxxhdpi（144-192px），那个尺寸下清楚。已在上架指南里记下。
+
+### 一次性标识全部趁未上传定死
+
+首次上传 Play 之后 `applicationId` 永久锁定，商店商品 ID 一经创建也删不掉、改不了名。
+用户确认后一并改成产品名：
+
+| 标识 | 原值 | 新值 |
+| --- | --- | --- |
+| Android `applicationId` / `namespace` | `com.migrationcompanion.migration_companion` | `com.waymark.app` |
+| iOS bundle id | `com.migrationcompanion.migrationCompanion` | `com.waymark.app` |
+| 月付 / 年付商品 ID | `migration_companion_premium_*` | `waymark_premium_*` |
+
+Kotlin 源码目录也跟着从 `com/migrationcompanion/migration_companion/` 移到
+`com/waymark/app/`，`project.pbxproj` 六处 bundle id 全部替换——替换时先换
+`.RunnerTests` 后缀再换主 target，否则前缀替换会把测试 target 的后缀一起吃掉。
+
+商品 ID 是改包名时顺带查出来的：App 侧 `subscription_screen.dart` 与服务端
+`entitlements.service.ts` 各有一份，两边必须一致，否则收据校验不过、权益发不出去。
+服务器 `.env` 没有设 `STORE_*_PRODUCT_ID`，走的就是代码里的默认值。
+
+`FileProvider` 的 authority 用的是 `${applicationId}` 变量，随包名自动跟着改，
+不需要手动改动。

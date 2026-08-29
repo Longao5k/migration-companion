@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Workspace symbol</title>
+  <desc id="desc">Two protected layers forming a personal workspace.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#F2E8D8"/>
+  <path d="M286 256c0-40 32-72 72-72h308c40 0 72 32 72 72v438c0 40-32 72-72 72H358c-40 0-72-32-72-72z" fill="#123D38"/>
+  <path d="M386 338c0-27 22-49 49-49h154c27 0 49 22 49 49v284c0 27-22 49-49 49H435c-27 0-49-22-49-49z" fill="#8FD4C0"/>
+  <path d="M435 407h154v146H435z" fill="#F8F2E7"/>
+  <path d="M589 407h49v146h-49z" fill="#E17655"/>
+</svg>

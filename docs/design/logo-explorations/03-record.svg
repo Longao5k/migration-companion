@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Record app icon concept</title>
+  <desc id="desc">A protected document containing a clear route and completed checkpoint.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#F3ECDD"/>
+  <path d="M285 174h300l154 154v522H285z" fill="#0A3F34"/>
+  <path d="M585 174v154h154" fill="#147B66"/>
+  <path d="M405 620 493 468l116 74 86-104" fill="none" stroke="#FFF8EB" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="405" cy="620" r="44" fill="#D1A969"/>
+  <circle cx="493" cy="468" r="44" fill="#D1A969"/>
+  <circle cx="609" cy="542" r="44" fill="#D1A969"/>
+  <circle cx="695" cy="438" r="44" fill="#D1A969"/>
+  <path d="m380 750 48 48 102-112" fill="none" stroke="#A2F2DC" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

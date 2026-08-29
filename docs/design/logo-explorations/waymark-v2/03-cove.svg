@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">WAYmark Cove symbol</title>
+  <desc id="desc">A protected inner space formed by an abstract open enclosure.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#DDEDE6"/>
+  <circle cx="488" cy="512" r="270" fill="#0B3F3A"/>
+  <circle cx="594" cy="454" r="230" fill="#DDEDE6"/>
+  <path d="M608 630c-54 48-124 76-200 76-162 0-294-132-294-294 0-52 14-101 37-143" fill="none" stroke="#E17655" stroke-width="66" stroke-linecap="round"/>
+  <circle cx="620" cy="630" r="39" fill="#F8F2E7"/>
+</svg>

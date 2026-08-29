@@ -16,7 +16,7 @@ val keystoreProperties = Properties().apply {
 val hasReleaseKeystore = keystoreProperties.getProperty("storeFile") != null
 
 android {
-    namespace = "com.migrationcompanion.migration_companion"
+    namespace = "com.waymark.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -28,7 +28,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.migrationcompanion.migration_companion"
+        // 首次上传 Play 之后 applicationId 永久锁定，改不了——只能建新应用重头来。
+        // 趁未上传定成产品名。
+        applicationId = "com.waymark.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

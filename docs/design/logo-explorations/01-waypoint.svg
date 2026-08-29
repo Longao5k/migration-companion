@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Waypoint app icon concept</title>
+  <desc id="desc">A connected route with verified milestones and an open next step.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#0A3F34"/>
+  <path d="M270 720 448 408 746 300" fill="none" stroke="#FFF8EB" stroke-width="68" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="270" cy="720" r="70" fill="#FFF8EB"/>
+  <circle cx="448" cy="408" r="64" fill="#FFF8EB"/>
+  <circle cx="746" cy="300" r="78" fill="#D97757"/>
+  <circle cx="746" cy="300" r="31" fill="#0A3F34"/>
+</svg>

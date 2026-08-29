@@ -3,7 +3,7 @@ import Link from 'next/link'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Migration Companion',
+  title: 'Waymark',
   description: 'Independent migration information and document workspace.',
 }
 
@@ -12,7 +12,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="zh-CN">
       <body>
         <header className="site-header">
-          <Link className="brand" href="/"><span>MC</span>Migration Companion</Link>
+          <Link className="brand" href="/"><span>W</span>Waymark</Link>
           <nav>
             <Link href="/privacy">隐私</Link>
             <Link href="/terms">条款</Link>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">WAYmark Frame mark</title>
+  <desc id="desc">An open framed mark representing clarity and a defined next chapter.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#F1E7D6"/>
+  <path d="M284 230h456c32 0 58 26 58 58v448c0 32-26 58-58 58H284c-32 0-58-26-58-58V288c0-32 26-58 58-58zm70 116v332h316V346z" fill="#163C54"/>
+  <path d="M354 346h316L512 512z" fill="#D97859"/>
+  <path d="M354 678h316L512 512z" fill="#2C8B79"/>
+  <circle cx="512" cy="512" r="42" fill="#FFF7E9"/>
+</svg>

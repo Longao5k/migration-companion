@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">WAYmark Signet symbol</title>
+  <desc id="desc">A distinctive abstract signet built from four balanced planes.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#24324D"/>
+  <path d="M512 215 734 337 734 593 512 809 290 593 290 337z" fill="#F8F2E7"/>
+  <path d="M512 215v594L290 593V337z" fill="#8FD4C0"/>
+  <path d="m512 215 222 122-222 128-222-128z" fill="#D4A95F"/>
+  <path d="m512 465 222-128v256L512 809z" fill="#E17655"/>
+</svg>

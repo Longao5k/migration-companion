@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">WAYmark Fold mark</title>
+  <desc id="desc">A folded document mark with a confident W-shaped cutout.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#E5F0EA"/>
+  <path d="M291 184h284l158 158v498H291z" fill="#123D38"/>
+  <path d="M575 184v158h158" fill="#2C8B79"/>
+  <path d="M365 430h72l34 162 42-98h38l42 98 34-162h72l-73 286h-66l-28-81-28 81h-66z" fill="#FFF7E9"/>
+  <path d="m716 760 41 41 72-72" fill="none" stroke="#D97859" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

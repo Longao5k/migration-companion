@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">WAYmark Aperture symbol</title>
+  <desc id="desc">An abstract aperture representing clarity emerging from complexity.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#F2E7D5"/>
+  <path d="M268 305c0-31 25-56 56-56h126l62 118H324v188l-56 62z" fill="#163C54"/>
+  <path d="M756 305c0-31-25-56-56-56H574l-62 118h188v188l56 62z" fill="#2C8B79"/>
+  <path d="M268 719c0 31 25 56 56 56h126l62-118H324V469l-56-62z" fill="#D4A95F"/>
+  <path d="M756 719c0 31-25 56-56 56H574l-62-118h188V469l56-62z" fill="#E17655"/>
+  <circle cx="512" cy="512" r="90" fill="#163C54"/>
+  <circle cx="512" cy="512" r="38" fill="#F2E7D5"/>
+</svg>

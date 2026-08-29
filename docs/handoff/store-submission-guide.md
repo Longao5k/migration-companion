@@ -162,26 +162,60 @@ Google 要求提供账号删除的**应用内入口和网页入口**，两个都
 
 ### 名称与图标（已落地）
 
-| 位置 | 内容 | 为什么 |
+产品名是 **Waymark**。
+
+### 三个「一次性」标识（首次上传后永久锁定）
+
+这三个在商店里一经创建就改不了——`applicationId` 要改只能建新应用，
+商品 ID 删不掉也不能改名。都已经趁未上传定成产品名：
+
+| 标识 | 值 |
+| --- | --- |
+| Android `applicationId` | `com.waymark.app` |
+| iOS bundle id | `com.waymark.app`（RunnerTests 为 `com.waymark.app.RunnerTests`） |
+| 月付商品 ID | `waymark_premium_monthly` |
+| 年付商品 ID | `waymark_premium_yearly` |
+
+商品 ID 两端必须一致：App 侧在 `subscription_screen.dart`，服务端在
+`entitlements.service.ts`（可用 `STORE_MONTHLY_PRODUCT_ID` / `STORE_YEARLY_PRODUCT_ID`
+覆盖，服务器 `.env` 目前没有设，走的就是这两个默认值）。对不上的话，
+用户买回来的收据校验不过，权益发不出去。
+
+在 Play Console 建订阅商品时，ID 必须逐字符照抄上面这两个。
+
+| 位置 | 内容 |
+| --- | --- |
+| 桌面/主屏图标名 | `Waymark`（Android `res/values/strings.xml`，iOS `Info.plist` 的 `CFBundleDisplayName`） |
+| 商店名称 | `Waymark`，副标题里再补「南澳技术移民信息与材料整理」之类的说明 |
+| App 内标题 | `Waymark` |
+
+图标源文件是 **`apps/mobile/assets/brand/app-icon.svg`**（设计稿本身）。
+要改图形就改 SVG，然后重跑 `python tool/generate_app_icon.py` 重新出图，
+**不要手改 PNG**。
+
+光栅化用 `npx sharp-cli`（sharp 内置 librsvg）。这台机器上没有别的可用渲染器：
+cairosvg 装得上但加载不了 cairo DLL，`convert` 是 Windows 自带的磁盘工具而不是
+ImageMagick。第一次跑会下载 sharp 的预编译二进制，之后走 npx 缓存。
+
+脚本按平台切分三个变体，不能混用：
+
+| 输出 | 变体 | 为什么 |
 | --- | --- | --- |
-| 桌面/主屏图标名 | `MigrationCo` | 启动器约 10-12 字符就截断，`Migration Companion` 一定会变成 `Migration…`。Android 在 `res/values/strings.xml`，iOS 在 `Info.plist` 的 `CFBundleDisplayName`。 |
-| 商店名称 | `Migration Companion` | 商店页不受启动器长度限制。 |
+| Android 旧版位图 `ic_launcher.png` | 满幅 + SVG 自带的 `rx=220` 圆角 | API 24-25 没有自适应图标，用位图本身的圆角 |
+| Android 自适应背景层 `ic_launcher_background.png` | 满幅 **方角** | 圆角由系统遮罩决定，自带圆角会被切两次 |
+| Android 自适应前景层 `ic_launcher_foreground.png` | 去掉背景矩形，缩进安全区 | 保证可视区是 108dp 画布上直径 66dp 的圆 |
+| iOS `AppIcon.appiconset`（19 张） | 满幅 **方角**，压平 alpha | iOS 自己加圆角遮罩；带 alpha 的图标 App Store Connect 直接拒收 |
+| Play `store/play-icon-512.png` | 满幅圆角，压平 alpha | 商店要求 32 位无透明 |
 
-图标是一条带转折的路径加三个节点，终点画成环——对应 App 里的「申请路线 / 下一步」。
-用现有品牌色（桉树绿 `#147B66`）。**不含任何徽章、盾牌、国旗或政府符号**，冻结规则
-禁止暗示官方身份。
+前景层的缩放不是拍脑袋定的：脚本量出所有不透明像素到图形中心的**最大距离**，
+按它缩到安全半径。用外接矩形的对角线算会白白缩掉一圈。
 
-全部资源由 `apps/mobile/tool/generate_app_icon.py` 生成，要改就改脚本再跑一次，
-不要手改 PNG：
+**没有 `monochrome` 层。** Android 13 的主题图标只取 alpha 通道再上色，而这张图的
+信息（地球、对勾、清单行）全画在不透明的白色文档**里面**，取完 alpha 只剩一块实心板
+加两道弧线。缺省时系统回落到普通图标，比给一个认不出的好。
 
-- Android 旧版位图 `mipmap-{mdpi…xxxhdpi}/ic_launcher.png`
-- Android 自适应图标 `mipmap-anydpi-v26/ic_launcher.xml` + 前景 PNG + 背景色资源
-  （含 `monochrome`，支持 Android 13 主题图标）
-- iOS `AppIcon.appiconset` 全套 19 张，已压平 alpha（iOS 拒收带透明通道的图标）
-- Play 商店图标 `store/play-icon-512.png`
-
-自适应图标的前景单独缩到 0.76：保证可视区是 108dp 画布上**直径 66dp 的圆**，
-满幅画的图形在圆形启动器上会被切掉终点环和起点。脚本里注释了这个数怎么算出来的。
+**已知取舍：** 这张图的信息密度对启动图标偏高，在 mdpi（48×48）下清单行会糊成噪点。
+mdpi 只用于很老的低密度设备，现代机走 xxhdpi/xxxhdpi（144-192px），那个尺寸下是清楚的。
 
 ---
 

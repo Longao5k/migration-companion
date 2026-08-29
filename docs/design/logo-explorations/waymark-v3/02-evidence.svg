@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Evidence symbol</title>
+  <desc id="desc">Two aligned layers crossing to represent source checking and verified evidence.</desc>
+  <rect width="1024" height="1024" rx="220" fill="#24324D"/>
+  <rect x="252" y="285" width="362" height="454" rx="96" fill="#F8F2E7"/>
+  <rect x="410" y="285" width="362" height="454" rx="96" fill="#8FD4C0"/>
+  <path d="M512 391 603 482 512 573 421 482z" fill="#E17655"/>
+  <path d="m475 482 26 26 51-57" fill="none" stroke="#24324D" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
