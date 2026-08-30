@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -50,8 +52,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     context: context,
                     delegate: _NewsSearchDelegate(state.news),
                   ),
-                  onNotifications: () =>
-                      _showUpcomingReminders(context, state.projects),
+                  alertCount: state.policyAlerts.length,
+                  onNotifications: () => _showNotifications(
+                    context,
+                    ref,
+                    state.policyAlerts,
+                    state.projects,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 _ContentSignal(
@@ -157,10 +164,12 @@ class _EditorialHeader extends StatelessWidget {
   const _EditorialHeader({
     required this.onSearch,
     required this.onNotifications,
+    this.alertCount = 0,
   });
 
   final VoidCallback onSearch;
   final VoidCallback onNotifications;
+  final int alertCount;
 
   @override
   Widget build(BuildContext context) {
@@ -204,10 +213,16 @@ class _EditorialHeader extends StatelessWidget {
           onTap: onSearch,
         ),
         const SizedBox(width: 8),
-        _RoundAction(
-          icon: Icons.notifications_none_rounded,
-          tooltip: '提醒',
-          onTap: onNotifications,
+        Badge.count(
+          count: alertCount,
+          isLabelVisible: alertCount > 0,
+          child: _RoundAction(
+            icon: alertCount > 0
+                ? Icons.notifications_active_rounded
+                : Icons.notifications_none_rounded,
+            tooltip: alertCount > 0 ? '$alertCount 条更新' : '提醒',
+            onTap: onNotifications,
+          ),
         ),
       ],
     );
@@ -1195,15 +1210,23 @@ class _StorySheet extends StatelessWidget {
   }
 }
 
-Future<void> _showUpcomingReminders(
+Future<void> _showNotifications(
   BuildContext context,
+  WidgetRef ref,
+  List<PolicyAlert> alerts,
   List<VisaProject> projects,
 ) async {
+  // 打开就算看过。留着不确认会让同一批提醒每次都再冒出来。
+  if (alerts.isNotEmpty) {
+    unawaited(ref.read(appStoreProvider.notifier).acknowledgePolicyAlerts());
+  }
   final reminders = [
     for (final project in projects)
       for (final item in project.items)
         if (item.reminderAt != null) (project: project, item: item),
   ]..sort((a, b) => a.item.reminderAt!.compareTo(b.item.reminderAt!));
+
+  if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -1214,22 +1237,46 @@ Future<void> _showUpcomingReminders(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('已设置的提醒', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
+            if (alerts.isNotEmpty) ...[
+              Text('政策更新', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              ...alerts
+                  .take(8)
+                  .map(
+                    (alert) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        alert.isNews
+                            ? Icons.article_outlined
+                            : Icons.campaign_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      title: Text(alert.title),
+                      subtitle: Text(
+                        DateFormat('M月d日 HH:mm').format(alert.createdAt),
+                      ),
+                    ),
+                  ),
+              const SizedBox(height: 8),
+            ],
+            Text('材料提醒', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
             if (reminders.isEmpty)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: Text('暂无提醒。可在申请路线中设置。')),
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('还没有设置提醒。可以在申请里给某一项加一个。'),
               )
             else
               ...reminders
                   .take(12)
                   .map(
                     (entry) => ListTile(
+                      contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.notifications_active_outlined),
                       title: Text(entry.item.title),
                       subtitle: Text(
-                        '${entry.project.name} · ${DateFormat('yyyy-MM-dd HH:mm').format(entry.item.reminderAt!)}',
+                        '${entry.project.name} · '
+                        '${DateFormat('yyyy-MM-dd HH:mm').format(entry.item.reminderAt!)}',
                       ),
                     ),
                   ),

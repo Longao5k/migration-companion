@@ -33,6 +33,7 @@ class AppState {
     this.policyNotificationsEnabled = false,
     this.followedJurisdictions = const ['AU-SA'],
     this.followedTags = const [],
+    this.policyAlerts = const [],
     this.importantNotificationsOnly = true,
     this.monitoring,
     this.cloudFileUploadsEnabled = true,
@@ -66,6 +67,9 @@ class AppState {
   final bool policyNotificationsEnabled;
   final List<String> followedJurisdictions;
   final List<String> followedTags;
+
+  /// 服务端按订阅推来的、还没被用户看过的提醒。
+  final List<PolicyAlert> policyAlerts;
   final bool importantNotificationsOnly;
 
   int get cloudStorageAllocatedBytes =>
@@ -103,6 +107,7 @@ class AppState {
     bool? policyNotificationsEnabled,
     List<String>? followedJurisdictions,
     List<String>? followedTags,
+    List<PolicyAlert>? policyAlerts,
     bool? importantNotificationsOnly,
     MonitoringStatus? monitoring,
     bool? cloudFileUploadsEnabled,
@@ -134,6 +139,7 @@ class AppState {
         policyNotificationsEnabled ?? this.policyNotificationsEnabled,
     followedJurisdictions: followedJurisdictions ?? this.followedJurisdictions,
     followedTags: followedTags ?? this.followedTags,
+    policyAlerts: policyAlerts ?? this.policyAlerts,
     importantNotificationsOnly:
         importantNotificationsOnly ?? this.importantNotificationsOnly,
     monitoring: monitoring ?? this.monitoring,
@@ -1988,6 +1994,46 @@ class AppStore extends StateNotifier<AppState> {
       deletionRequestedAt:
           _optionalDate(result['requestedAt']) ?? DateTime.now(),
     );
+  }
+
+  /// 取回服务端按订阅推给本账号的提醒。
+  ///
+  /// 推送通道（FCM/APNs）还没接，那要引入 Google 依赖并重做隐私说明。
+  /// 在那之前 App 自己就是投递通道：它本来就会定期拉内容，顺带把提醒取走。
+  Future<void> refreshPolicyAlerts() async {
+    final email = state.accountEmail;
+    if (email == null) {
+      if (state.policyAlerts.isNotEmpty) {
+        state = state.copyWith(policyAlerts: const []);
+      }
+      return;
+    }
+    try {
+      final payload = await _api(email).getList('/notifications/inbox');
+      state = state.copyWith(
+        policyAlerts: payload
+            .cast<Map<String, dynamic>>()
+            .map(PolicyAlert.fromJson)
+            .toList(),
+      );
+    } catch (_) {
+      // 提醒取不到不该影响主内容刷新。下一轮会再试。
+    }
+  }
+
+  /// 用户看过之后确认，服务端不再下发同一批。
+  Future<void> acknowledgePolicyAlerts() async {
+    final email = state.accountEmail;
+    final alerts = state.policyAlerts;
+    if (email == null || alerts.isEmpty) return;
+    try {
+      await _api(email).post('/notifications/inbox/ack', {
+        'ids': alerts.map((alert) => alert.id).toList(),
+      });
+      state = state.copyWith(policyAlerts: const []);
+    } catch (_) {
+      // 确认失败就留着，下次再确认；重复展示比丢掉提醒好。
+    }
   }
 
   Future<void> refreshNotificationPreferences() async {

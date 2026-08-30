@@ -270,6 +270,44 @@ class JurisdictionCoverage {
       );
 }
 
+/// 服务端推给这个账号的一条提醒。
+///
+/// 标题刻意是概括性的（「你关注的地区有新的官方资讯」），不写具体政策——
+/// 提醒会出现在锁屏上，而一个人关注哪些标签本身就是敏感信息。
+class PolicyAlert {
+  const PolicyAlert({
+    required this.id,
+    required this.kind,
+    required this.entityId,
+    required this.title,
+    required this.route,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String kind;
+  final String entityId;
+  final String title;
+  final String route;
+  final DateTime createdAt;
+
+  bool get isNews => kind == 'NEWS_PUBLISHED';
+
+  factory PolicyAlert.fromJson(Map<String, dynamic> json) {
+    final payload = json['payload'] as Map<String, dynamic>? ?? const {};
+    return PolicyAlert(
+      id: json['id'] as String,
+      kind: json['kind'] as String? ?? '',
+      entityId: json['entityId'] as String? ?? '',
+      title: payload['title'] as String? ?? '有新的更新',
+      route: payload['route'] as String? ?? '',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '')?.toLocal() ??
+          DateTime.now(),
+    );
+  }
+}
+
 class MonitoringStatus {
   const MonitoringStatus({
     required this.monitoredCount,

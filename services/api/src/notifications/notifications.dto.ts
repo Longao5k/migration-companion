@@ -56,3 +56,10 @@ export class NotificationResultDto {
   @Length(1, 120)
   errorCode?: string;
 }
+
+export class AcknowledgeNotificationsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(100)
+  ids!: string[];
+}

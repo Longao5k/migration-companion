@@ -42,6 +42,35 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * App 端收件箱。
+   *
+   * outbox 原本是给推送/邮件 worker 用的（`claim` + `recordResult`），但那条链路需要
+   * FCM/APNs，要引入 Google 依赖并重做隐私说明。在那之前，**App 自己就是投递通道**：
+   * 它本来就会定期拉内容，顺带把该给这个账号的提醒取走即可。
+   *
+   * 只返回未送达的。已确认的不再出现，否则用户每次打开都看到同一批。
+   */
+  async inbox(accountId: string) {
+    const items = await this.prisma.notificationOutbox.findMany({
+      where: { accountId, status: { in: ['PENDING', 'PROCESSING'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { id: true, kind: true, entityId: true, payload: true, createdAt: true },
+    });
+    return items;
+  }
+
+  /** App 确认已展示。只允许确认自己的，否则任何账号都能替别人清空收件箱。 */
+  async acknowledge(accountId: string, ids: string[]) {
+    if (ids.length === 0) return { acknowledged: 0 };
+    const result = await this.prisma.notificationOutbox.updateMany({
+      where: { id: { in: ids.slice(0, 100) }, accountId },
+      data: { status: 'SENT', sentAt: new Date() },
+    });
+    return { acknowledged: result.count };
+  }
+
   async claim(dto: ClaimNotificationsDto) {
     const now = new Date();
     const stale = new Date(now.getTime() - 15 * 60_000);

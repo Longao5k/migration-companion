@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WorkerApiKeyGuard } from '../content/api-key.guard';
 import {
+  AcknowledgeNotificationsDto,
   ClaimNotificationsDto,
   NotificationResultDto,
   UpdateNotificationPreferenceDto,
@@ -26,6 +27,25 @@ export class NotificationPreferencesController {
     @Body() body: UpdateNotificationPreferenceDto,
   ) {
     return this.notifications.updatePreference(user.accountId, body);
+  }
+}
+
+@Controller('notifications')
+@UseGuards(JwtAuthGuard)
+export class NotificationInboxController {
+  constructor(private readonly notifications: NotificationsService) {}
+
+  @Get('inbox')
+  inbox(@CurrentUser() user: AuthenticatedUser) {
+    return this.notifications.inbox(user.accountId);
+  }
+
+  @Post('inbox/ack')
+  acknowledge(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: AcknowledgeNotificationsDto,
+  ) {
+    return this.notifications.acknowledge(user.accountId, body.ids);
   }
 }
 

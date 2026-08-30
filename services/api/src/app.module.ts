@@ -23,6 +23,7 @@ import { SharesService } from './shares/shares.service';
 import { AccountDeletionService } from './account-deletion/account-deletion.service';
 import { AccountDeletionWorkerController } from './account-deletion/account-deletion.controller';
 import {
+  NotificationInboxController,
   NotificationPreferencesController,
   NotificationWorkerController,
 } from './notifications/notifications.controller';
@@ -48,6 +49,7 @@ import { PilotAuthService } from './auth/pilot-auth.service';
     EntitlementsController,
     StoreEventsController,
     AccountDeletionWorkerController,
+    NotificationInboxController,
     NotificationPreferencesController,
     NotificationWorkerController,
   ],

@@ -27,6 +27,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       await store.ready;
       await store.refreshContent();
       await store.resumeCloudSync();
+      await store.refreshPolicyAlerts();
       // 交给外部阅读器的副本是完整的申请材料。启动时清一次过期的，
       // 否则只打开过一次文件的用户会永远留着那份明文拷贝。
       await pruneStaleWorkingCopies();

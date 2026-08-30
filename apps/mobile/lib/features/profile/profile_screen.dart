@@ -289,7 +289,9 @@ Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('申请删除账号与云端数据？'),
-      content: const Text('账号主数据目标在确认后 7 天内删除；备份轮换最长 35 天。本机项目不会在此步骤中自动删除。Apple 或 Google 订阅也不会自动取消，请另行前往商店管理。'),
+      content: const Text(
+        '账号主数据目标在确认后 7 天内删除；备份轮换最长 35 天。本机项目不会在此步骤中自动删除。Apple 或 Google 订阅也不会自动取消，请另行前往商店管理。',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
