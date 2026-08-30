@@ -158,5 +158,137 @@
     "enabled": true,
     "discovery_url": "https://migration.wa.gov.au/news",
     "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$"
+  },
+  {
+    "id": "qld-nomination-eligibility",
+    "name": "Migration Queensland — 提名资格条件",
+    "url": "https://migration.qld.gov.au/nomination-process/eligibility-criteria",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© AU-QLD government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "qld-occupation-list-onshore",
+    "name": "Migration Queensland — 境内职业清单",
+    "url": "https://migration.qld.gov.au/occupation-lists/queensland-onshore-skilled-occupation-list",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© AU-QLD government",
+    "enabled": true,
+    "topics": [
+      "职业清单"
+    ]
+  },
+  {
+    "id": "qld-occupation-list-offshore",
+    "name": "Migration Queensland — 境外职业清单",
+    "url": "https://migration.qld.gov.au/occupation-lists/offshore-queensland-skilled-occupation-lists-(qsol)",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© AU-QLD government",
+    "enabled": true,
+    "topics": [
+      "职业清单"
+    ]
+  },
+  {
+    "id": "qld-registration-of-interest",
+    "name": "Migration Queensland — 意向登记",
+    "url": "https://migration.qld.gov.au/nomination-process/registration-of-interest",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© AU-QLD government",
+    "enabled": true,
+    "topics": [
+      "ROI"
+    ]
+  },
+  {
+    "id": "qld-skilled-visas",
+    "name": "Migration Queensland — 技术签证说明",
+    "url": "https://migration.qld.gov.au/visa-options/skilled-visas",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© AU-QLD government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "wa-state-nomination",
+    "name": "Migration WA — 州担保项目",
+    "url": "https://migration.wa.gov.au/our-services-support/state-nominated-migration-program",
+    "jurisdiction": "AU-WA",
+    "license_note": "© AU-WA government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "wa-skilled-pathways",
+    "name": "Migration WA — 技术签证路径",
+    "url": "https://migration.wa.gov.au/moving-western-australia/migration-pathways-skilled-visas",
+    "jurisdiction": "AU-WA",
+    "license_note": "© AU-WA government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "wa-regional-certification",
+    "name": "Migration WA — 区域签证认证",
+    "url": "https://migration.wa.gov.au/our-services-support/certification-regional-visas",
+    "jurisdiction": "AU-WA",
+    "license_note": "© AU-WA government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "nsw-skilled-visas",
+    "name": "NSW — 技术签证总览",
+    "url": "https://www.nsw.gov.au/visas-and-migration/skilled-visas",
+    "jurisdiction": "AU-NSW",
+    "license_note": "© AU-NSW government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "nsw-skills-lists",
+    "name": "NSW — 职业清单",
+    "url": "https://www.nsw.gov.au/visas-and-migration/skilled-visas/nsw-skills-lists",
+    "jurisdiction": "AU-NSW",
+    "license_note": "© AU-NSW government",
+    "enabled": true,
+    "topics": [
+      "职业清单"
+    ]
+  },
+  {
+    "id": "nsw-190",
+    "name": "NSW — 190 州担保",
+    "url": "https://www.nsw.gov.au/visas-and-migration/skilled-visas/skilled-nominated-visa-subclass-190",
+    "jurisdiction": "AU-NSW",
+    "license_note": "© AU-NSW government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "nsw-491",
+    "name": "NSW — 491 偏远地区担保",
+    "url": "https://www.nsw.gov.au/visas-and-migration/skilled-visas/skilled-work-regional-visa-subclass-491",
+    "jurisdiction": "AU-NSW",
+    "license_note": "© AU-NSW government",
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
   }
 ]
