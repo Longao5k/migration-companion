@@ -11,6 +11,7 @@
     "test:e2e": "jest --config test/jest-e2e.json --runInBand",
     "content:seed": "node scripts/seed-content.mjs",
     "pilot:hash-code": "node scripts/hash-pilot-code.mjs",
+    "admin:hash-password": "node scripts/hash-admin-password.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

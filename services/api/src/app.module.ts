@@ -27,6 +27,8 @@ import {
   NotificationWorkerController,
 } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
+import { AdminAuthController } from './auth/admin-auth.controller';
+import { AdminAuthService } from './auth/admin-auth.service';
 import { PilotAuthController } from './auth/pilot-auth.controller';
 import { PilotAuthService } from './auth/pilot-auth.service';
 
@@ -34,6 +36,7 @@ import { PilotAuthService } from './auth/pilot-auth.service';
   imports: [JwtModule.register({})],
   controllers: [
     HealthController,
+    AdminAuthController,
     PilotAuthController,
     AuthController,
     ProjectsController,
@@ -61,6 +64,7 @@ import { PilotAuthService } from './auth/pilot-auth.service';
     EntitlementsService,
     AccountDeletionService,
     NotificationsService,
+    AdminAuthService,
     PilotAuthService,
   ],
 })

@@ -27,7 +27,9 @@ header { display: flex; justify-content: space-between; align-items: flex-end; }
 h1 { font-size: 32px; line-height: 1.15; margin: 0; letter-spacing: -.04em; }
 h2 { margin: 3px 0 0; font-size: 20px; letter-spacing: -.02em; }
 .key-box { display: flex; padding: 4px; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; }
-.key-box input { border: 0; outline: 0; width: 215px; padding: 8px 10px; background: transparent; }
+.key-box form { display: flex; gap: 4px; align-items: center; }
+.key-box input { border: 0; outline: 0; width: 168px; padding: 8px 10px; background: transparent; }
+.signed-in { padding: 8px 12px; font-weight: 600; color: var(--ink); }
 .key-box button, .filter { border: 0; border-radius: 8px; padding: 9px 14px; background: var(--sand); color: var(--ink); font-weight: 700; }
 
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-top: 28px; }

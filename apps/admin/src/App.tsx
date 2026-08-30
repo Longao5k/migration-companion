@@ -77,8 +77,11 @@ function formatTime(value?: string) {
 
 function App() {
   const [view, setView] = useState<View>('review')
-  const [apiKey, setApiKey] = useState('')
-  const [notice, setNotice] = useState('输入本次会话后台密钥后同步；密钥不会保存在浏览器存储中。')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [token, setToken] = useState('')
+  const [signedInAs, setSignedInAs] = useState('')
+  const [notice, setNotice] = useState('请登录后台账号。会话 8 小时后过期，凭据不写入浏览器存储。')
   const [loading, setLoading] = useState(false)
   const [queue, setQueue] = useState<ChangeItem[]>([])
   const [changes, setChanges] = useState<ChangeItem[]>([])
@@ -104,18 +107,58 @@ function App() {
   )
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    if (!apiKey.trim()) throw new Error('请先输入后台密钥')
+    if (!token) throw new Error('请先登录')
     const response = await fetch(path, {
       ...init,
       headers: {
-        'x-admin-key': apiKey.trim(),
+        authorization: `Bearer ${token}`,
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers,
       },
     })
     const payload = (await response.json().catch(() => null)) as { message?: string } | null
+    if (response.status === 401) {
+      // 会话过期后继续拿旧 token 请求，每一步都会报一句无关的错。
+      // 直接清掉，让界面回到登录态。
+      setToken('')
+      setSignedInAs('')
+      throw new Error('会话已过期，请重新登录')
+    }
     if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`)
     return payload as T
+  }
+
+  async function signIn() {
+    setLoading(true)
+    try {
+      const response = await fetch('/v1/auth/admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { accessToken?: string; email?: string; message?: string }
+        | null
+      if (!response.ok || !payload?.accessToken) {
+        throw new Error(payload?.message || `登录失败（HTTP ${response.status}）`)
+      }
+      setToken(payload.accessToken)
+      setSignedInAs(payload.email ?? email.trim())
+      // 密码用完就从内存里抹掉，不留在 React 状态里等着被 devtools 看见。
+      setPassword('')
+      setNotice('已登录。会话 8 小时后过期。')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '登录失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function signOut() {
+    setToken('')
+    setSignedInAs('')
+    setPassword('')
+    setNotice('已退出。')
   }
 
   async function load(target: View = view) {
@@ -163,7 +206,7 @@ function App() {
     setSelectedId('')
     setSummary('')
     setCorrectionNote('')
-    if (apiKey.trim()) void load(next)
+    if (token) void load(next)
   }
 
   async function review(status: ReviewStatus) {
@@ -327,8 +370,24 @@ function App() {
         <header>
           <div><p className="eyebrow">AU-SA · 第一阶段</p><h1>{nav.find((item) => item.id === view)?.label}</h1></div>
           <div className="key-box">
-            <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="本次会话后台密钥" aria-label="后台密钥" />
-            <button onClick={() => load()} disabled={loading}>{loading ? '同步中' : '同步'}</button>
+            {token ? (
+              <>
+                <span className="signed-in">{signedInAs}</span>
+                <button onClick={() => load()} disabled={loading}>{loading ? '同步中' : '同步'}</button>
+                <button onClick={signOut}>退出</button>
+              </>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void signIn()
+                }}
+              >
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="管理员邮箱" aria-label="管理员邮箱" autoComplete="username" required />
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" aria-label="密码" autoComplete="current-password" required />
+                <button type="submit" disabled={loading}>{loading ? '登录中' : '登录'}</button>
+              </form>
+            )}
           </div>
         </header>
 
