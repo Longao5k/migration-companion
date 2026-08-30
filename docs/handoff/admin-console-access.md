@@ -2,28 +2,24 @@
 
 ## 一次性设置：建你的后台账号
 
-**在服务器上跑，不在本机。** 密码在服务器上敲一次，直接哈希写库——不跨机器、
-不进本机 shell 历史、不用把哈希粘到命令行里：
+**在服务器上跑一次，没有额外脚本。** 把 `你的邮箱` 换成真实邮箱，密码会提示输入（不回显）：
 
 ```bash
-ssh tencent-light
+cd ~/migration-companion/infra/server && read -rsp "密码: " P && echo && docker compose exec -T -e A_EMAIL="你的邮箱" -e A_PASS="$P" api node -e '
+const{PrismaClient}=require("@prisma/client");const{randomBytes,scryptSync}=require("crypto");
+const s=randomBytes(16),h=s.toString("hex")+":"+scryptSync(process.env.A_PASS,s,32).toString("hex");
+new PrismaClient().adminUser.upsert({where:{email:process.env.A_EMAIL},create:{email:process.env.A_EMAIL,passwordHash:h},update:{passwordHash:h,disabled:false}})
+.then(()=>console.log("已写入",process.env.A_EMAIL)).catch(e=>{console.error(e.message);process.exit(1)});
+' && unset P
 ```
+
+密码至少 12 位（服务端的 DTO 会拒绝更短的）。改密码就把同一条再跑一遍。
+
+**停用账号**（保留审计指向，不删）：
 
 ```bash
-cd ~/migration-companion/infra/server && docker compose exec api node scripts/create-admin.mjs
+cd ~/migration-companion/infra/server && docker compose exec -T api node -e 'new (require("@prisma/client").PrismaClient)().adminUser.update({where:{email:"你的邮箱"},data:{disabled:true}}).then(()=>console.log("已停用"))'
 ```
-
-会依次问你邮箱和密码（密码输入时不显示，要输两遍）。密码至少 12 位——这个账号能向
-所有用户发布政策内容。
-
-**改密码**：同一个邮箱再跑一次就覆盖。已签发的会话最长 8 小时后自然过期。
-
-**停用账号**：`docker compose exec api node scripts/create-admin.mjs 邮箱 --disable`。
-是停用不是删除，审计记录要能指回是谁做的操作。
-
-> 早先的做法是在本机生成哈希再粘进 `.env`。那样密码要跨机器、哈希要过命令行、
-> 改密码要重启 API，而且逗号分隔的配置里一个格式错误会让**所有管理员一起登不进去**。
-> 账号已改为存数据库。
 
 ## 每次要用后台时
 
