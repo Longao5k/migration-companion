@@ -42,6 +42,8 @@ type NewsItem = {
   sourceId: string
   titleZh: string
   summaryZh: string
+  titleEn: string | null
+  summaryEn: string | null
   sourceTitle: string
   sourceExcerpt: string | null
   draftAuthor: 'model' | 'editor' | null
@@ -52,18 +54,27 @@ type NewsItem = {
   source: Source
 }
 
-/** 一条草稿处在哪个阶段。判据和服务端的发布闸门用同一个中文正则。 */
-type DraftState = 'needs-chinese' | 'ready' | 'published'
+/** 一条草稿处在哪个阶段。中文那一档的判据和服务端的发布闸门用同一个正则。 */
+type DraftState = 'needs-chinese' | 'needs-english' | 'ready' | 'published'
 
 const CJK = /[㐀-鿿]/
 
 function draftState(item: NewsItem): DraftState {
   if (item.isPublished) return 'published'
-  return CJK.test(item.titleZh) && CJK.test(item.summaryZh) ? 'ready' : 'needs-chinese'
+  if (!CJK.test(item.titleZh) || !CJK.test(item.summaryZh)) return 'needs-chinese'
+  // 英文缺失单独成一档，而不是并进「待发布」。申请人常要把政策转述给雇主、
+  // 律师或职业评估机构，英文那份是给那些场合用的；混在「待发布」里，
+  // 少了英文的条目会被当成完整的一条发出去，没人会发现。
+  //
+  // 只在后台拦，不在服务端拦：英文缺失是完整度问题，不是安全问题，
+  // 不该让一条紧急的政策变更因为没写英文而发不出去。
+  if (!item.titleEn?.trim() || !item.summaryEn?.trim()) return 'needs-english'
+  return 'ready'
 }
 
 const DRAFT_STATE_LABEL: Record<DraftState, string> = {
   'needs-chinese': '待写中文',
+  'needs-english': '待写英文',
   ready: '待发布',
   published: '已发布',
 }
@@ -113,6 +124,8 @@ function App() {
   const [selectedNewsId, setSelectedNewsId] = useState('')
   const [newsTitle, setNewsTitle] = useState('')
   const [newsSummary, setNewsSummary] = useState('')
+  const [newsTitleEn, setNewsTitleEn] = useState('')
+  const [newsSummaryEn, setNewsSummaryEn] = useState('')
   const [newsTags, setNewsTags] = useState('')
   const [newsFilter, setNewsFilter] = useState<'all' | DraftState>('all')
   const [onlyModelDrafts, setOnlyModelDrafts] = useState(false)
@@ -376,6 +389,8 @@ function App() {
     setSelectedNewsId(item.id)
     setNewsTitle(item.titleZh)
     setNewsSummary(item.summaryZh)
+    setNewsTitleEn(item.titleEn || '')
+    setNewsSummaryEn(item.summaryEn || '')
     setNewsTags(item.tags.join(', '))
   }
 
@@ -420,8 +435,13 @@ function App() {
         body: JSON.stringify({
           titleZh: newsTitle.trim(),
           summaryZh: newsSummary.trim(),
+          titleEn: newsTitleEn.trim(),
+          summaryEn: newsSummaryEn.trim(),
           tags: newsTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
           // 人改过就不再是模型稿，标记跟着变——列表上的「模型稿」提示才准确。
+          //
+          // 这个标记只有在英文也在同一个表单里能看见时才诚实：以前保存只写中文，
+          // 却把整条标成「已人工核对」，而英文那半从没在这个界面上出现过。
           draftAuthor: 'editor',
         }),
       })
@@ -536,7 +556,7 @@ function App() {
 
               {/* 73 条平铺、无筛选、无批量，只能逐条点——这是「审不完」的直接原因。 */}
               <div className="list-toolbar">
-                {(['all', 'needs-chinese', 'ready', 'published'] as const).map((key) => (
+                {(['all', 'needs-chinese', 'needs-english', 'ready', 'published'] as const).map((key) => (
                   <button
                     key={key}
                     className={newsFilter === key ? 'filter active' : 'filter'}
@@ -649,13 +669,20 @@ function App() {
 
               {selectedNews.draftAuthor === 'model' && (
                 <p className="model-warning">
-                  这份中文稿由模型起草，请逐字对照左侧原文。它曾编造过邀请人数，
-                  也写出过带建议口吻的句子。
+                  中英两份都由模型起草，请逐字对照左侧原文，两份都要看。
+                  它曾编造过邀请人数，也写出过带建议口吻的句子。
                 </p>
               )}
 
               <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>
               <label>中文原创摘要<textarea required maxLength={2000} value={newsSummary} onChange={(event) => setNewsSummary(event.target.value)} /></label>
+
+              {/* 英文稿必须在同一个表单里。它会随发布一起上线，给申请人转述给雇主、
+                  律师和职业评估机构用——之前它在库里、在 App 里，唯独不在这个
+                  审核界面上，等于绕过了「人工核实后发布」这道闸。 */}
+              <label>英文标题<input maxLength={240} value={newsTitleEn} onChange={(event) => setNewsTitleEn(event.target.value)} placeholder="留空则 App 内不显示英文" /></label>
+              <label>英文摘要<textarea maxLength={2000} value={newsSummaryEn} onChange={(event) => setNewsSummaryEn(event.target.value)} placeholder="与中文陈述同一组事实，数字必须一致" /></label>
+
               <label>标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
               <button className="approve" disabled={loading}>保存编辑稿</button>
               <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>取消</button>
