@@ -4,10 +4,19 @@
 
 后台签名密钥已在服务器上生成（`ADMIN_JWT_SECRET`，与内测密钥独立）。还差你的账号：
 
-**第一步**，在本机生成密码哈希——密码明文不出你的机器，服务器上只存哈希：
+**第一步**，在本机生成密码哈希——密码明文不出你的机器，服务器上只存哈希。
+在**仓库根目录**运行：
 
 ```bash
-pnpm --filter @migration-companion/api admin:hash-password -- 你的邮箱 你的密码
+node services/api/scripts/hash-admin-password.mjs 你的邮箱 你的密码
+```
+
+（这台机器上 `pnpm` 不在 PATH，所以别用 `pnpm --filter …` 那种写法，直接 `node` 跑脚本。）
+
+**不想让密码进 shell 历史**就改成这样，脚本会从环境变量读：
+
+```bash
+ADMIN_PASSWORD_TO_HASH='你的密码' node services/api/scripts/hash-admin-password.mjs 你的邮箱
 ```
 
 密码至少 12 位。这个账号能向所有用户发布政策内容，别用你在别处用过的密码。
