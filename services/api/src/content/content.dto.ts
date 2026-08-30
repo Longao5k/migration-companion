@@ -131,6 +131,16 @@ export class UpdateNewsDto {
   @IsOptional()
   @IsString()
   @Length(1, 240)
+  titleEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 2000)
+  summaryEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 240)
   titleZh?: string;
 
   @IsOptional()

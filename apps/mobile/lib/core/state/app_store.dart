@@ -2175,6 +2175,12 @@ NewsItem _newsFromApi(Map<String, dynamic> json, {required bool bookmarked}) {
     summary: json['summaryZh'] as String,
     sourceName: source['name'] as String? ?? '官方来源',
     jurisdiction: source['jurisdiction'] as String? ?? '',
+    titleEn: (json['titleEn'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['titleEn'] as String).trim(),
+    summaryEn: (json['summaryEn'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['summaryEn'] as String).trim(),
     // 官方原标题保留为独立字段，不再当作来源名的兜底：这两件事在详情页要分开显示。
     sourceTitle: (json['sourceTitle'] as String?)?.trim().isEmpty ?? true
         ? null

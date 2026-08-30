@@ -7,10 +7,10 @@ import {
   IsOptional,
   IsString,
   Length,
-  Matches,
   Max,
   Min,
 } from 'class-validator';
+import { knownTags } from '../content/taxonomy';
 
 export class UpdateNotificationPreferenceDto {
   @IsBoolean()
@@ -37,11 +37,10 @@ export class UpdateNotificationPreferenceDto {
   @IsArray()
   @ArrayMaxSize(30)
   @IsString({ each: true })
-  // 标签不再限定为 190/491：内容上的标签主要是辖区名（南澳/昆士兰/联邦）
-  // 加签证类别。写死两个值等于让用户订阅不到绝大多数内容承载的那个标签。
-  // 只做长度与字符约束，具体词表由内容决定。
-  @Length(1, 24, { each: true })
-  @Matches(/^[一-龥A-Za-z0-9_-]+$/, { each: true })
+  // 与内容侧同一份封闭词表（`content/taxonomy.ts`）。
+  // 原先写死 ['190','491']，用户订阅不到 485、职业清单这些实际存在的标签；
+  // 而完全放开又会让人订阅一个永远匹配不上的字符串。
+  @IsIn(knownTags(), { each: true })
   tags!: string[];
 
   @IsBoolean()

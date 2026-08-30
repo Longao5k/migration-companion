@@ -16,6 +16,9 @@ class Source:
     # 配了这个就走通用发现（generic_discovery），不配就走南澳那套写死的解析。
     # 值是文章路径的正则，例如 r"^/news/[a-z0-9][a-z0-9\-]+$"。
     article_pattern: str | None = None
+    # 该来源发现的条目默认带上的主题标签。
+    # 从来源推导比从标题猜可靠：接一个新的职业清单页时，主题是先验已知的。
+    topics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

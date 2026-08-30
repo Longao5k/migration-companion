@@ -318,6 +318,13 @@ model NewsItem {
   source      Source   @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   titleZh     String
   summaryZh   String
+  /// 英文摘要。与中文摘要同源、同一次生成，供英文读者与核对使用。
+  ///
+  /// 注意它和 sourceExcerpt 不是一回事：sourceExcerpt 是**官方原文的摘录**（受版权约束、
+  /// 只作核实用），summaryEn 是**我们自己写的英文概括**，和 summaryZh 是同一份编辑内容的
+  /// 两种语言。申请人常要把政策转述给雇主、律师或职业评估机构，那些场合要英文。
+  summaryEn   String?
+  titleEn     String?
   sourceTitle String
   /// 官方原文摘录。采集时写入，**编辑永不覆盖**。
   ///

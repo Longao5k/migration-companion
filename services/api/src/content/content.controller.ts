@@ -26,6 +26,12 @@ export class ContentController {
     return this.content.changes();
   }
 
+  /** 公开标签目录。App 用它建筛选栏与订阅选择器，不再硬编码 190/491。 */
+  @Get('taxonomy')
+  taxonomy() {
+    return this.content.taxonomy();
+  }
+
   @Get('monitoring')
   monitoring() {
     return this.content.monitoringStatus();

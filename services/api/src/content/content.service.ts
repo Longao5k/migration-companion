@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ChangeImportance, Prisma, ReviewStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { assertExcerptQuota } from './excerpt-quota';
+import { JURISDICTIONS, isKnownTag, TOPICS, VISA_SUBCLASSES } from './taxonomy';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -234,6 +235,8 @@ export class ContentService {
           ...(dto.publishedAt !== undefined ? { publishedAt: new Date(dto.publishedAt) } : {}),
           ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
           ...(dto.draftAuthor !== undefined ? { draftAuthor: dto.draftAuthor } : {}),
+          ...(dto.titleEn !== undefined ? { titleEn: dto.titleEn.trim() } : {}),
+          ...(dto.summaryEn !== undefined ? { summaryEn: dto.summaryEn.trim() } : {}),
         },
         include: { source: true },
       });
@@ -537,8 +540,48 @@ export class ContentService {
     }
   }
 
-  private cleanTags(tags: string[]) {
-    return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
+  /**
+   * 只保留词表内的标签。
+   *
+   * 原先什么都收，于是同一个概念会有 `SA`、`南澳`、`sa` 三种写法（后台的输入框
+   * placeholder 就在教人输 `SA`，而真实值是「南澳」）。用户订阅其中一种就漏掉另外两种。
+   * 现在词表外的值直接丢弃——静默接受一个永远匹配不上的标签，比拒绝它更糟。
+   */
+  private cleanTags(tags: string[] | undefined) {
+    return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(isKnownTag))];
+  }
+
+  /** 公开的标签目录。App 的筛选栏与订阅选择器都从这里建，不再硬编码。 */
+  async taxonomy() {
+    const items = await this.prisma.newsItem.findMany({
+      where: { isPublished: true, publishedAt: { lte: new Date() } },
+      select: { tags: true, source: { select: { jurisdiction: true } } },
+    });
+
+    const jurisdictionCounts = new Map<string, number>();
+    const tagCounts = new Map<string, number>();
+    for (const item of items) {
+      const code = item.source.jurisdiction;
+      jurisdictionCounts.set(code, (jurisdictionCounts.get(code) ?? 0) + 1);
+      for (const tag of item.tags) {
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+      }
+    }
+
+    // 只列出实际有内容的值。列出零条的辖区会让用户订阅一个永远不会响的东西。
+    return {
+      jurisdictions: Object.entries(JURISDICTIONS)
+        .filter(([code]) => jurisdictionCounts.has(code))
+        .map(([code, label]) => ({ code, label, count: jurisdictionCounts.get(code) ?? 0 })),
+      visas: VISA_SUBCLASSES.filter((code) => tagCounts.has(code)).map((code) => ({
+        code,
+        count: tagCounts.get(code) ?? 0,
+      })),
+      topics: TOPICS.filter((code) => tagCounts.has(code)).map((code) => ({
+        code,
+        count: tagCounts.get(code) ?? 0,
+      })),
+    };
   }
 
   private assertChineseEditorialCopy(title: string, summary: string) {

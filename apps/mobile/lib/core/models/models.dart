@@ -167,6 +167,8 @@ class NewsItem {
     required this.sourceName,
     required this.jurisdiction,
     this.sourceTitle,
+    this.titleEn,
+    this.summaryEn,
     required this.sourceUrl,
     required this.publishedAt,
     required this.sourceType,
@@ -185,6 +187,14 @@ class NewsItem {
   /// 标签被写死成「南澳」，于是「南澳」筛出全部条目、「联邦」筛出零条。
   final String jurisdiction;
 
+  /// 我们自己写的英文标题与摘要。
+  ///
+  /// 不是 [sourceTitle] 那种官方原文——那是受版权约束的原始文本。
+  /// 这两个是同一份编辑内容的英文版：申请人常要把政策转述给雇主、律师或
+  /// 职业评估机构，那些场合要能直接用英文。
+  final String? titleEn;
+  final String? summaryEn;
+
   /// 官方页面的原标题（英文）。中文标题是我们编辑写的，原标题是官方写的——
   /// 真正有法律效力的是后者，所以详情页要能看到它，不能只留译文。
   final String? sourceTitle;
@@ -201,6 +211,8 @@ class NewsItem {
     sourceName: sourceName,
     jurisdiction: jurisdiction,
     sourceTitle: sourceTitle,
+    titleEn: titleEn,
+    summaryEn: summaryEn,
     sourceUrl: sourceUrl,
     publishedAt: publishedAt,
     sourceType: sourceType,
@@ -215,6 +227,8 @@ class NewsItem {
     'sourceName': sourceName,
     'jurisdiction': jurisdiction,
     'sourceTitle': sourceTitle,
+    'titleEn': titleEn,
+    'summaryEn': summaryEn,
     'sourceUrl': sourceUrl,
     'publishedAt': publishedAt.toIso8601String(),
     'sourceType': sourceType.name,
@@ -228,6 +242,12 @@ class NewsItem {
     summary: json['summary'] as String,
     sourceName: json['sourceName'] as String,
     jurisdiction: json['jurisdiction'] as String? ?? '',
+    titleEn: (json['titleEn'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['titleEn'] as String).trim(),
+    summaryEn: (json['summaryEn'] as String?)?.trim().isEmpty ?? true
+        ? null
+        : (json['summaryEn'] as String).trim(),
     sourceTitle: (json['sourceTitle'] as String?)?.trim().isEmpty ?? true
         ? null
         : (json['sourceTitle'] as String).trim(),

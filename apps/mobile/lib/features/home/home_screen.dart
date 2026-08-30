@@ -1090,6 +1090,49 @@ class _StorySheet extends StatelessWidget {
                     letterSpacing: -0.6,
                   ),
                 ),
+                // 我们自己写的英文版。申请人常要把政策转述给雇主、律师或职业评估
+                // 机构——那些场合要能直接复制英文，不是让人现译。
+                if (item.summaryEn != null) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLowest,
+                      border: Border.all(color: scheme.outlineVariant),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'In English',
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        if (item.titleEn != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            item.titleEn!,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          item.summaryEn!,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(height: 1.6),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 // 中文标题是我们写的，官方标题是官方写的。两个都给，用户才知道
                 // 自己在官网上该找哪一篇。
                 if (item.sourceTitle != null) ...[

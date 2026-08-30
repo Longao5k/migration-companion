@@ -47,13 +47,25 @@ SYSTEM_PROMPT = """你在为一个面向中国申请人的澳洲技术移民信�
 7. 遇到具体数字（名额、门槛金额、职业数量、截止日期）必须准确保留，不要四舍五入或改写。
 8. 专有名词保留英文并在首次出现时给中文，例如「意向登记（ROI）」「指定地区移民协议（DAMA）」。
 
+**同时给出中文和英文两份**。英文不是中文的机器翻译，是同一组事实的英文写法——
+申请人常要把政策转述给雇主、律师或职业评估机构，那些场合要能直接用。
+两份必须陈述同一组事实，数字完全一致。
+
 输出严格的 JSON，不要 markdown 代码块，格式：
-{"title": "……", "summary": "……"}
+{"title": "……", "summary": "……", "titleEn": "…", "summaryEn": "…"}
 
 title：不超过 40 个字，直接说最重要的那个事实（含数字优先），不要用「关于……的通知」这种空标题。
-summary：2 到 4 句，不超过 300 字。"""
+summary：2 到 4 句，不超过 300 字。
+titleEn：不超过 90 个字符，同样直接说事实。
+summaryEn：2 到 4 句，不超过 400 字符。"""
 
 # 输出里出现这些词就打回。宁可少一条，不可发出一条带建议口吻的。
+# 英文侧的同类词。中文拦住了不等于英文也拦住了。
+BANNED_EN = [
+    "you should", "we recommend", "recommended", "advisable", "eligible for",
+    "you may qualify", "likely to", "expected to be approved", "we advise",
+]
+
 BANNED = [
     "建议你", "建议申请", "你应该", "应尽快", "值得考虑", "不妨",
     "有资格", "符合条件的你", "你可能", "预计将", "料将", "有望",
@@ -159,9 +171,18 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
     title = (result.get("title") or "").strip()
     summary = (result.get("summary") or "").strip()
 
+    title_en = (result.get("titleEn") or "").strip()
+    summary_en = (result.get("summaryEn") or "").strip()
+
     if not title or not summary:
-        problems.append("标题或摘要为空")
+        problems.append("中文标题或摘要为空")
         return problems
+    if not title_en or not summary_en:
+        problems.append("英文标题或摘要为空")
+    if len(title_en) > 90:
+        problems.append(f"英文标题 {len(title_en)} 字符，超过 90")
+    if len(summary_en) > 400:
+        problems.append(f"英文摘要 {len(summary_en)} 字符，超过 400")
     if not re.search(r"[㐀-鿿]", title):
         problems.append("标题没有中文")
     if not re.search(r"[㐀-鿿]", summary):
@@ -173,6 +194,9 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
     for word in BANNED:
         if word in title or word in summary:
             problems.append(f"出现建议/推断口吻：「{word}」")
+    for word in BANNED_EN:
+        if re.search(rf"{word}", summary_en, re.I):
+            problems.append(f"英文摘要出现建议口吻：「{word}」")
 
     # 数字幻觉检查：摘要里出现的四位以上数字，原文里必须也有。
     # 名额和收入门槛写错一位，用户就会按错的数字做决定。
@@ -182,9 +206,19 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
     # 年份要靠发布日期补，这是正确行为，不该打回。
     if known_year:
         excerpt_plain.add(known_year)
-    for number in re.findall(r"\d[\d,]{3,}", summary):
-        if number.replace(",", "") not in excerpt_plain:
-            problems.append(f"摘要里的数字 {number} 在原文摘录中找不到")
+    for label, text in (("中文", summary), ("英文", summary_en)):
+        for number in re.findall(r"\d[\d,]{3,}", text):
+            if number.replace(",", "") not in excerpt_plain:
+                problems.append(f"{label}摘要里的数字 {number} 在原文摘录中找不到")
+
+    # 中英两份必须陈述同一组事实。数字对不上说明至少有一份是编的。
+    zh_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary)}
+    en_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary_en)}
+    if zh_numbers != en_numbers:
+        problems.append(
+            f"中英摘要的数字对不上：中文 {sorted(zh_numbers) or '无'}，"
+            f"英文 {sorted(en_numbers) or '无'}"
+        )
     return problems
 
 
@@ -206,11 +240,12 @@ def main() -> None:
 
     items = admin_request("/content/admin/news")
     drafts = [item for item in items if not item["isPublished"]]
-    # 已经有中文标题的说明有人写过了，不覆盖。
+    # 需要处理的：还没写中文的，或者写了中文但缺英文的。
+    # 人手写过的中文不会被覆盖——只有整条都缺才会重写。
     drafts = [
         item
         for item in drafts
-        if not re.search(r"[㐀-鿿]", item["titleZh"])
+        if not re.search(r"[㐀-鿿]", item["titleZh"]) or not item.get("summaryEn")
     ]
     drafts.sort(key=lambda item: item["publishedAt"])
     if args.limit:
@@ -242,6 +277,8 @@ def main() -> None:
             "sourceTitle": item["sourceTitle"],
             "title": result.get("title"),
             "summary": result.get("summary"),
+            "titleEn": result.get("titleEn"),
+            "summaryEn": result.get("summaryEn"),
             "problems": problems,
         })
         if problems:
@@ -257,6 +294,8 @@ def main() -> None:
             body={
                 "titleZh": result["title"],
                 "summaryZh": result["summary"],
+                "titleEn": result["titleEn"],
+                "summaryEn": result["summaryEn"],
                 # 标注是模型起草的：这类稿子要在后台逐字对照原文，
                 # 它编造过邀请人数，也写出过「建议申请」。
                 "draftAuthor": "model",

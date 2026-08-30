@@ -219,3 +219,28 @@ describe('ContentService subscriber matching', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('ContentService tag vocabulary', () => {
+  const service = new ContentService({} as never);
+  const clean = (service as never as {
+    cleanTags: (tags?: string[]) => string[];
+  }).cleanTags.bind(service);
+
+  it('keeps vocabulary values and drops everything else', () => {
+    // 原先什么都收，于是同一个概念有 SA / 南澳 / sa 三种写法，
+    // 用户订阅其中一种就漏掉另外两种。
+    expect(clean(['190', '职业清单', 'SA', '南澳', '随便写的'])).toEqual(['190', '职业清单']);
+  });
+
+  it('drops jurisdiction labels — those are a field, not a tag', () => {
+    expect(clean(['南澳', '昆士兰', '联邦'])).toEqual([]);
+  });
+
+  it('deduplicates and trims', () => {
+    expect(clean([' 190 ', '190', '190'])).toEqual(['190']);
+  });
+
+  it('handles no tags at all', () => {
+    expect(clean(undefined)).toEqual([]);
+  });
+});

@@ -1,88 +1,81 @@
-"""从标题与正文摘录里抽取标签。
+"""标签抽取。三个轴，各自独立。
 
-原先是两行硬编码子串判断：
+**辖区不在标签里。** 它已经是一等字段（`source.jurisdiction`，接口也下发了）。
+在 tags 里再留一份是双份真相，而且正是它把签证和主题标签挤没了——修完辖区标签之后，
+筛选栏一度变成纯地理的，签证这个轴在界面上完全消失。
 
-    if "190" in searchable: tags.append("190")
-    if "491" in searchable: tags.append("491")
+所以 tags 只承载两个轴：
 
-于是 78 条内容里只有 190/491 有签证标签，而联邦法规里的「Subclass 485 英语要求」
-「Subclass 494 职业清单」「Subclass 417 工作豁免」一个标签都没有——用户订阅 485
-收不到任何东西，App 里也筛不出来。
+- **签证类别**：封闭词表，只收与技术移民相关的类别。
+- **主题**：封闭词表，主要由来源推导（`sources.json` 的 `topics`），标题关键词只作补充。
 
-这里按**已知的签证类别白名单 + 词边界**抽取，不做开放式的三位数匹配：
-「2000 places」「3,000 nomination places」这类数字不是签证类别，收进去会让用户
-以为某条名额公告和某个签证有关。
+两个都是封闭词表：服务端拒绝表外的值。开放词表会让运营敲出 `SA`、`南澳`、`sa` 三种写法，
+用户订阅其中一种就漏掉另外两种。
 """
 
 import re
 
-# 与技术移民相关的签证类别。不求覆盖澳洲全部签证——收进无关的类别，
-# 等于告诉用户这条内容和他的签证有关。
-VISA_SUBCLASSES = {
-    # 技术移民主线
-    "189": "189",
-    "190": "190",
-    "191": "191",
-    "491": "491",
-    "494": "494",
-    "489": "489",
-    # 雇主担保
-    "482": "482",
-    "186": "186",
-    "187": "187",
-    "407": "407",
-    # 毕业生与学生
-    "485": "485",
-    "500": "500",
-    "476": "476",
-    # 打工度假（州担保页面常一起公布）
-    "417": "417",
-    "462": "462",
-    # 商业与投资
-    "188": "188",
-    "888": "888",
-    "132": "132",
-    # 国家创新签证
-    "858": "858",
-}
+# 与技术移民相关的签证类别。用纯数字代码——申请人本来就用数字交流
+# （「我走 190」「491 偏远」），加中文名反而不认。
+#
+# 不收：配偶签证（第一阶段不做，给了标签会造出「你们做配偶签证」的预期）、
+# 已废止的 132/489（只出现在历史条目里，用「法规」主题标即可）。
+VISA_SUBCLASSES = (
+    "189", "190", "491", "494", "186", "482", "485", "462", "188", "888", "858",
+)
 
-_SUBCLASS = re.compile(r"\b(" + "|".join(sorted(VISA_SUBCLASSES)) + r")\b")
+# 必须有签证词邻接才认。
+#
+# 原先是 `if "190" in text` 这种子串判断，会命中日期、金额、条目编号。
+# 宁可漏，不可错：漏了运营在后台补一下；错了就是把 482 的政策推给 491 的用户。
+_VISA = re.compile(
+    r"(?:subclass|sc\.?|visa|签证|类别)\s*[（(]?\s*(" + "|".join(VISA_SUBCLASSES) + r")\b"
+    r"|\b(" + "|".join(VISA_SUBCLASSES) + r")\s*(?:visa|subclass|签证|类)",
+    re.I,
+)
 
-# 主题标签。命中即打，用于「关注 DAMA」「关注职业清单」这类订阅。
-TOPIC_PATTERNS = {
+TOPICS = (
+    "职业清单", "邀请轮次", "提名条件", "申请材料", "审理时间",
+    "打分规则", "英语要求", "费用", "法规", "项目开关", "活动",
+)
+
+# 标题关键词只作补充：主题的主要来源是 sources.json 里每个来源登记的 topics。
+# 从来源推导比从标题猜可靠得多，而且接一个新来源时主题是先验已知的。
+_TOPIC_HINTS = {
     "职业清单": re.compile(r"occupation list|skilled occupation|ANZSCO|occupations for", re.I),
-    "名额": re.compile(r"\ballocation|nomination places|places available|quota\b", re.I),
-    "邀请数据": re.compile(r"invitation(?:s)? (?:issued|round)|invitations in", re.I),
-    "ROI": re.compile(r"registration of interest|\bROI\b", re.I),
-    "DAMA": re.compile(r"\bDAMA\b|designated area migration agreement", re.I),
+    "邀请轮次": re.compile(r"invitation(?:s)? (?:issued|round)|invitations in", re.I),
+    "提名条件": re.compile(r"eligibility|nomination requirement|nomination criteria", re.I),
+    "申请材料": re.compile(r"document(?:s|ation) (?:required|checklist)|evidence required", re.I),
+    "审理时间": re.compile(r"processing time|processing period", re.I),
+    "打分规则": re.compile(r"points test|pass mark|pool mark", re.I),
     "英语要求": re.compile(r"english language|language test|IELTS|PTE\b", re.I),
-    "薪资门槛": re.compile(r"\bTSMIT\b|income threshold|salary threshold", re.I),
-    "职业评估": re.compile(r"assessing authorit|skills assessment", re.I),
-    "雇主担保": re.compile(r"employer sponsor|employer nomination|sponsorship", re.I),
-    "审理进度": re.compile(r"processing time|processing period", re.I),
+    "费用": re.compile(r"application fee|nomination fee|\bcharge\b|VAC\b", re.I),
+    "法规": re.compile(r"instrument|regulation|determination|\bact\b", re.I),
+    "项目开关": re.compile(
+        r"now open|has closed|closing|paused|allocation|places available|quota", re.I
+    ),
+    "活动": re.compile(r"roadshow|workshop|webinar|welcome to|career compass|event:", re.I),
 }
 
 
-def extract_tags(jurisdiction_label: str, text: str, category: str = "") -> list[str]:
-    """辖区标签在前，其后是签证类别与主题标签。去重并保持稳定顺序。
+def extract_tags(text: str, source_topics: tuple[str, ...] = ()) -> list[str]:
+    """签证类别 + 主题。不含辖区——辖区是字段，不是标签。
 
-    辖区一定有；签证类别和主题可能一个都没有——那说明这条内容是通用公告，
-    宁可不打标签，也不要猜一个让用户误订阅。
+    抽不出来就返回空列表。猜一个标签比不打标签糟：用户会因此收到不相关的提醒。
     """
-    tags = [jurisdiction_label]
+    tags: list[str] = []
 
-    for number in _SUBCLASS.findall(text):
-        label = VISA_SUBCLASSES[number]
-        if label not in tags:
-            tags.append(label)
+    for pair in _VISA.findall(text):
+        code = pair[0] or pair[1]
+        if code and code not in tags:
+            tags.append(code)
 
-    for label, pattern in TOPIC_PATTERNS.items():
-        if pattern.search(text) and label not in tags:
-            tags.append(label)
+    for topic in source_topics:
+        if topic in TOPICS and topic not in tags:
+            tags.append(topic)
 
-    cleaned = (category or "").strip()
-    # 站点自己的分类名（「Other news」这种）没有订阅价值，不收。
-    if cleaned and cleaned.lower() not in {"other news", "news", ""} and cleaned not in tags:
-        tags.append(cleaned)
+    for topic, pattern in _TOPIC_HINTS.items():
+        if topic not in tags and pattern.search(text):
+            tags.append(topic)
 
     return tags

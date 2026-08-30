@@ -14,7 +14,10 @@
     "url": "https://migration.sa.gov.au/how-to-apply/nomination-requirements",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
   },
   {
     "id": "sa-documents-required",
@@ -22,7 +25,10 @@
     "url": "https://migration.sa.gov.au/how-to-apply/documents-required",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "申请材料"
+    ]
   },
   {
     "id": "sa-processing-times",
@@ -30,7 +36,10 @@
     "url": "https://migration.sa.gov.au/processing-times",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "审理时间"
+    ]
   },
   {
     "id": "home-affairs-news",
@@ -62,7 +71,10 @@
     "url": "https://www.legislation.gov.au/C1958A00062/latest/text",
     "jurisdiction": "AU-FED",
     "license_note": "Monitor metadata and version links; legislation interpretation requires legal review.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "法规"
+    ]
   },
   {
     "id": "sa-home",
@@ -78,7 +90,10 @@
     "url": "https://migration.sa.gov.au/before-applying/visa-options-and-pathways/skilled-migrants",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "提名条件"
+    ]
   },
   {
     "id": "sa-occupation-list",
@@ -86,7 +101,10 @@
     "url": "https://migration.sa.gov.au/before-applying/work-in-sa/occupation-lists/occupations-list",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; occupation availability changes are high-impact and must clear human review before publishing.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "职业清单"
+    ]
   },
   {
     "id": "sa-how-to-apply",
@@ -94,7 +112,11 @@
     "url": "https://migration.sa.gov.au/how-to-apply",
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; evidence is internal and published output uses links plus short original summaries.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "申请材料",
+      "提名条件"
+    ]
   },
   {
     "id": "migration-regulations",
@@ -102,7 +124,10 @@
     "url": "https://www.legislation.gov.au/F1996B03551/latest/text",
     "jurisdiction": "AU-FED",
     "license_note": "Monitor metadata and version links; legislation interpretation requires legal review. Federal policy changes originate here, which is why this replaces the unreachable Home Affairs explainer pages.",
-    "enabled": true
+    "enabled": true,
+    "topics": [
+      "法规"
+    ]
   },
   {
     "id": "qld-news",
