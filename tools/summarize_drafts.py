@@ -116,16 +116,28 @@ def admin_request(path: str, *, method: str = "GET", body: dict | None = None):
         remote += '-H "content-type: application/json" --data-binary @- '
     remote += f'"http://127.0.0.1:53101/v1{path}"'
 
-    result = subprocess.run(
-        ["ssh", host, remote],
-        input=json.dumps(body, ensure_ascii=False) if body is not None else None,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=60,
-    )
+    # 一轮写回是几十次串行 ssh，链路抖一下整轮就得从头再来（实测撞到过三次）。
+    # 连接层的失败重试，业务层的错误照常抛出——curl 拿到 4xx 时 ssh 仍然返回 0，
+    # 所以这里重试的只可能是连不上，不会把服务端的拒绝重放一遍。
+    payload = json.dumps(body, ensure_ascii=False) if body is not None else None
+    last = ""
+    for attempt in range(4):
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=20", host, remote],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=90,
+        )
+        if result.returncode == 0:
+            break
+        last = result.stderr.strip()[:300]
+        if "onnect" not in last and "imed out" not in last:
+            break
+        time.sleep(4 * (attempt + 1))
     if result.returncode != 0:
-        raise RuntimeError(f"后台调用失败：{result.stderr.strip()[:300]}")
+        raise RuntimeError(f"后台调用失败：{last}")
     raw = result.stdout.strip()
     return json.loads(raw) if raw else None
 
@@ -255,6 +267,48 @@ def validate(
     return problems
 
 
+def admin_patch_many(entries: list[dict]) -> dict:
+    """一次 ssh 连接里做完全部 PATCH，返回 id 到 HTTP 状态码的映射。
+
+    为什么不是循环调 `admin_request`：连发几十次 ssh 会被限流，第一次写回撞到三次
+    「Connection timed out」，而单独手测同一台机器 4/4 都在一秒内连上。加重试没用——
+    重试本身就是更多连接。Windows 的 OpenSSH 又不支持 ControlMaster 复用，
+    所以把整批塞进一次连接：一行一条，`read -r id body` 按第一个空格切开，
+    id 里没有空格，剩下的整段 JSON 原样进 body。
+    """
+    host = require("SUMMARIZER_SSH_HOST")
+    remote = (
+        "cd ~/migration-companion/infra/server && "
+        'KEY=$(sed -n "s/^ADMIN_API_KEY=//p" ./.env | head -1) && '
+        'while read -r id body; do '
+        '  code=$(printf "%s" "$body" | curl -sS -o /dev/null -w "%{http_code}" '
+        '    -X PATCH -H "x-admin-key: $KEY" -H "content-type: application/json" '
+        '    --data-binary @- "http://127.0.0.1:53101/v1/content/admin/news/$id"); '
+        '  echo "$id $code"; '
+        "done"
+    )
+    payload = "".join(
+        entry["id"] + " " + json.dumps(entry["body"], ensure_ascii=False) + chr(10)
+        for entry in entries
+    )
+    result = subprocess.run(
+        ["ssh", "-o", "ConnectTimeout=20", host, remote],
+        input=payload,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=600,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("批量写回失败：" + result.stderr.strip()[:300])
+    codes = {}
+    for line in result.stdout.split(chr(10)):
+        parts = line.split()
+        if len(parts) == 2:
+            codes[parts[0]] = parts[1]
+    return codes
+
+
 def apply_stored(path: str, items: dict, dry_run: bool) -> None:
     """重新校验一次存好的生成结果，把现在能通过的写回。
 
@@ -264,6 +318,7 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
     """
     rows = json.load(io.open(path, encoding="utf-8"))
     written = skipped = missing = skipped_human = 0
+    pending: list[dict] = []
     for row in rows:
         item = items.get(row["id"])
         if not item:
@@ -281,25 +336,34 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
             print(f"  打回  {(row.get('title') or '')[:30]}  —— {'；'.join(problems)}")
             skipped += 1
             continue
-        if not dry_run:
-            admin_request(
-                f"/content/admin/news/{row['id']}",
-                method="PATCH",
-                body={
-                    "titleZh": row["title"],
-                    "summaryZh": row["summary"],
-                    "titleEn": row["titleEn"],
-                    "summaryEn": row["summaryEn"],
-                    "draftAuthor": "model",
-                },
-            )
+        pending.append({
+            "id": row["id"],
+            "body": {
+                "titleZh": row["title"],
+                "summaryZh": row["summary"],
+                "titleEn": row["titleEn"],
+                "summaryEn": row["summaryEn"],
+                "draftAuthor": "model",
+            },
+        })
         written += 1
+    failed = []
+    if pending and not dry_run:
+        codes = admin_patch_many(pending)
+        for entry in pending:
+            code = codes.get(entry["id"], "无响应")
+            if not code.startswith("2"):
+                failed.append(f"{entry['id']} -> HTTP {code}")
+        written -= len(failed)
+
     verb = "可写回" if dry_run else "已写回"
     print()
     print(
         f"{verb} {written}，打回 {skipped}，"
         f"已不在草稿列表 {missing}，人工改过跳过 {skipped_human}"
     )
+    for line in failed:
+        print(f"  写回失败  {line}")
 
 
 def main() -> None:
