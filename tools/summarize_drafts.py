@@ -153,25 +153,40 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
             "Content-Type": "application/json",
         },
     )
-    # 免费额度的服务偶尔会超时。一次失败就丢掉一条内容不值得，重试两次。
+    # 只重试真正可能自愈的错误：超时、连接问题、429 限流、5xx。
+    #
+    # 原先捕获的是 `(TimeoutError, URLError)`，而 `HTTPError` 是 `URLError` 的子类——
+    # 于是 401、400、配额耗尽这类确定性错误也被重试三次，白等 18 秒，
+    # 最后统一报成「三次调用都超时」，真实状态码被吞掉，看日志完全不知道发生了什么。
     last: Exception | None = None
     for attempt in range(3):
         try:
             with urlopen(request, timeout=180) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:200]
+            if exc.code not in (429, 500, 502, 503, 504):
+                raise RuntimeError(f"HTTP {exc.code}：{detail}") from None
+            last = RuntimeError(f"HTTP {exc.code}：{detail}")
+            time.sleep(5 * (attempt + 1))
         except (TimeoutError, urllib.error.URLError) as exc:
             last = exc
             time.sleep(3 * (attempt + 1))
     else:
-        raise RuntimeError(f"三次调用都超时：{last}")
+        raise RuntimeError(f"三次都失败：{last}")
     content = payload["choices"][0]["message"]["content"].strip()
     # 模型有时仍会裹一层代码块。
     content = re.sub(r"^```(?:json)?|```$", "", content, flags=re.M).strip()
     return json.loads(content)
 
 
-def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
+def validate(
+    result: dict,
+    excerpt: str,
+    known_year: str = "",
+    source_title: str = "",
+) -> list[str]:
     """返回问题列表；非空就不要写回，留给人处理。"""
     problems = []
     title = (result.get("title") or "").strip()
@@ -187,8 +202,11 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
         problems.append("英文标题或摘要为空")
     if len(title_en) > 90:
         problems.append(f"英文标题 {len(title_en)} 字符，超过 90")
-    if len(summary_en) > 400:
-        problems.append(f"英文摘要 {len(summary_en)} 字符，超过 400")
+    # 英文上限不能照搬中文的 400：一个中文字承载的信息约等于两三个英文字符，
+    # 同一组事实的英文写法天然长一倍多。第一版用 400 卡英文，打回的两条读下来
+    # 都没有多余的话，纯粹是被单位不同的尺子量了。
+    if len(summary_en) > 700:
+        problems.append(f"英文摘要 {len(summary_en)} 字符，超过 700")
     if not re.search(r"[㐀-鿿]", title):
         problems.append("标题没有中文")
     if not re.search(r"[㐀-鿿]", summary):
@@ -206,7 +224,10 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
 
     # 数字幻觉检查：摘要里出现的四位以上数字，原文里必须也有。
     # 名额和收入门槛写错一位，用户就会按错的数字做决定。
-    excerpt_digits = set(re.findall(r"\d[\d,]{3,}", excerpt.replace(" ", "")))
+    # 语料含标题：「2023 - 24 Program closed」的年份写在标题里、摘录里没有，
+    # 只比对摘录会把一条完全正确的稿子打回去（第一轮四条打回里就有这么一条）。
+    corpus = (source_title + " " + excerpt).replace(" ", "")
+    excerpt_digits = set(re.findall(r"\d[\d,]{3,}", corpus))
     excerpt_plain = {d.replace(",", "") for d in excerpt_digits}
     # 发布年份是我们喂给模型的上下文，不是它编的。原文常只写「25 November」，
     # 年份要靠发布日期补，这是正确行为，不该打回。
@@ -220,6 +241,12 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
     # 中英两份必须陈述同一组事实。数字对不上说明至少有一份是编的。
     zh_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary)}
     en_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary_en)}
+    # 年份例外：只要它在标题或摘录里出现过，就不是模型编的。中英对同一个财年的
+    # 惯用写法不同（中文「2023-24 年度」对英文「the 2024 program」），
+    # 强求两边年份集合相同只会制造假警报。名额、金额、门槛这些实质数字仍然严格。
+    known_years = set(re.findall(r"(?:19|20)\d{2}", corpus))
+    zh_numbers -= known_years
+    en_numbers -= known_years
     if zh_numbers != en_numbers:
         problems.append(
             f"中英摘要的数字对不上：中文 {sorted(zh_numbers) or '无'}，"
@@ -228,12 +255,65 @@ def validate(result: dict, excerpt: str, known_year: str = "") -> list[str]:
     return problems
 
 
+def apply_stored(path: str, items: dict, dry_run: bool) -> None:
+    """重新校验一次存好的生成结果，把现在能通过的写回。
+
+    存在的理由：验证器本身会出错。第一轮四条打回里有两条是尺子的问题——
+    数字校验没看标题、英文长度上限照搬了中文的。改完尺子之后，那些稿子本身
+    是好的，不该为了重新量一遍再花一次额度（何况额度可能已经没了）。
+    """
+    rows = json.load(io.open(path, encoding="utf-8"))
+    written = skipped = missing = skipped_human = 0
+    for row in rows:
+        item = items.get(row["id"])
+        if not item:
+            missing += 1
+            continue
+        # 人写过的不覆盖。主流程靠「整条都缺才重写」保证这点，重放这条路径必须
+        # 有同样的闸——否则改一次验证规则、重放一次结果文件，就会把编辑在后台
+        # 逐字对照原文改出来的稿子，用模型的原稿悄悄盖回去。
+        if item.get("draftAuthor") not in (None, "", "model"):
+            skipped_human += 1
+            continue
+        excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+        problems = validate(row, excerpt, row["publishedAt"][:4], row["sourceTitle"])
+        if problems:
+            print(f"  打回  {(row.get('title') or '')[:30]}  —— {'；'.join(problems)}")
+            skipped += 1
+            continue
+        if not dry_run:
+            admin_request(
+                f"/content/admin/news/{row['id']}",
+                method="PATCH",
+                body={
+                    "titleZh": row["title"],
+                    "summaryZh": row["summary"],
+                    "titleEn": row["titleEn"],
+                    "summaryEn": row["summaryEn"],
+                    "draftAuthor": "model",
+                },
+            )
+        written += 1
+    verb = "可写回" if dry_run else "已写回"
+    print()
+    print(
+        f"{verb} {written}，打回 {skipped}，"
+        f"已不在草稿列表 {missing}，人工改过跳过 {skipped_human}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--model", default=os.environ.get("SUMMARIZER_MODEL", DEFAULT_MODEL))
     parser.add_argument("--env-file", default="")
+    parser.add_argument(
+        "--apply",
+        default="",
+        help="重新校验一次已有的结果文件并写回通过的，不调用模型。"
+             "改了验证规则之后用它，不必为了换一把尺子重烧一遍额度。",
+    )
     parser.add_argument(
         "--out",
         default="summaries.json",
@@ -245,6 +325,11 @@ def main() -> None:
         load_env_file(args.env_file)
 
     items = admin_request("/content/admin/news")
+
+    if args.apply:
+        apply_stored(args.apply, {item["id"]: item for item in items}, args.dry_run)
+        return
+
     drafts = [item for item in items if not item["isPublished"]]
     # 需要处理的：还没写中文的，或者写了中文但缺英文的。
     # 人手写过的中文不会被覆盖——只有整条都缺才会重写。
@@ -272,11 +357,20 @@ def main() -> None:
             failed += 1
             continue
         except Exception as exc:  # noqa: BLE001
-            print(f"  调用失败  {item['sourceTitle'][:50]}  {type(exc).__name__}")
+            print(f"  调用失败  {item['sourceTitle'][:50]}  {exc}")
             failed += 1
+            # 配额耗尽是账号级状态，不是这一条内容的问题：剩下的每一条都会以同样的
+            # 方式失败。继续跑只是把同一个 403 撞几十遍，还让人以为是内容有问题。
+            if "quota" in str(exc).lower() or "HTTP 403" in str(exc):
+                print()
+                print("  额度已耗尽，本轮停止。补额度或换 key 之后重跑即可，"
+                      "已写回的不会被重复处理。")
+                break
             continue
 
-        problems = validate(result, excerpt, item["publishedAt"][:4])
+        problems = validate(
+            result, excerpt, item["publishedAt"][:4], item["sourceTitle"]
+        )
         record.append({
             "id": item["id"],
             "publishedAt": item["publishedAt"][:10],
