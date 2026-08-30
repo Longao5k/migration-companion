@@ -165,6 +165,7 @@ class NewsItem {
     required this.title,
     required this.summary,
     required this.sourceName,
+    required this.jurisdiction,
     this.sourceTitle,
     required this.sourceUrl,
     required this.publishedAt,
@@ -177,6 +178,12 @@ class NewsItem {
   final String title;
   final String summary;
   final String sourceName;
+
+  /// 辖区代码（AU-SA / AU-QLD / …）。
+  ///
+  /// 筛选必须按它来，不能靠匹配标签或来源名里的子串——之前就是那么做的：
+  /// 标签被写死成「南澳」，于是「南澳」筛出全部条目、「联邦」筛出零条。
+  final String jurisdiction;
 
   /// 官方页面的原标题（英文）。中文标题是我们编辑写的，原标题是官方写的——
   /// 真正有法律效力的是后者，所以详情页要能看到它，不能只留译文。
@@ -192,6 +199,7 @@ class NewsItem {
     title: title,
     summary: summary,
     sourceName: sourceName,
+    jurisdiction: jurisdiction,
     sourceTitle: sourceTitle,
     sourceUrl: sourceUrl,
     publishedAt: publishedAt,
@@ -205,6 +213,7 @@ class NewsItem {
     'title': title,
     'summary': summary,
     'sourceName': sourceName,
+    'jurisdiction': jurisdiction,
     'sourceTitle': sourceTitle,
     'sourceUrl': sourceUrl,
     'publishedAt': publishedAt.toIso8601String(),
@@ -218,6 +227,7 @@ class NewsItem {
     title: json['title'] as String,
     summary: json['summary'] as String,
     sourceName: json['sourceName'] as String,
+    jurisdiction: json['jurisdiction'] as String? ?? '',
     sourceTitle: (json['sourceTitle'] as String?)?.trim().isEmpty ?? true
         ? null
         : (json['sourceTitle'] as String).trim(),

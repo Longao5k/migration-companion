@@ -8,7 +8,13 @@
  * 冻结规则要求任何情况下用户都能取回和删除自己的文件，不能用关闭功能把数据锁住。
  */
 export function cloudFileUploadsEnabled() {
-  return process.env.CLOUD_FILES_ENABLED !== 'false';
+  // 必须显式写 'true' 才开启。原先是 `!== 'false'`——变量拼错、大小写不对、
+  // 带个空格、或者用 bootstrap-env.sh 重建服务器时漏掉，上传就**静默打开**了，
+  // 而 README、App 文案和隐私政策都说它是关的，病毒扫描 worker 也还不存在。
+  //
+  // 这正是 M6 记下的那种缺陷形态：配置缺失 → 静默退回默认值 → 接口照常返回成功。
+  // 当时只在 SHARE_ORIGIN 上修了一处，没有推广到第二处。
+  return process.env.CLOUD_FILES_ENABLED === 'true';
 }
 
 export const cloudFilesDisabledMessage =

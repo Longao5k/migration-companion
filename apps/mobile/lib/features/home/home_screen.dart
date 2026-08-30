@@ -31,8 +31,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appStoreProvider);
+    final topics = topicsFor(state.news);
+    // 数据变化后原先选中的分类可能已经不存在了。
+    final activeTopic = topics.contains(_selectedTopic) ? _selectedTopic : '全部';
     final visibleNews = state.news
-        .where((item) => _matchesTopic(item, _selectedTopic))
+        .where((item) => _matchesTopic(item, activeTopic))
         .toList();
     final nextProject = state.projects
         .where((item) => item.status == ProjectStatus.active)
@@ -70,7 +73,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 22),
                 _TopicRail(
-                  selected: _selectedTopic,
+                  topics: topics,
+                  selected: activeTopic,
                   onSelected: (topic) => setState(() => _selectedTopic = topic),
                 ),
                 const SizedBox(height: 18),
@@ -150,14 +154,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
+/// 辖区代码到中文名。与采集器的 `jurisdictions.py` 是同一张表。
+const jurisdictionLabels = {
+  'AU-SA': '南澳',
+  'AU-QLD': '昆士兰',
+  'AU-NSW': '新南威尔士',
+  'AU-VIC': '维州',
+  'AU-WA': '西澳',
+  'AU-TAS': '塔州',
+  'AU-NT': '北领地',
+  'AU-ACT': '首都领地',
+  'AU-FED': '联邦',
+};
+
+/// 分类胶囊由**实际拿到的数据**决定，不是写死的五个。
+///
+/// 原先写死 `['全部','南澳','联邦','190','491']`，再靠匹配标签和来源名里的子串来筛。
+/// 采集器把所有条目的标签写死成「南澳」之后，「南澳」筛出全部、「联邦」筛出零条，
+/// 而且用户看不到昆士兰、西澳、NSW 这三个已经在库里的辖区。
+List<String> topicsFor(List<NewsItem> items) {
+  final present = <String>{};
+  for (final item in items) {
+    final label = jurisdictionLabels[item.jurisdiction];
+    if (label != null) present.add(label);
+  }
+  final ordered = jurisdictionLabels.values.where(present.contains);
+  return ['全部', ...ordered];
+}
+
 bool _matchesTopic(NewsItem item, String topic) {
   if (topic == '全部') return true;
-  final search = [item.sourceName, ...item.tags].join(' ').toLowerCase();
-  return switch (topic) {
-    '南澳' => search.contains('南澳') || search.contains('sa'),
-    '联邦' => search.contains('联邦') || search.contains('home affairs'),
-    _ => search.contains(topic.toLowerCase()),
-  };
+  // 按辖区代码比对，不做子串匹配——`contains('sa')` 在 `visas` 里也会命中。
+  return jurisdictionLabels[item.jurisdiction] == topic;
 }
 
 class _EditorialHeader extends StatelessWidget {
@@ -324,9 +352,13 @@ class _ContentSignal extends StatelessWidget {
 }
 
 class _TopicRail extends StatelessWidget {
-  const _TopicRail({required this.selected, required this.onSelected});
+  const _TopicRail({
+    required this.selected,
+    required this.onSelected,
+    required this.topics,
+  });
 
-  static const topics = ['全部', '南澳', '联邦', '190', '491'];
+  final List<String> topics;
   final String selected;
   final ValueChanged<String> onSelected;
 

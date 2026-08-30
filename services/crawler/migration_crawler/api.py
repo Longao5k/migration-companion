@@ -3,13 +3,16 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 
+from .jurisdictions import label_for
 from .models import ChangeCandidate, DiscoveredNews, Source
 
 
 def submit_news_draft(
     api_url: str, worker_key: str, source: Source, item: DiscoveredNews
 ) -> None:
-    tags = ["南澳"]
+    # 辖区标签必须来自来源的 jurisdiction。这里曾经写死 "南澳"，
+    # 接入其它州之后 47 条内容全部错标——昆士兰的提名政策显示成南澳的。
+    tags = [label_for(source.jurisdiction)]
     searchable = f"{item.title} {item.excerpt}".lower()
     if "190" in searchable:
         tags.append("190")
@@ -43,7 +46,8 @@ def submit_candidate(
     candidate: ChangeCandidate,
     body_chars: int = 0,
 ) -> None:
-    tags = ["SA" if source.jurisdiction == "AU-SA" else "联邦"]
+    # 同上：非南澳即联邦是接入其它州之前的假设，现在会把昆士兰的变更标成联邦。
+    tags = [label_for(source.jurisdiction)]
     if "190" in source.url:
         tags.append("190")
     if "491" in source.url:

@@ -118,3 +118,25 @@ class DateSafetyTests(unittest.TestCase):
             b"<p>Published 19 November 2025</p>"
         )
         self.assertTrue(extract_published_at(body).startswith("2025-03-04"))
+
+
+class LabelWordTests(unittest.TestCase):
+    def test_不把生效日截止日当成发布日(self):
+        # 词表里原先有裸的 "date"，于是 closing date / commencement date /
+        # effective date 全都会被当成发布日期。未来日期守卫挡不住这些——
+        # 它们通常是过去的日期。
+        for text in [
+            b"<p>Closing date 30 June 2024 for this round</p>",
+            b"<p>Commencement date 1 July 2023</p>",
+            b"<p>Effective date 15 March 2025</p>",
+            b"<p>Expiry date 31 December 2024</p>",
+        ]:
+            self.assertEqual(extract_published_at(text), "", text.decode())
+
+    def test_真正的发布字样仍然认(self):
+        for text, expect in [
+            (b"<p>Published 19 November 2025</p>", "2025-11-19"),
+            (b"<p>Posted 3 Mar 2024</p>", "2024-03-03"),
+            (b"<p>Last updated 8 Aug 2025</p>", "2025-08-08"),
+        ]:
+            self.assertTrue(extract_published_at(text).startswith(expect), text.decode())

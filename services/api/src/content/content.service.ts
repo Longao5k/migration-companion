@@ -22,7 +22,11 @@ export class ContentService {
   news() {
     return this.prisma.newsItem.findMany({
       where: { isPublished: true, publishedAt: { lte: new Date() } },
-      include: { source: { select: { name: true, sourceType: true } } },
+      // 必须下发 jurisdiction：App 的州筛选原先只能靠匹配标签和来源名里的子串，
+      // 「南澳」曾经匹配到全部条目（标签写死），「联邦」匹配到零条。
+      include: {
+        source: { select: { name: true, sourceType: true, jurisdiction: true } },
+      },
       orderBy: { publishedAt: 'desc' },
       take: 100,
     });
@@ -237,9 +241,7 @@ export class ContentService {
         const recipients = await this.matchSubscribers(tx, {
           jurisdiction: updated.source.jurisdiction,
           tags: updated.tags,
-          // 资讯不分重要级别。订阅了「只要重要的」的人不该被每条资讯打扰，
-          // 所以这里当作非重要处理。
-          isImportant: false,
+          kind: 'news',
         });
         if (recipients.length > 0) {
           await tx.notificationOutbox.createMany({
@@ -264,19 +266,28 @@ export class ContentService {
   /**
    * 按订阅偏好筛出该收到这条内容的账号。
    *
-   * 变更和资讯共用同一套匹配：辖区必须命中；标签为空表示「该辖区的都要」，
-   * 否则要有交集。`importantOnly` 只挡不重要的内容。
+   * 辖区必须命中；标签为空表示「该辖区的都要」，否则要有交集。
+   *
+   * `importantOnly` **只作用于政策变更的重要度**，不作用于资讯。原先资讯也走这个
+   * 判断并固定传 `isImportant: false`，而这个偏好默认为 true——结果是
+   * **每一个默认设置的用户都收不到任何资讯提醒**，「按兴趣订阅」在默认路径上等于没做。
+   *
+   * 用户勾「只要重要的」表达的是「变更里只要重要的那些」，不是「不要资讯」。
    */
   private async matchSubscribers(
     tx: Prisma.TransactionClient,
-    item: { jurisdiction: string; tags: string[]; isImportant: boolean },
+    item:
+      | { kind: 'news'; jurisdiction: string; tags: string[] }
+      | { kind: 'change'; jurisdiction: string; tags: string[]; isImportant: boolean },
   ) {
     const preferences = await tx.notificationPreference.findMany({
       where: { policyUpdates: true },
       select: { accountId: true, jurisdictions: true, tags: true, importantOnly: true },
     });
     return preferences.filter((preference) => {
-      if (preference.importantOnly && !item.isImportant) return false;
+      if (item.kind === 'change' && preference.importantOnly && !item.isImportant) {
+        return false;
+      }
       if (!preference.jurisdictions.includes(item.jurisdiction)) return false;
       return (
         preference.tags.length === 0 ||
@@ -487,6 +498,7 @@ export class ContentService {
           jurisdiction: current.source.jurisdiction,
           tags: current.tags,
           // 一般变更只发给关掉「只要重要的」的人。
+          kind: 'change',
           isImportant: current.importance !== ChangeImportance.GENERAL,
         });
         if (recipients.length > 0) {

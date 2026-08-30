@@ -31,7 +31,10 @@ _DATE_TEXT = (
     r"(\d{1,2})(?:st|nd|rd|th)?\s+"
     r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20\d\d)"
 )
-# 可见日期只在紧跟「发布」字样时才认。
+# 可见日期只在紧跟「发布/更新」字样时才认。
+# 词表里原先还有一个裸的 `date`，于是 closing date、commencement date、
+# effective date、expiry date 全都会被当成发布日期——而未来日期守卫挡不住它们，
+# 因为这些通常是过去的日期。
 #
 # 起因：WA 有一篇标题是「…continue to access the Goldfields DAMA until 31 December
 # 2026」，页面上第一个日期就是标题里的**截止日期**。当时的兜底把它当成发布日期，
@@ -39,7 +42,7 @@ _DATE_TEXT = (
 # 「页面上第一个日期」这个启发式在政策网站上就是错的：这类页面遍地是生效日、
 # 截止日、财年区间。
 _LABELLED_DATE = re.compile(
-    r"(?:published|posted|released|last\s+updated|date)\b[^<]{0,40}?" + _DATE_TEXT,
+    r"(?:published|posted|released|last\s+updated)\b[^<]{0,40}?" + _DATE_TEXT,
     re.I,
 )
 

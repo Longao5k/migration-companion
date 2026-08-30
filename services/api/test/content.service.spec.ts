@@ -139,3 +139,83 @@ describe('ContentService monitoring coverage', () => {
     expect(status.pendingReviewCount).toBe(6);
   });
 });
+
+describe('ContentService subscriber matching', () => {
+  const service = new ContentService({} as never);
+  const match = (service as never as {
+    matchSubscribers: (tx: unknown, item: unknown) => Promise<{ accountId: string }[]>;
+  }).matchSubscribers.bind(service);
+
+  function tx(preferences: unknown[]) {
+    return { notificationPreference: { findMany: jest.fn().mockResolvedValue(preferences) } };
+  }
+
+  const defaultPreference = {
+    accountId: 'a1',
+    jurisdictions: ['AU-SA'],
+    tags: [],
+    // schema 的默认值就是 true——绝大多数用户从不改这一项。
+    importantOnly: true,
+  };
+
+  it('delivers news to a default subscriber', async () => {
+    // 回归用例：资讯原先也走 importantOnly 判断且固定传 isImportant:false，
+    // 于是每一个默认设置的用户都收不到任何资讯。整个功能在默认路径上等于没做。
+    const recipients = await match(tx([defaultPreference]), {
+      kind: 'news',
+      jurisdiction: 'AU-SA',
+      tags: ['南澳'],
+    });
+    expect(recipients).toHaveLength(1);
+  });
+
+  it('still holds back unimportant changes from important-only subscribers', async () => {
+    // importantOnly 的语义没有被取消，只是限定在变更上。
+    const recipients = await match(tx([defaultPreference]), {
+      kind: 'change',
+      jurisdiction: 'AU-SA',
+      tags: ['南澳'],
+      isImportant: false,
+    });
+    expect(recipients).toHaveLength(0);
+  });
+
+  it('delivers important changes to important-only subscribers', async () => {
+    const recipients = await match(tx([defaultPreference]), {
+      kind: 'change',
+      jurisdiction: 'AU-SA',
+      tags: ['南澳'],
+      isImportant: true,
+    });
+    expect(recipients).toHaveLength(1);
+  });
+
+  it('never crosses jurisdictions', async () => {
+    // 昆士兰的内容不该发给只订阅了南澳的人。
+    const recipients = await match(tx([defaultPreference]), {
+      kind: 'news',
+      jurisdiction: 'AU-QLD',
+      tags: ['昆士兰'],
+    });
+    expect(recipients).toHaveLength(0);
+  });
+
+  it('an empty tag list means everything in that jurisdiction', async () => {
+    const recipients = await match(tx([defaultPreference]), {
+      kind: 'news',
+      jurisdiction: 'AU-SA',
+      tags: ['职业清单'],
+    });
+    expect(recipients).toHaveLength(1);
+  });
+
+  it('a tag list filters within the jurisdiction', async () => {
+    const picky = { ...defaultPreference, tags: ['491'] };
+    expect(
+      await match(tx([picky]), { kind: 'news', jurisdiction: 'AU-SA', tags: ['190'] }),
+    ).toHaveLength(0);
+    expect(
+      await match(tx([picky]), { kind: 'news', jurisdiction: 'AU-SA', tags: ['491'] }),
+    ).toHaveLength(1);
+  });
+});
