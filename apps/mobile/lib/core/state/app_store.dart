@@ -40,6 +40,8 @@ class AppState {
     this.monitoring,
     this.cloudFileUploadsEnabled = true,
     this.cloudFileUploadsDisabledReason,
+    this.purchasesEnabled = false,
+    this.purchasesDisabledReason,
   });
 
   /// 官方页面的监控状态。为空表示还没取到，界面此时不应断言「没有变化」。
@@ -49,6 +51,14 @@ class AppState {
   /// 由 `/entitlements/me` 下发，避免用户在上传时才撞到失败。
   final bool cloudFileUploadsEnabled;
   final String? cloudFileUploadsDisabledReason;
+
+  /// 服务端是否已经接通商店收据核验。
+  ///
+  /// 默认 false，且**旧服务端没有这个字段时也按 false 处理**——与云上传那个
+  /// 字段的取向相反，是有意的：云上传误判为关闭只是少一个功能，
+  /// 购买误判为开放会让人付了钱拿不到东西。
+  final bool purchasesEnabled;
+  final String? purchasesDisabledReason;
 
   final List<NewsItem> news;
   final List<PolicyChange> changes;
@@ -118,6 +128,8 @@ class AppState {
     MonitoringStatus? monitoring,
     bool? cloudFileUploadsEnabled,
     String? cloudFileUploadsDisabledReason,
+    bool? purchasesEnabled,
+    String? purchasesDisabledReason,
     bool clearCloudFileUploadsDisabledReason = false,
   }) => AppState(
     news: news ?? this.news,
@@ -152,6 +164,9 @@ class AppState {
     monitoring: monitoring ?? this.monitoring,
     cloudFileUploadsEnabled:
         cloudFileUploadsEnabled ?? this.cloudFileUploadsEnabled,
+    purchasesEnabled: purchasesEnabled ?? this.purchasesEnabled,
+    purchasesDisabledReason:
+        purchasesDisabledReason ?? this.purchasesDisabledReason,
     cloudFileUploadsDisabledReason: clearCloudFileUploadsDisabledReason
         ? null
         : cloudFileUploadsDisabledReason ?? this.cloudFileUploadsDisabledReason,
@@ -1944,6 +1959,8 @@ class AppStore extends StateNotifier<AppState> {
     final cloudUploads =
         payload['cloudFileUploads'] as Map<String, dynamic>? ??
         const <String, dynamic>{};
+    final purchases =
+        payload['purchases'] as Map<String, dynamic>? ?? const <String, dynamic>{};
     state = state.copyWith(
       entitlementTier: payload['tier'] as String? ?? 'FREE',
       trialEndsAt: payload['trialEndsAt'] == null
@@ -1961,6 +1978,10 @@ class AppStore extends StateNotifier<AppState> {
           0,
       cloudFileUploadsEnabled: cloudUploads['enabled'] as bool? ?? true,
       cloudFileUploadsDisabledReason: cloudUploads['disabledReason'] as String?,
+      purchasesEnabled: purchases['enabled'] as bool? ?? false,
+      purchasesDisabledReason:
+          purchases['disabledReason'] as String? ??
+          '订阅购买暂未开放，开放后会在应用内提示。',
       clearCloudFileUploadsDisabledReason:
           cloudUploads['disabledReason'] == null,
     );

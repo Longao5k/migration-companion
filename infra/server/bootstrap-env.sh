@@ -70,6 +70,11 @@ COGNITO_CLIENT_ID=
 # 应用内订阅的商品 ID，与商店后台保持一致
 STORE_MONTHLY_PRODUCT_ID=
 STORE_YEARLY_PRODUCT_ID=
+# 商店收据核验是否已接通。**默认关闭，购买入口随之关闭。**
+# `/v1/store-events/verified` 这个入口存在，但目前没有任何进程调用它：
+# 用户付款后服务端只写一条审计记录，权益永远不会激活，而 App 会向 Google
+# 确认收款、关掉退款窗口。接通 Play Developer API 的核验进程之后再打开。
+STORE_VERIFICATION_ENABLED=false
 
 API_PORT=53101
 ADMIN_PORT=53102

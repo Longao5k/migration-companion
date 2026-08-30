@@ -1,8 +1,17 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { cloudFileUploadsEnabled, cloudFilesDisabledMessage } from '../files/cloud-files';
 import { PrismaService } from '../prisma.service';
 import { SubmitPurchaseDto, VerifiedStoreEventDto } from './entitlements.dto';
+import {
+  storePurchasesDisabledMessage,
+  storeVerificationEnabled,
+} from './store-verification';
 
 const freeBytes = 1024 ** 3;
 const premiumBytes = 10 * 1024 ** 3;
@@ -54,6 +63,14 @@ export class EntitlementsService {
       products: {
         monthly: process.env.STORE_MONTHLY_PRODUCT_ID ?? 'waymark_premium_monthly',
         yearly: process.env.STORE_YEARLY_PRODUCT_ID ?? 'waymark_premium_yearly',
+      },
+      // 客户端据此决定要不要显示购买按钮。核验没接通时按钮必须是关的——
+      // 让人付了钱再看到「等待核验」，等于收了钱不发货。
+      purchases: {
+        enabled: storeVerificationEnabled(),
+        ...(storeVerificationEnabled()
+          ? {}
+          : { disabledReason: storePurchasesDisabledMessage }),
       },
       trialDisclosure: '7 天高级试用不会自动转为付费，也不会创建商店订阅。',
       // 客户端据此显示“云文件暂未开放”，而不是让用户在上传时才撞到失败。
@@ -129,6 +146,13 @@ export class EntitlementsService {
 
     if (dto.provider === 'LOCAL_SANDBOX') {
       throw new BadRequestException('本地商店沙盒仅能在非生产环境明确开启');
+    }
+
+    // 核验没接通就不该走到这一步——购买入口在客户端已经关掉了。
+    // 走到了说明是旧版客户端或直接调接口，这里必须明说，
+    // 而不是收下收据、返回「已提交核验」，然后什么也不发生。
+    if (!storeVerificationEnabled()) {
+      throw new ServiceUnavailableException(storePurchasesDisabledMessage);
     }
 
     // The client receipt is never sufficient to grant access. Production sends

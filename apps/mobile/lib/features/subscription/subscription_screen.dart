@@ -99,7 +99,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           if (purchase.pendingCompletePurchase) {
             await _store.completePurchase(purchase);
           }
-          if (mounted) setState(() => _message = '购买已提交并由服务端核验');
+          if (mounted) {
+            // 原文案是「购买已提交并由服务端核验」。核验其实并不存在，
+            // 这句话让人以为权益马上会到。说清楚它是待核验状态。
+            setState(() => _message = '购买凭证已提交，等待服务端向商店核验后开通');
+          }
         } catch (error) {
           if (mounted) setState(() => _message = '购买凭证尚未通过核验：$error');
         }
@@ -201,28 +205,48 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               child: const Text('明确开启 7 天试用'),
             ),
           ),
-          const SizedBox(height: 12),
-          _PlanCard(
-            title: 'Premium 月付',
-            price: _priceFor(monthlyId, 'A\$11.99/月'),
-            description: '自动续订；高级文档编辑与 10 GB 云文件额度。',
-            action: FilledButton(
-              onPressed: !account.isSignedIn
-                  ? null
-                  : () => _purchase(monthlyId),
-              child: const Text('通过应用商店订阅'),
+          // 服务端还没接通商店收据核验时，购买入口必须是关的。
+          // 此时付款会被扣钱、`completePurchase` 关掉退款窗口，而权益永远不来。
+          // 宁可少卖，不可收了钱不发货。
+          if (!account.purchasesEnabled) ...[
+            const SizedBox(height: 12),
+            _PlanCard(
+              title: 'Premium 订阅',
+              price: '暂未开放',
+              description:
+                  account.purchasesDisabledReason ??
+                  '订阅购买暂未开放，开放后会在应用内提示。',
+              action: const FilledButton(
+                onPressed: null,
+                child: Text('暂未开放'),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _PlanCard(
-            title: 'Premium 年付',
-            price: _priceFor(yearlyId, 'A\$89.99/年'),
-            description: '自动续订；一次支付全年费用，权益与月付相同。',
-            action: FilledButton(
-              onPressed: !account.isSignedIn ? null : () => _purchase(yearlyId),
-              child: const Text('通过应用商店订阅'),
+          ] else ...[
+            const SizedBox(height: 12),
+            _PlanCard(
+              title: 'Premium 月付',
+              price: _priceFor(monthlyId, 'A\$11.99/月'),
+              description: '自动续订；高级文档编辑与 10 GB 云文件额度。',
+              action: FilledButton(
+                onPressed: !account.isSignedIn
+                    ? null
+                    : () => _purchase(monthlyId),
+                child: const Text('通过应用商店订阅'),
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            _PlanCard(
+              title: 'Premium 年付',
+              price: _priceFor(yearlyId, 'A\$89.99/年'),
+              description: '自动续订；一次支付全年费用，权益与月付相同。',
+              action: FilledButton(
+                onPressed: !account.isSignedIn
+                    ? null
+                    : () => _purchase(yearlyId),
+                child: const Text('通过应用商店订阅'),
+              ),
+            ),
+          ],
           if (kDebugMode && (!_storeAvailable || _products.isEmpty)) ...[
             const SectionHeader(title: '本地开发沙盒'),
             const Text('仅 Debug 构建显示。它不产生真实扣款，也不会进入发布构建。'),
@@ -315,7 +339,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     final uri = defaultTargetPlatform == TargetPlatform.iOS
         ? Uri.parse('https://apps.apple.com/account/subscriptions')
         : Uri.parse(
-            'https://play.google.com/store/account/subscriptions?package=com.migrationcompanion.migration_companion',
+            // 包名要与 build.gradle.kts 里的 applicationId 一致。改名成 Waymark
+            // 之后这里没跟着改，链接指向一个不存在的应用——订阅用户点「管理订阅」
+            // 会找不到自己的订阅，连退订入口都没有。
+            'https://play.google.com/store/account/subscriptions?package=com.waymark.app',
           );
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
