@@ -106,6 +106,21 @@ export class NotificationsService {
     };
   }
 
+  /**
+   * 新闻发布的通知内容。
+   *
+   * 标题只写「有更新」，不写具体是哪条政策——通知会显示在锁屏上，旁人能看见。
+   * 用户订阅的标签本身就是敏感信息（关注 491 意味着此人在申请 491），
+   * 不该出现在别人扫一眼就能读到的地方。
+   */
+  static newsPayload(newsId: string, jurisdiction: string): Prisma.InputJsonObject {
+    return {
+      route: `/news/${newsId}`,
+      title: `${jurisdiction === 'AU-FED' ? '联邦' : '你关注的地区'}有新的官方资讯`,
+      privacy: 'generic-lock-screen-copy',
+    };
+  }
+
   private clean(values: string[]) {
     return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   }

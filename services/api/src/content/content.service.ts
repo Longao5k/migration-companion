@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ChangeImportance, ReviewStatus } from '@prisma/client';
+import { ChangeImportance, Prisma, ReviewStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { assertExcerptQuota } from './excerpt-quota';
 import { PrismaService } from '../prisma.service';
@@ -216,18 +216,72 @@ export class ContentService {
         dto.summaryZh ?? current.summaryZh,
       );
     }
-    return this.prisma.newsItem.update({
-      where: { id },
-      data: {
-        ...(dto.titleZh !== undefined ? { titleZh: dto.titleZh.trim() } : {}),
-        ...(dto.summaryZh !== undefined ? { summaryZh: dto.summaryZh.trim() } : {}),
-        ...(dto.sourceTitle !== undefined ? { sourceTitle: dto.sourceTitle.trim() } : {}),
-        ...(dto.sourceUrl !== undefined ? { sourceUrl: dto.sourceUrl } : {}),
-        ...(dto.tags !== undefined ? { tags: this.cleanTags(dto.tags) } : {}),
-        ...(dto.publishedAt !== undefined ? { publishedAt: new Date(dto.publishedAt) } : {}),
-        ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
-      },
-      include: { source: true },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.newsItem.update({
+        where: { id },
+        data: {
+          ...(dto.titleZh !== undefined ? { titleZh: dto.titleZh.trim() } : {}),
+          ...(dto.summaryZh !== undefined ? { summaryZh: dto.summaryZh.trim() } : {}),
+          ...(dto.sourceTitle !== undefined ? { sourceTitle: dto.sourceTitle.trim() } : {}),
+          ...(dto.sourceUrl !== undefined ? { sourceUrl: dto.sourceUrl } : {}),
+          ...(dto.tags !== undefined ? { tags: this.cleanTags(dto.tags) } : {}),
+          ...(dto.publishedAt !== undefined ? { publishedAt: new Date(dto.publishedAt) } : {}),
+          ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
+        },
+        include: { source: true },
+      });
+
+      // 只在「草稿 → 已发布」这一次跳变时通知。改个错别字再保存不该再发一遍，
+      // 撤下再重新发布也不该——dedupeKey 会挡住，但先判断跳变更省事。
+      if (dto.isPublished === true && !current.isPublished) {
+        const recipients = await this.matchSubscribers(tx, {
+          jurisdiction: updated.source.jurisdiction,
+          tags: updated.tags,
+          // 资讯不分重要级别。订阅了「只要重要的」的人不该被每条资讯打扰，
+          // 所以这里当作非重要处理。
+          isImportant: false,
+        });
+        if (recipients.length > 0) {
+          await tx.notificationOutbox.createMany({
+            data: recipients.map((preference) => ({
+              accountId: preference.accountId,
+              kind: 'NEWS_PUBLISHED',
+              entityId: updated.id,
+              payload: NotificationsService.newsPayload(
+                updated.id,
+                updated.source.jurisdiction,
+              ),
+              dedupeKey: `${updated.id}:NEWS_PUBLISHED:${preference.accountId}`,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+      return updated;
+    });
+  }
+
+  /**
+   * 按订阅偏好筛出该收到这条内容的账号。
+   *
+   * 变更和资讯共用同一套匹配：辖区必须命中；标签为空表示「该辖区的都要」，
+   * 否则要有交集。`importantOnly` 只挡不重要的内容。
+   */
+  private async matchSubscribers(
+    tx: Prisma.TransactionClient,
+    item: { jurisdiction: string; tags: string[]; isImportant: boolean },
+  ) {
+    const preferences = await tx.notificationPreference.findMany({
+      where: { policyUpdates: true },
+      select: { accountId: true, jurisdictions: true, tags: true, importantOnly: true },
+    });
+    return preferences.filter((preference) => {
+      if (preference.importantOnly && !item.isImportant) return false;
+      if (!preference.jurisdictions.includes(item.jurisdiction)) return false;
+      return (
+        preference.tags.length === 0 ||
+        preference.tags.some((tag) => item.tags.includes(tag))
+      );
     });
   }
 
@@ -429,29 +483,11 @@ export class ContentService {
             ? 'CHANGE_VERIFIED'
             : null;
       if (publishStatus && current.reviewStatus !== dto.status) {
-        const preferences = await tx.notificationPreference.findMany({
-          where: { policyUpdates: true },
-          select: {
-            accountId: true,
-            jurisdictions: true,
-            tags: true,
-            importantOnly: true,
-          },
-        });
-        const recipients = preferences.filter((preference) => {
-          if (
-            preference.importantOnly &&
-            current.importance === ChangeImportance.GENERAL
-          ) {
-            return false;
-          }
-          const jurisdictionMatches = preference.jurisdictions.includes(
-            current.source.jurisdiction,
-          );
-          const tagMatches =
-            preference.tags.length === 0 ||
-            preference.tags.some((tag) => current.tags.includes(tag));
-          return jurisdictionMatches && tagMatches;
+        const recipients = await this.matchSubscribers(tx, {
+          jurisdiction: current.source.jurisdiction,
+          tags: current.tags,
+          // 一般变更只发给关掉「只要重要的」的人。
+          isImportant: current.importance !== ChangeImportance.GENERAL,
         });
         if (recipients.length > 0) {
           await tx.notificationOutbox.createMany({
