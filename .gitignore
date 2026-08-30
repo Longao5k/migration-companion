@@ -32,3 +32,8 @@ __pycache__/
 apps/mobile/android/key.properties
 *.jks
 *.keystore
+
+# 摘要工具的产出与本地密钥，永远不进仓库
+summaries*.json
+*.env.local
+.env.summarizer
