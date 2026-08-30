@@ -29,9 +29,22 @@ import re, sys
 path = sys.argv[1]
 text = open(path, encoding='utf-8').read()
 
-if 'limit_req zone=mc_' in text:
-    print('速率限制已存在，未重复插入。')
+# 逐条检查，不是「见到任何 mc_ 区就退出」。
+#
+# 原先只要文件里出现过 `limit_req zone=mc_` 就整体跳过，于是在已经跑过一次的机器上
+# **永远补不上后来新增的规则**——后台登录的限流就是这么漏掉的（当时只加在了服务器上，
+# 脚本再跑一遍也不会补）。
+required = {
+    '/v1/auth/pilot': 'mc_login',
+    '/v1/auth/admin': 'mc_login',
+    '/v1/public/shares': 'mc_share',
+}
+missing = [path_ for path_, _ in required.items() if path_ not in text]
+if not missing and 'limit_req zone=mc_api' in text:
+    print('速率限制已齐全，未做修改。')
     raise SystemExit(0)
+if 'limit_req zone=mc_' in text and missing:
+    print(f'检测到缺失的限流规则：{missing}；将补齐。')
 
 # 只处理 API 那个 server 块（含 client_max_body_size 55m 的那个）。
 start = text.index('server_name migration-companion-api')

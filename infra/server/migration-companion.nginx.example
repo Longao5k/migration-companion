@@ -1,25 +1,33 @@
-# Migration Companion 反向代理。
+# Waymark 的 nginx 反向代理配置。
 #
-# 两个域名，与产品所有者的决定一致：
-#   migration-companion-api.<主域名>  → API（容器 53101）
-#   migration-companion.<主域名>      → 公开网页：分享接收页、协作邀请页、隐私政策、条款（容器 53103）
+# **这份文件必须与服务器上的 /etc/nginx/sites-enabled/migration-companion 保持一致。**
+# 两者曾经分叉过：管理后台的三个 location 和登录限流只加在了服务器上，仓库里一个
+# admin 字样都没有——服务器重装就等于后台消失，而且没人知道为什么。
 #
-# 不再需要单独的文件域名：用户文件将放到澳洲区域的 AWS S3，预签名地址由 AWS 域名签发。
-# 部署到服务器时把两个域名替换成真实域名，保留服务器上的其他站点。
-# HTTPS 由 Certbot 追加（certbot --nginx 会在这两个 server 块里插入 listen 443 与证书路径）。
+# 三个入口：
+#   migration-companion-api.<域名>        → API（容器 53101）
+#   migration-companion.<域名>            → 公开网页（容器 53103）
+#   migration-companion.<域名>/admin/     → 管理后台（容器 53102）
+#
+# 后台挂在产品域名的路径下而不是独立子域名：少一条 DNS 记录、少一张要续期的证书。
+# token 只存页面内存、不进任何存储，同源风险很低；配合 X-Frame-Options: DENY
+# 基本封死 iframe 那条路。
+#
+# 限流区定义在 conf.d/migration-companion-ratelimit.conf（同目录下有一份）。
+# HTTPS 由 Certbot 追加：这份示例**故意不含** listen 443 与证书路径，
+# 那些是机器相关的，`certbot --nginx` 会自己插入。
+#
+# 部署时把示例域名替换成真实域名，并保留服务器上已有的其它站点。
 
 server {
-    listen 80;
-    listen [::]:80;
-    server_name migration-companion-api.example.com;
+    server_name migration-companion-api.infinite-innovation.com;
 
     # 云文件关闭期间请求体很小；开放云存储后按最大文件调整。
-    client_max_body_size 55m;
 
-    # 速率限制区定义在 migration-companion-ratelimit.conf，需 include 到 nginx.conf 的 http 块。
+    # 速率限制区定义在 /etc/nginx/conf.d/migration-companion-ratelimit.conf。
     limit_conn mc_conn 20;
 
-    # 内测登录：服务端已按邮箱锁定，这里再按来源 IP 挡住换邮箱轮询与洪泛。
+    # 内测登录：服务端已按邮箱锁定，这里按来源 IP 挡住换邮箱轮询与洪泛。
     location = /v1/auth/pilot {
         limit_req zone=mc_login burst=5 nodelay;
         proxy_pass http://127.0.0.1:53101;
@@ -52,14 +60,54 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
     }
+
+    listen [::]:443 ssl; # managed by Certbot
+
 }
 
 server {
-    listen 80;
-    listen [::]:80;
-    server_name migration-companion.example.com;
+    server_name migration-companion.infinite-innovation.com;
 
     client_max_body_size 2m;
+
+    # 管理后台。挂在产品域名的 /admin/ 下，不单独占子域名——
+    # 少一条 DNS 记录、少一张会过期的证书。
+    location /admin {
+        # 后台没有对外价值，被搜索引擎收录只会招来扫描。
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        # 控制台上有「发布 / 撤下」按钮，不能允许被任意站点 iframe。
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "same-origin" always;
+        proxy_pass http://127.0.0.1:53102;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 后台登录：服务端已按账号锁定（5 次错锁 15 分钟），这里按来源 IP 再挡一层
+    # 换账号轮询。复用已有的 mc_login 限流区。
+    location = /v1/auth/admin {
+        limit_req zone=mc_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:53101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 后台自身要调 API。只放行后台用到的前缀，不把整个 API 复制到网页域名上。
+    location /v1/content/admin {
+        limit_req zone=mc_api burst=60 nodelay;
+        proxy_pass http://127.0.0.1:53101;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:53103;
@@ -69,4 +117,35 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    listen [::]:443 ssl; # managed by Certbot
+
+}
+
+server {
+    if ($host = migration-companion-api.infinite-innovation.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name migration-companion-api.infinite-innovation.com;
+    return 404; # managed by Certbot
+
+
+}
+
+server {
+    if ($host = migration-companion.infinite-innovation.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name migration-companion.infinite-innovation.com;
+    return 404; # managed by Certbot
+
+
 }
