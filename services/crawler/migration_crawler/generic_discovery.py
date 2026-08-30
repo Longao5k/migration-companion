@@ -19,15 +19,28 @@ from datetime import datetime, timezone
 from .models import DiscoveredNews, Source
 
 # 文章页里找发布日期的顺序。JSON-LD 最可靠，其次是标准 meta，最后才退回可见文本。
+_TIME_ELEMENT = re.compile(r'<time[^>]+datetime="([^"]+)"', re.I)
 _LD_DATE = re.compile(r'"datePublished"\s*:\s*"([^"]+)"')
 _META_DATE = re.compile(
     r'<meta[^>]+(?:property|name)="(?:article:published_time|dcterms\.date|date)"'
     r'[^>]+content="([^"]+)"',
     re.I,
 )
-_VISIBLE_DATE = re.compile(
-    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
-    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20\d\d)\b"
+
+_DATE_TEXT = (
+    r"(\d{1,2})(?:st|nd|rd|th)?\s+"
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20\d\d)"
+)
+# 可见日期只在紧跟「发布」字样时才认。
+#
+# 起因：WA 有一篇标题是「…continue to access the Goldfields DAMA until 31 December
+# 2026」，页面上第一个日期就是标题里的**截止日期**。当时的兜底把它当成发布日期，
+# 于是一条 2025 年的公告被标成 2026-12-31——排到资讯页最顶上，还是个未来日期。
+# 「页面上第一个日期」这个启发式在政策网站上就是错的：这类页面遍地是生效日、
+# 截止日、财年区间。
+_LABELLED_DATE = re.compile(
+    r"(?:published|posted|released|last\s+updated|date)\b[^<]{0,40}?" + _DATE_TEXT,
+    re.I,
 )
 
 _MONTHS = {
@@ -84,26 +97,41 @@ def extract_title(body: bytes) -> str:
     return candidates[0] if candidates else ""
 
 
-def extract_published_at(body: bytes) -> str:
-    """发布时间，ISO 8601。取不到返回空串——宁可跳过，也不要编一个日期。"""
+def extract_published_at(body: bytes, *, now: datetime | None = None) -> str:
+    """发布时间，ISO 8601。取不到返回空串——宁可跳过整篇，也不要编一个日期。
+
+    顺序是按可靠性排的：`<time datetime>` 和 JSON-LD 是语义标注，meta 次之，
+    带「published」字样的可见文本最后。没有标注就放弃。
+    """
     text = body.decode("utf-8", "replace")
+    current = now or datetime.now(timezone.utc)
 
-    for pattern in (_LD_DATE, _META_DATE):
-        match = pattern.search(text)
-        if match:
-            raw = match.group(1).strip()
+    def accept(value: datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        # 未来日期一定是取错了——政策网站上满是生效日和截止日。
+        # 放进去会让这条永远置顶在资讯页。
+        if value > current:
+            return ""
+        return value.isoformat()
+
+    for pattern in (_TIME_ELEMENT, _LD_DATE, _META_DATE):
+        for raw in pattern.findall(text):
             try:
-                return datetime.fromisoformat(raw.replace("Z", "+00:00")).isoformat()
+                parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
             except ValueError:
-                pass
+                continue
+            result = accept(parsed)
+            if result:
+                return result
 
-    match = _VISIBLE_DATE.search(text)
+    match = _LABELLED_DATE.search(text)
     if match:
         day, month, year = match.groups()
         # 站点只给日历日期，用正午 UTC，这样在澳洲各时区里日期都不会漂。
-        return datetime(
-            int(year), _MONTHS[month], int(day), 12, tzinfo=timezone.utc
-        ).isoformat()
+        return accept(
+            datetime(int(year), _MONTHS[month], int(day), 12, tzinfo=timezone.utc)
+        )
     return ""
 
 

@@ -34,7 +34,13 @@ def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
         result = fetcher.fetch(source, ConditionalHeaders(previous.etag, previous.last_modified))
         if result.status == 304:
             report("NOT_MODIFIED", http_status=304)
-            return "not-modified"
+            # 页面没变不代表文章都已入库：新加来源、上一轮中途失败、
+            # 或者 CDN 无条件返回 304（NSW 就是这样），都会让发现被整个跳过。
+            # 首次接入 NSW 时它直接回 304，一条都没抓到。
+            return _with_news(
+                "not-modified",
+                _discover_news(source, fetcher, state_dir, api_url, worker_key),
+            )
         if result.content_type == "application/pdf":
             normalized = f"PDF SHA256 evidence only: {__import__('hashlib').sha256(result.body).hexdigest()}"
         else:

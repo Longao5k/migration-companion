@@ -62,12 +62,18 @@ class ExtractPublishedAtTests(unittest.TestCase):
         body = b'{"datePublished":"2024-08-15T00:00:00+09:30"} <p>1 Jan 2020</p>'
         self.assertTrue(extract_published_at(body).startswith("2024-08-15"))
 
-    def test_退回可见日期文本(self):
+    def test_带发布字样的可见日期可以认(self):
         body = b"<p>Published 19 November 2025</p>"
         self.assertTrue(extract_published_at(body).startswith("2025-11-19"))
 
     def test_序数后缀也认(self):
-        self.assertTrue(extract_published_at(b"<p>22nd Jul 2024</p>").startswith("2024-07-22"))
+        self.assertTrue(
+            extract_published_at(b"<p>Posted 22nd Jul 2024</p>").startswith("2024-07-22")
+        )
+
+    def test_没有标签的裸日期不认(self):
+        # 收紧的代价：少认一些。政策页上到处是日期，认错一个比少认十个贵。
+        self.assertEqual(extract_published_at(b"<p>22nd Jul 2024</p>"), "")
 
     def test_取不到日期返回空串而不是猜一个(self):
         # 猜出来的日期会让用户以为某条政策是今天生效的。宁可丢弃这一篇。
@@ -76,3 +82,39 @@ class ExtractPublishedAtTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DateSafetyTests(unittest.TestCase):
+    """这些用例来自真实抓到的错误数据，不是假想。"""
+
+    def test_不把标题里的截止日期当成发布日期(self):
+        # WA 真实页面：「…access the Goldfields DAMA until 31 December 2026」。
+        # 旧实现取页面第一个日期，把这条 2025 年的公告标成 2026-12-31。
+        body = (
+            b"<h1>Goldfields employers continue to access the Goldfields DAMA "
+            b"until 31 December 2026</h1>"
+        )
+        self.assertEqual(extract_published_at(body), "")
+
+    def test_未来日期一律拒绝(self):
+        from datetime import datetime, timezone
+        body = b'<time datetime="2030-01-01T00:00:00Z">soon</time>'
+        now = datetime(2026, 8, 30, tzinfo=timezone.utc)
+        self.assertEqual(extract_published_at(body, now=now), "")
+
+    def test_可见日期要挨着发布字样才认(self):
+        self.assertTrue(
+            extract_published_at(b"<p>Published 19 November 2025</p>").startswith("2025-11-19")
+        )
+        # 正文里随便一个日期不算——政策页遍地是生效日和财年区间。
+        self.assertEqual(
+            extract_published_at(b"<p>Applications close 30 June 2026 for the round</p>"),
+            "",
+        )
+
+    def test_time_元素优先于正文(self):
+        body = (
+            b'<time datetime="2025-03-04T00:00:00+10:00">x</time>'
+            b"<p>Published 19 November 2025</p>"
+        )
+        self.assertTrue(extract_published_at(body).startswith("2025-03-04"))
