@@ -25,6 +25,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     Future<void>.microtask(() async {
       final store = ref.read(appStoreProvider.notifier);
       await store.ready;
+      await store.refreshTaxonomy();
       await store.refreshContent();
       await store.resumeCloudSync();
       await store.refreshPolicyAlerts();

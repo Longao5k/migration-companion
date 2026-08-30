@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -34,6 +35,7 @@ class AppState {
     this.followedJurisdictions = const ['AU-SA'],
     this.followedTags = const [],
     this.policyAlerts = const [],
+    this.taxonomy = const Taxonomy(),
     this.importantNotificationsOnly = true,
     this.monitoring,
     this.cloudFileUploadsEnabled = true,
@@ -70,6 +72,9 @@ class AppState {
 
   /// 服务端按订阅推来的、还没被用户看过的提醒。
   final List<PolicyAlert> policyAlerts;
+
+  /// 服务端下发的标签目录，筛选栏与订阅选择器都由它驱动。
+  final Taxonomy taxonomy;
   final bool importantNotificationsOnly;
 
   int get cloudStorageAllocatedBytes =>
@@ -108,6 +113,7 @@ class AppState {
     List<String>? followedJurisdictions,
     List<String>? followedTags,
     List<PolicyAlert>? policyAlerts,
+    Taxonomy? taxonomy,
     bool? importantNotificationsOnly,
     MonitoringStatus? monitoring,
     bool? cloudFileUploadsEnabled,
@@ -140,6 +146,7 @@ class AppState {
     followedJurisdictions: followedJurisdictions ?? this.followedJurisdictions,
     followedTags: followedTags ?? this.followedTags,
     policyAlerts: policyAlerts ?? this.policyAlerts,
+    taxonomy: taxonomy ?? this.taxonomy,
     importantNotificationsOnly:
         importantNotificationsOnly ?? this.importantNotificationsOnly,
     monitoring: monitoring ?? this.monitoring,
@@ -793,6 +800,8 @@ class AppStore extends StateNotifier<AppState> {
         api.getList('/content/news'),
         api.getList('/content/changes'),
       ]);
+      // 标签目录跟着内容一起更新：内容变了，可筛的值也会变。
+      unawaited(refreshTaxonomy());
       // 监控状态取不到不应让整次内容刷新失败：拿不到就保持未知，
       // 界面在未知状态下同样不会断言「没有变化」。
       MonitoringStatus? monitoring;
@@ -2000,6 +2009,19 @@ class AppStore extends StateNotifier<AppState> {
   ///
   /// 推送通道（FCM/APNs）还没接，那要引入 Google 依赖并重做隐私说明。
   /// 在那之前 App 自己就是投递通道：它本来就会定期拉内容，顺带把提醒取走。
+  /// 拉取标签目录。公开接口，不需要登录——匿名用户也要能筛选。
+  Future<void> refreshTaxonomy() async {
+    try {
+      final api = _api(
+        state.accountEmail ?? 'public@migration-companion.invalid',
+      );
+      final payload = await api.getMap('/content/taxonomy');
+      state = state.copyWith(taxonomy: Taxonomy.fromJson(payload));
+    } catch (_) {
+      // 取不到就沿用上一次的目录，筛选栏不至于整个消失。
+    }
+  }
+
   Future<void> refreshPolicyAlerts() async {
     final email = state.accountEmail;
     if (email == null) {

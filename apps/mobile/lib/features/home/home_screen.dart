@@ -27,15 +27,26 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedTopic = '全部';
+  String? _selectedVisa;
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appStoreProvider);
-    final topics = topicsFor(state.news);
-    // 数据变化后原先选中的分类可能已经不存在了。
-    final activeTopic = topics.contains(_selectedTopic) ? _selectedTopic : '全部';
+    // 筛选值来自服务端目录（只列实际有内容的），目录取不到时退回本地数据推导。
+    final jurisdictionChips = state.taxonomy.jurisdictions.isNotEmpty
+        ? ['全部', ...state.taxonomy.jurisdictions.map((e) => e.display)]
+        : topicsFor(state.news);
+    final visaChips = state.taxonomy.visas.map((e) => e.code).toList();
+
+    // 数据变化后原先选中的值可能已经不存在了。
+    final activeTopic = jurisdictionChips.contains(_selectedTopic)
+        ? _selectedTopic
+        : '全部';
+    final activeVisa = visaChips.contains(_selectedVisa) ? _selectedVisa : null;
+
     final visibleNews = state.news
         .where((item) => _matchesTopic(item, activeTopic))
+        .where((item) => activeVisa == null || item.tags.contains(activeVisa))
         .toList();
     final nextProject = state.projects
         .where((item) => item.status == ProjectStatus.active)
@@ -73,10 +84,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 22),
                 _TopicRail(
-                  topics: topics,
+                  topics: jurisdictionChips,
                   selected: activeTopic,
                   onSelected: (topic) => setState(() => _selectedTopic = topic),
                 ),
+                // 第二行：签证类别。用户先看「关我的州吗」，再看「关我的签证吗」。
+                if (visaChips.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _VisaRail(
+                    visas: visaChips,
+                    selected: activeVisa,
+                    onSelected: (visa) => setState(
+                      () => _selectedVisa = _selectedVisa == visa ? null : visa,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 if (visibleNews.isEmpty)
                   EmptyState(
@@ -1580,4 +1602,54 @@ class _DiscussionUnavailable extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 签证类别筛选。值由服务端目录给出，只列实际有内容的类别。
+class _VisaRail extends StatelessWidget {
+  const _VisaRail({
+    required this.visas,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> visas;
+  final String? selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 34,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: visas.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 8),
+      itemBuilder: (context, index) {
+        final visa = visas[index];
+        final active = visa == selected;
+        final scheme = Theme.of(context).colorScheme;
+        return GestureDetector(
+          onTap: () => onSelected(visa),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? scheme.primary : scheme.surfaceContainerLowest,
+              border: Border.all(
+                color: active ? scheme.primary : scheme.outlineVariant,
+              ),
+              borderRadius: BorderRadius.circular(17),
+            ),
+            child: Text(
+              visa,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: active ? scheme.onPrimary : scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }

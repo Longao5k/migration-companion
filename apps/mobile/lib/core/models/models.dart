@@ -265,6 +265,54 @@ class NewsItem {
 ///
 /// 变更列表为空有两种完全不同的含义：「已在监控，确实没有变化」和「根本没在监控」。
 /// 对移民产品，把后者显示成前者等于告诉用户「政策没变」，因此必须区分。
+/// 服务端下发的标签目录：辖区、签证类别、主题，各自带条目数。
+///
+/// App 从这里建筛选栏与订阅选择器，不再硬编码 190/491——硬编码的后果是
+/// 用户订阅不到 485、职业清单这些库里实际存在的东西。
+class Taxonomy {
+  const Taxonomy({
+    this.jurisdictions = const [],
+    this.visas = const [],
+    this.topics = const [],
+  });
+
+  final List<TaxonomyEntry> jurisdictions;
+  final List<TaxonomyEntry> visas;
+  final List<TaxonomyEntry> topics;
+
+  bool get isEmpty => jurisdictions.isEmpty && visas.isEmpty && topics.isEmpty;
+
+  factory Taxonomy.fromJson(Map<String, dynamic> json) {
+    List<TaxonomyEntry> read(String key) =>
+        (json[key] as List<dynamic>? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(TaxonomyEntry.fromJson)
+            .toList();
+    return Taxonomy(
+      jurisdictions: read('jurisdictions'),
+      visas: read('visas'),
+      topics: read('topics'),
+    );
+  }
+}
+
+class TaxonomyEntry {
+  const TaxonomyEntry({required this.code, required this.count, this.label});
+
+  final String code;
+  final int count;
+  final String? label;
+
+  /// 界面上显示的名字。签证类别没有 label，直接用代码——申请人本来就说「190」。
+  String get display => label ?? code;
+
+  factory TaxonomyEntry.fromJson(Map<String, dynamic> json) => TaxonomyEntry(
+    code: json['code'] as String? ?? '',
+    count: json['count'] as int? ?? 0,
+    label: json['label'] as String?,
+  );
+}
+
 /// 一个辖区的监控覆盖情况。
 class JurisdictionCoverage {
   const JurisdictionCoverage({

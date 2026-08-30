@@ -356,8 +356,10 @@ Future<void> _showNotificationPreferences(
   final current = ref.read(appStoreProvider);
   var enabled = current.policyNotificationsEnabled;
   var importantOnly = current.importantNotificationsOnly;
-  var includeSa = current.followedJurisdictions.contains('AU-SA');
-  var includeFederal = current.followedJurisdictions.contains('AU-FED');
+  final taxonomy = current.taxonomy;
+  // 辖区与标签都从服务端目录来，不再写死两个州和两个签证——
+  // 写死的后果是库里已经有昆士兰、西澳、NSW 的内容，用户却订阅不到。
+  final jurisdictions = current.followedJurisdictions.toSet();
   final tags = current.followedTags.toSet();
   final result = await showDialog<bool>(
     context: context,
@@ -376,36 +378,64 @@ Future<void> _showNotificationPreferences(
                 value: enabled,
                 onChanged: (value) => setState(() => enabled = value),
               ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('南澳州担保'),
-                value: includeSa,
-                onChanged: enabled
-                    ? (value) => setState(() => includeSa = value ?? false)
-                    : null,
-              ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('必要的联邦上游'),
-                value: includeFederal,
-                onChanged: enabled
-                    ? (value) => setState(() => includeFederal = value ?? false)
-                    : null,
-              ),
               const SizedBox(height: 8),
-              const Text('签证主题（不选表示全部）'),
-              for (final tag in const ['190', '491'])
+              const Text('地区（至少选一个）'),
+              for (final entry in taxonomy.jurisdictions)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: Text(tag),
-                  value: tags.contains(tag),
+                  dense: true,
+                  title: Text('${entry.display}（${entry.count} 条）'),
+                  value: jurisdictions.contains(entry.code),
                   onChanged: enabled
                       ? (value) => setState(
-                          () =>
-                              value == true ? tags.add(tag) : tags.remove(tag),
+                          () => value == true
+                              ? jurisdictions.add(entry.code)
+                              : jurisdictions.remove(entry.code),
                         )
                       : null,
                 ),
+              if (taxonomy.visas.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text('签证类别（不选表示全部）'),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final entry in taxonomy.visas)
+                      FilterChip(
+                        label: Text(entry.code),
+                        selected: tags.contains(entry.code),
+                        onSelected: enabled
+                            ? (value) => setState(
+                                () => value
+                                    ? tags.add(entry.code)
+                                    : tags.remove(entry.code),
+                              )
+                            : null,
+                      ),
+                  ],
+                ),
+              ],
+              if (taxonomy.topics.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                const Text('主题（不选表示全部）'),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final entry in taxonomy.topics)
+                      FilterChip(
+                        label: Text(entry.code),
+                        selected: tags.contains(entry.code),
+                        onSelected: enabled
+                            ? (value) => setState(
+                                () => value
+                                    ? tags.add(entry.code)
+                                    : tags.remove(entry.code),
+                              )
+                            : null,
+                      ),
+                  ],
+                ),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('只通知重大与重要变化'),
@@ -427,7 +457,7 @@ Future<void> _showNotificationPreferences(
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: enabled && !includeSa && !includeFederal
+            onPressed: enabled && jurisdictions.isEmpty
                 ? null
                 : () => Navigator.pop(dialogContext, true),
             child: const Text('保存'),
@@ -442,7 +472,7 @@ Future<void> _showNotificationPreferences(
         .read(appStoreProvider.notifier)
         .updateNotificationPreferences(
           enabled: enabled,
-          jurisdictions: [if (includeSa) 'AU-SA', if (includeFederal) 'AU-FED'],
+          jurisdictions: jurisdictions.toList(),
           tags: tags.toList()..sort(),
           importantOnly: importantOnly,
         );
