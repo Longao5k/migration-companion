@@ -231,7 +231,7 @@ def validate(
         if word in title or word in summary:
             problems.append(f"出现建议/推断口吻：「{word}」")
     for word in BANNED_EN:
-        if re.search(rf"{word}", summary_en, re.I):
+        if re.search(rf"\b{word}\b", summary_en, re.I):
             problems.append(f"英文摘要出现建议口吻：「{word}」")
 
     # 数字幻觉检查：摘要里出现的四位以上数字，原文里必须也有。
