@@ -3,6 +3,7 @@ import { ChangeImportance, Prisma, ReviewStatus } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { assertExcerptQuota } from './excerpt-quota';
 import { JURISDICTIONS, isKnownTag, TOPICS, VISA_SUBCLASSES } from './taxonomy';
+import { matchesPreference, NotifiableItem } from './subscriber-match';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -296,26 +297,13 @@ export class ContentService {
    *
    * 用户勾「只要重要的」表达的是「变更里只要重要的那些」，不是「不要资讯」。
    */
-  private async matchSubscribers(
-    tx: Prisma.TransactionClient,
-    item:
-      | { kind: 'news'; jurisdiction: string; tags: string[] }
-      | { kind: 'change'; jurisdiction: string; tags: string[]; isImportant: boolean },
-  ) {
+  private async matchSubscribers(tx: Prisma.TransactionClient, item: NotifiableItem) {
     const preferences = await tx.notificationPreference.findMany({
       where: { policyUpdates: true },
       select: { accountId: true, jurisdictions: true, tags: true, importantOnly: true },
     });
-    return preferences.filter((preference) => {
-      if (item.kind === 'change' && preference.importantOnly && !item.isImportant) {
-        return false;
-      }
-      if (!preference.jurisdictions.includes(item.jurisdiction)) return false;
-      return (
-        preference.tags.length === 0 ||
-        preference.tags.some((tag) => item.tags.includes(tag))
-      );
-    });
+    // 判断规则见 subscriber-match.ts：那里能脱离数据库直接测。
+    return preferences.filter((preference) => matchesPreference(item, preference));
   }
 
   async tags() {

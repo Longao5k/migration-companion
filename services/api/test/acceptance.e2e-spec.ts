@@ -675,6 +675,85 @@ describe('第一阶段 API 验收（本地 PostgreSQL + MinIO）', () => {
     expect(afterPublish.body.some((item: { id: string }) => item.id === draft.body.id)).toBe(true);
   });
 
+  it('23b. 发布资讯会进订阅者收件箱，且不被「只推重要」挡掉', async () => {
+    // 这条链路一直没有验收测试，而它正是产品的核心承诺：
+    // 用户勾选关注 190，190 的新政策就该自动出现在他的提醒里。
+    //
+    // 之前它是坏的，坏了多久没人知道：news 扇出时一律传 isImportant: false，
+    // 而 importantOnly 默认 true，于是**所有**资讯通知都被静默丢弃。
+    // 测试 27 只覆盖了「变更」那条路径，资讯这条从来没被验证过。
+    await request(http)
+      .patch('/v1/notification-preferences')
+      .set(as(ownerEmail))
+      .send({
+        policyUpdates: true,
+        productUpdates: false,
+        jurisdictions: ['AU-SA'],
+        tags: ['190'],
+        // 关键：保持默认的「只推重要」。资讯没有重要性分级，
+        // 这个开关只该管变更，不该把资讯一起挡掉。
+        importantOnly: true,
+        timezone: 'Australia/Adelaide',
+      })
+      .expect(200);
+
+    const newsUrl = `https://migration.sa.gov.au/e2e/news-alert/${run}`;
+    const published = await request(http)
+      .post('/v1/content/admin/news')
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({
+        sourceId: contentSourceId,
+        titleZh: `E2E 提醒资讯 ${run}`,
+        summaryZh: '仅概述官方事实，并要求用户回到原文核对。',
+        sourceTitle: 'E2E news alert',
+        sourceUrl: newsUrl,
+        tags: ['190'],
+        publishedAt: new Date().toISOString(),
+        // 后台「保存后立即发布」走的就是这条 create 路径。
+        // 它曾经完全不通知订阅者，与 PATCH 发布的行为不一致。
+        isPublished: true,
+      })
+      .expect(201);
+
+    const inbox = await request(http)
+      .get('/v1/notifications/inbox')
+      .set(as(ownerEmail))
+      .expect(200);
+    const alert = inbox.body.find(
+      (item: { entityId: string }) => item.entityId === published.body.id,
+    );
+    expect(alert).toBeTruthy();
+    expect(alert.payload.route).toBe(`/news/${published.body.id}`);
+
+    // 锁屏载荷不带正文，和变更那条路径同一条规则。
+    expect(JSON.stringify(alert)).not.toContain('回到原文核对');
+
+    // 不匹配关注标签的资讯不该进来。
+    const unrelated = await request(http)
+      .post('/v1/content/admin/news')
+      .set('x-admin-key', process.env.ADMIN_API_KEY as string)
+      .send({
+        sourceId: contentSourceId,
+        titleZh: `E2E 无关资讯 ${run}`,
+        summaryZh: '仅概述官方事实，并要求用户回到原文核对。',
+        sourceTitle: 'E2E unrelated',
+        sourceUrl: `https://migration.sa.gov.au/e2e/news-unrelated/${run}`,
+        tags: ['482'],
+        publishedAt: new Date().toISOString(),
+        isPublished: true,
+      })
+      .expect(201);
+    const afterUnrelated = await request(http)
+      .get('/v1/notifications/inbox')
+      .set(as(ownerEmail))
+      .expect(200);
+    expect(
+      afterUnrelated.body.some(
+        (item: { entityId: string }) => item.entityId === unrelated.body.id,
+      ),
+    ).toBe(false);
+  });
+
   it('24. 重要变化幂等入队，必须有编辑摘要才能发布，更正保留审计记录', async () => {
     const candidate = {
       sourceUrl: `https://migration.sa.gov.au/e2e/${run}`,
