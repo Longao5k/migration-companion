@@ -13,6 +13,9 @@ class Source:
     license_note: str
     enabled: bool
     discovery_url: str | None = None
+    # 配了这个就走通用发现（generic_discovery），不配就走南澳那套写死的解析。
+    # 值是文章路径的正则，例如 r"^/news/[a-z0-9][a-z0-9\-]+$"。
+    article_pattern: str | None = None
 
 
 @dataclass(frozen=True)

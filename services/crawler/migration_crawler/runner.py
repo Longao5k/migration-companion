@@ -8,6 +8,7 @@ from .api import report_source_check, submit_candidate, submit_news_draft
 from .diffing import make_candidate
 from .fetcher import ConditionalHeaders, OfficialFetcher
 from .models import Source
+from .generic_discovery import discover_articles
 from .news_discovery import discover_sa_news, extract_article_excerpt
 from .normalizer import normalize_html
 from .storage import LocalEvidenceStore
@@ -86,10 +87,20 @@ def _discover_news(
 ) -> int:
     if not source.discovery_url:
         return 0
-    listing_source = replace(source, url=source.discovery_url, discovery_url=None)
-    listing = fetcher.fetch(listing_source, ConditionalHeaders())
+
     limit = max(1, min(int(os.environ.get("NEWS_DISCOVERY_LIMIT", "6")), 12))
-    discovered = discover_sa_news(listing.body, limit)
+    if source.article_pattern:
+        # 通用路径：列表页只用来发现链接，标题和日期到文章页里取。
+        # 各州 DOM 各不相同，但 h1 和 JSON-LD 是通用的。
+        discovered = discover_articles(
+            source, fetcher, source.article_pattern, limit=limit
+        )
+    else:
+        # 南澳沿用按其 DOM 写死的解析：它的列表页直接给全标题和日期，
+        # 少一轮逐篇请求，没必要改。
+        listing_source = replace(source, url=source.discovery_url, discovery_url=None)
+        listing = fetcher.fetch(listing_source, ConditionalHeaders())
+        discovered = discover_sa_news(listing.body, limit)
     complete = []
     for item in discovered:
         article_source = replace(source, url=item.url, discovery_url=None)

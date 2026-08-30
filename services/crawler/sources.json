@@ -103,5 +103,35 @@
     "jurisdiction": "AU-FED",
     "license_note": "Monitor metadata and version links; legislation interpretation requires legal review. Federal policy changes originate here, which is why this replaces the unreachable Home Affairs explainer pages.",
     "enabled": true
+  },
+  {
+    "id": "qld-news",
+    "name": "Migration Queensland — News",
+    "url": "https://migration.qld.gov.au/news/",
+    "jurisdiction": "AU-QLD",
+    "license_note": "© State of Queensland",
+    "enabled": true,
+    "discovery_url": "https://migration.qld.gov.au/news/",
+    "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$"
+  },
+  {
+    "id": "nsw-news",
+    "name": "NSW Government — Visas and migration news",
+    "url": "https://www.nsw.gov.au/visas-and-migration/news-and-updates",
+    "jurisdiction": "AU-NSW",
+    "license_note": "© State of New South Wales",
+    "enabled": true,
+    "discovery_url": "https://www.nsw.gov.au/visas-and-migration/news-and-updates",
+    "article_pattern": "^/visas-and-migration/news-and-updates/[a-z0-9][a-z0-9\\-]+$"
+  },
+  {
+    "id": "wa-news",
+    "name": "Migration WA — News",
+    "url": "https://migration.wa.gov.au/news",
+    "jurisdiction": "AU-WA",
+    "license_note": "© State of Western Australia",
+    "enabled": true,
+    "discovery_url": "https://migration.wa.gov.au/news",
+    "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$"
   }
 ]
