@@ -93,11 +93,6 @@ def approved_hosts(sources) -> set[str]:
                 hosts.add(host)
     return hosts
 
-
-if __name__ == "__main__":
-    main()
-
-
 def _run_legislation(sources, args) -> None:
     """联邦法规回填。
 
@@ -135,3 +130,7 @@ def _run_legislation(sources, args) -> None:
                 outcome = f"提交失败：{exc}"
         print(f"{item.published_at[:10]}  {outcome:<10}  {item.title[:70]}")
     print(f"共 {len(items)} 条")
+
+
+if __name__ == "__main__":
+    main()
