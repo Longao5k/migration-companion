@@ -20,7 +20,13 @@ if ! grep -q 'include /etc/nginx/conf.d/\*\.conf;' /etc/nginx/nginx.conf; then
 fi
 
 sudo cp "$here/migration-companion-ratelimit.conf" "$zones"
-backup="${site}.bak.$(date +%Y%m%d%H%M%S)"
+# 备份一律写到 /etc/nginx/backups/，不要写在被 nginx include 的目录里。
+# 曾经在 sites-enabled/ 里留下过两份 .bak，nginx 会把该目录下**所有**文件当配置加载，
+# 结果是同一个 server_name 有三份配置同时生效、16 条 conflicting server name 告警，
+# 靠加载顺序侥幸没出事——而其中一份比后台路由和安全头都旧。
+backup_dir=/etc/nginx/backups
+sudo mkdir -p "$backup_dir"
+backup="$backup_dir/$(basename "$site").bak.$(date +%Y%m%d%H%M%S)"
 sudo cp -a "$site" "$backup"
 echo "已备份站点配置到 $backup"
 
