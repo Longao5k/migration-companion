@@ -1,0 +1,26 @@
+# 在 Linux 上执行的文件一律用 LF，不受开发机是 Windows 影响。
+#
+# 起因是一次真实故障：从 Windows 检出目录 scp 上服务器的脚本带着 CRLF，
+# bash 读到 `set -euo pipefail\r`，把 `pipefail\r` 当成非法选项直接退出。
+# 服务器上 infra/server 的**六个脚本全部中招**——bootstrap-env.sh、
+# maintenance.sh、apply-rate-limits.sh 一个都跑不起来，而错误信息
+# （invalid option name）完全看不出是换行符的问题。
+#
+# Python 和 .mjs 能容忍 CRLF，但它们也在 Linux 上跑，统一比记住例外可靠。
+*.sh      text eol=lf
+*.py      text eol=lf
+*.mjs     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+Dockerfile* text eol=lf
+*.conf    text eol=lf
+
+# 二进制资源不做任何换行转换。
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.webp    binary
+*.ttf     binary
+*.otf     binary
+*.keystore binary
+*.jks     binary
