@@ -183,7 +183,9 @@ export class ContentService {
   adminNews() {
     return this.prisma.newsItem.findMany({
       include: { source: true },
-      orderBy: { updatedAt: 'desc' },
+      // 按 updatedAt 排序会让刚保存的那一条跳到列表第一位，下面所有条目整体上移，
+      // 审到第 40 条时已经不知道审到哪了。改成稳定排序：草稿在前，内部按发布日期。
+      orderBy: [{ isPublished: 'asc' }, { publishedAt: 'desc' }],
       take: 500,
     });
   }
@@ -231,6 +233,7 @@ export class ContentService {
           ...(dto.tags !== undefined ? { tags: this.cleanTags(dto.tags) } : {}),
           ...(dto.publishedAt !== undefined ? { publishedAt: new Date(dto.publishedAt) } : {}),
           ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
+          ...(dto.draftAuthor !== undefined ? { draftAuthor: dto.draftAuthor } : {}),
         },
         include: { source: true },
       });
@@ -382,12 +385,12 @@ export class ContentService {
       where: { sourceUrl: dto.sourceUrl },
       create: {
         sourceId: source.id,
-        // Worker only creates a private editorial draft. English source text
-        // may temporarily occupy these fields, but cannot reach the public API
-        // until an editor rewrites and publishes it.
-        titleZh: dto.sourceTitle.trim(),
-        summaryZh: dto.sourceExcerpt.trim(),
+        // 原文进 sourceExcerpt，中文字段留空——不再拿英文占位。
+        // 占位的代价是：编辑一写中文，原文就永久消失，审核页再也无法并排比对。
+        titleZh: '',
+        summaryZh: '',
         sourceTitle: dto.sourceTitle.trim(),
+        sourceExcerpt: dto.sourceExcerpt.trim(),
         sourceUrl: dto.sourceUrl,
         tags: this.cleanTags(dto.tags),
         publishedAt: new Date(dto.publishedAt),
@@ -395,6 +398,10 @@ export class ContentService {
       },
       update: {
         publishedAt: new Date(dto.publishedAt),
+        // 官方原文可能被修订过，跟着更新；但绝不碰 titleZh/summaryZh——
+        // 那是人写的编辑稿，采集器无权覆盖。
+        sourceTitle: dto.sourceTitle.trim(),
+        sourceExcerpt: dto.sourceExcerpt.trim(),
       },
       include: { source: true },
     });

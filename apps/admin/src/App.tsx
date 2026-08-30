@@ -43,11 +43,29 @@ type NewsItem = {
   titleZh: string
   summaryZh: string
   sourceTitle: string
+  sourceExcerpt: string | null
+  draftAuthor: 'model' | 'editor' | null
   sourceUrl: string
   tags: string[]
   publishedAt: string
   isPublished: boolean
   source: Source
+}
+
+/** 一条草稿处在哪个阶段。判据和服务端的发布闸门用同一个中文正则。 */
+type DraftState = 'needs-chinese' | 'ready' | 'published'
+
+const CJK = /[㐀-鿿]/
+
+function draftState(item: NewsItem): DraftState {
+  if (item.isPublished) return 'published'
+  return CJK.test(item.titleZh) && CJK.test(item.summaryZh) ? 'ready' : 'needs-chinese'
+}
+
+const DRAFT_STATE_LABEL: Record<DraftState, string> = {
+  'needs-chinese': '待写中文',
+  ready: '待发布',
+  published: '已发布',
 }
 
 type SourceHealth = Source & {
@@ -96,6 +114,9 @@ function App() {
   const [newsTitle, setNewsTitle] = useState('')
   const [newsSummary, setNewsSummary] = useState('')
   const [newsTags, setNewsTags] = useState('')
+  const [newsFilter, setNewsFilter] = useState<'all' | DraftState>('all')
+  const [onlyModelDrafts, setOnlyModelDrafts] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const selected = useMemo(
     () => [...queue, ...changes].find((item) => item.id === selectedId),
@@ -104,6 +125,21 @@ function App() {
   const selectedNews = useMemo(
     () => news.find((item) => item.id === selectedNewsId),
     [news, selectedNewsId],
+  )
+  const visibleNews = useMemo(
+    () =>
+      news.filter((item) => {
+        if (newsFilter !== 'all' && draftState(item) !== newsFilter) return false
+        if (onlyModelDrafts && item.draftAuthor !== 'model') return false
+        return true
+      }),
+    [news, newsFilter, onlyModelDrafts],
+  )
+  // 只有中文写好的才可批量发布——没写中文的会被服务端闸门 400 挡回，
+  // 让人一条条点着试正是现在最耗时间的地方。
+  const readySelectable = useMemo(
+    () => visibleNews.filter((item) => draftState(item) === 'ready'),
+    [visibleNews],
   )
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -343,6 +379,37 @@ function App() {
     setNewsTags(item.tags.join(', '))
   }
 
+  /** 批量发布。逐条走服务端闸门，失败的留在列表里并说明原因。 */
+  async function publishSelected() {
+    setLoading(true)
+    const failures: string[] = []
+    let done = 0
+    for (const id of selectedIds) {
+      try {
+        await request(`/v1/content/admin/news/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isPublished: true }),
+        })
+        done += 1
+      } catch (error) {
+        const item = news.find((entry) => entry.id === id)
+        failures.push(
+          `${item?.titleZh || item?.sourceTitle || id}：${
+            error instanceof Error ? error.message : '未知错误'
+          }`,
+        )
+      }
+    }
+    setSelectedIds(new Set())
+    await load('published')
+    setNotice(
+      failures.length === 0
+        ? `已发布 ${done} 条。`
+        : `已发布 ${done} 条，${failures.length} 条未通过：${failures.slice(0, 3).join('；')}`,
+    )
+    setLoading(false)
+  }
+
   async function saveNewsDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedNews) return
@@ -354,6 +421,8 @@ function App() {
           titleZh: newsTitle.trim(),
           summaryZh: newsSummary.trim(),
           tags: newsTags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
+          // 人改过就不再是模型稿，标记跟着变——列表上的「模型稿」提示才准确。
+          draftAuthor: 'editor',
         }),
       })
       setNotice('中文编辑稿已保存；确认事实和原文链接后再发布。')
@@ -436,7 +505,7 @@ function App() {
 
       <main>
         <header>
-          <div><p className="eyebrow">AU-SA · 第一阶段</p><h1>{nav.find((item) => item.id === view)?.label}</h1></div>
+          <div><h1>{nav.find((item) => item.id === view)?.label}</h1></div>
           <div className="key-box">
             <span className="signed-in">{signedInAs}</span>
             <button onClick={() => load()} disabled={loading}>
@@ -461,31 +530,143 @@ function App() {
         {view === 'published' && (
           <section className="management-grid">
             <div className="management-list">
-              <div className="panel-heading"><div><span className="eyebrow">News</span><h2>新闻与发布状态</h2></div></div>
-              {news.length === 0 && <div className="empty">尚无新闻。先同步或创建第一条。</div>}
-              {news.map((item) => (
-                <article className="management-card" key={item.id}>
-                  <div><span className={`state-pill ${item.isPublished ? 'online' : ''}`}>{item.isPublished ? '已发布' : '草稿'}</span><strong>{item.titleZh}</strong><small>{item.source.name} · {formatTime(item.publishedAt)}</small></div>
-                  <span className="card-actions"><button onClick={() => editNews(item)} disabled={loading}>编辑</button><button onClick={() => toggleNews(item)} disabled={loading}>{item.isPublished ? '撤下' : '发布'}</button></span>
-                </article>
-              ))}
+              <div className="panel-heading">
+                <div><h2>新闻与发布状态</h2></div>
+              </div>
+
+              {/* 73 条平铺、无筛选、无批量，只能逐条点——这是「审不完」的直接原因。 */}
+              <div className="list-toolbar">
+                {(['all', 'needs-chinese', 'ready', 'published'] as const).map((key) => (
+                  <button
+                    key={key}
+                    className={newsFilter === key ? 'filter active' : 'filter'}
+                    onClick={() => setNewsFilter(key)}
+                  >
+                    {key === 'all' ? '全部' : DRAFT_STATE_LABEL[key]}
+                    <span className="count">
+                      {key === 'all'
+                        ? news.length
+                        : news.filter((item) => draftState(item) === key).length}
+                    </span>
+                  </button>
+                ))}
+                <label className="filter-check">
+                  <input
+                    type="checkbox"
+                    checked={onlyModelDrafts}
+                    onChange={(event) => setOnlyModelDrafts(event.target.checked)}
+                  />
+                  只看模型稿
+                </label>
+              </div>
+
+              {readySelectable.length > 0 && (
+                <div className="bulk-bar">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={
+                        selectedIds.size > 0 && selectedIds.size === readySelectable.length
+                      }
+                      onChange={(event) =>
+                        setSelectedIds(
+                          event.target.checked
+                            ? new Set(readySelectable.map((item) => item.id))
+                            : new Set(),
+                        )
+                      }
+                    />
+                    全选可发布的 {readySelectable.length} 条
+                  </label>
+                  <button
+                    className="approve"
+                    disabled={loading || selectedIds.size === 0}
+                    onClick={() => void publishSelected()}
+                  >
+                    发布选中 {selectedIds.size} 条
+                  </button>
+                </div>
+              )}
+
+              {visibleNews.length === 0 && (
+                <div className="empty">这个筛选下没有条目。</div>
+              )}
+              {visibleNews.map((item) => {
+                const state = draftState(item)
+                return (
+                  <article className="management-card" key={item.id}>
+                    <div>
+                      {state === 'ready' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(item.id)}
+                          onChange={(event) => {
+                            const next = new Set(selectedIds)
+                            if (event.target.checked) next.add(item.id)
+                            else next.delete(item.id)
+                            setSelectedIds(next)
+                          }}
+                        />
+                      )}
+                      <span className={`state-pill ${state}`}>{DRAFT_STATE_LABEL[state]}</span>
+                      {item.draftAuthor === 'model' && (
+                        <span className="state-pill model" title="模型起草，需逐字对照原文">
+                          模型稿
+                        </span>
+                      )}
+                      <strong>{item.titleZh || item.sourceTitle}</strong>
+                      <small>
+                        {item.source.name} · {formatTime(item.publishedAt)}
+                      </small>
+                    </div>
+                    <span className="card-actions">
+                      <button onClick={() => editNews(item)} disabled={loading}>编辑</button>
+                      <button onClick={() => toggleNews(item)} disabled={loading}>
+                        {item.isPublished ? '撤下' : '发布'}
+                      </button>
+                    </span>
+                  </article>
+                )
+              })}
             </div>
             {selectedNews ? <form className="editor-form" onSubmit={saveNewsDraft}>
-              <span className="eyebrow">Editorial draft</span><h2>编辑新闻草稿</h2>
+              <h2>编辑新闻草稿</h2>
+
+              {/* 原文和译稿必须同屏。原先原文被中文摘要覆盖掉了，审核只能开外部
+                  浏览器对照——而我们的规则是「人工核实后才发布」，核实工具里
+                  却没有被核实的那个东西。变更审核页早就是左右对照，这里照抄。 */}
+              <div className="source-pane">
+                <span className="pane-label">官方原文</span>
+                <strong>{selectedNews.sourceTitle}</strong>
+                <p className="source-excerpt">
+                  {selectedNews.sourceExcerpt ||
+                    '这条采集于加入原文留存之前，原文摘录已丢失。请打开官方页面核对。'}
+                </p>
+                <a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">
+                  打开官方页面 ↗
+                </a>
+              </div>
+
+              {selectedNews.draftAuthor === 'model' && (
+                <p className="model-warning">
+                  这份中文稿由模型起草，请逐字对照左侧原文。它曾编造过邀请人数，
+                  也写出过带建议口吻的句子。
+                </p>
+              )}
+
               <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>
               <label>中文原创摘要<textarea required maxLength={2000} value={newsSummary} onChange={(event) => setNewsSummary(event.target.value)} /></label>
               <label>标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
-              <p className="guard-copy">原文：<a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">{selectedNews.sourceTitle} ↗</a></p>
               <button className="approve" disabled={loading}>保存编辑稿</button>
               <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>取消</button>
             </form> : <form className="editor-form" onSubmit={createNews}>
-              <span className="eyebrow">Create news</span><h2>新增新闻</h2>
+              <h2>新增新闻</h2>
               <label>批准来源<select name="sourceId" required defaultValue=""><option value="" disabled>选择来源</option>{sources.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               <label>中文标题<input name="titleZh" required maxLength={240} /></label>
               <label>中文原创摘要<textarea name="summaryZh" required maxLength={2000} /></label>
               <label>原文标题<input name="sourceTitle" required maxLength={240} /></label>
               <label>原文链接<input name="sourceUrl" type="url" required /></label>
-              <label>标签（逗号分隔）<input name="tags" placeholder="SA, 190, 491" /></label>
+              <label>标签（逗号分隔）<input name="tags" placeholder="190, 职业清单" /></label>
               <label>官方发布时间<input name="publishedAt" type="datetime-local" required /></label>
               <label className="check-row"><input name="isPublished" type="checkbox" />保存后立即发布</label>
               <p className="guard-copy">只写事实性摘要，不判断个人资格，不复制官方网页全文。</p>
@@ -506,11 +687,11 @@ function App() {
         {view === 'sources' && (
           <section className="management-grid">
             <div className="management-list">
-              <div className="panel-heading"><div><span className="eyebrow">Registry</span><h2>来源注册表</h2></div></div>
+              <div className="panel-heading"><div><h2>来源注册表</h2></div></div>
               {sources.map((source) => <article className="management-card" key={source.id}><div><span className={`state-pill ${source.enabled ? 'online' : ''}`}>{source.enabled ? '启用' : '停用'}</span><strong>{source.name}</strong><small>{source.jurisdiction} · {source.url}</small></div><button onClick={() => toggleSource(source)} disabled={loading}>{source.enabled ? '停用' : '启用'}</button></article>)}
             </div>
             <form className="editor-form" onSubmit={createSource}>
-              <span className="eyebrow">Add source</span><h2>登记候选来源</h2>
+              <h2>登记候选来源</h2>
               <label>名称<input name="name" required maxLength={160} /></label>
               <label>HTTPS 地址<input name="url" type="url" required /></label>
               <label>司法辖区<select name="jurisdiction" defaultValue="AU-SA"><option value="AU-SA">AU-SA 南澳</option><option value="AU-FED">AU-FED 联邦上游</option></select></label>
@@ -522,11 +703,11 @@ function App() {
         )}
 
         {view === 'corrections' && (
-          <section className="table-panel"><div className="panel-heading"><div><span className="eyebrow">Audit trail</span><h2>不可无痕删除的更正记录</h2></div></div>{corrections.length === 0 && <div className="empty">当前没有更正记录。</div>}{corrections.map((item) => <article className="audit-row" key={item.id}><span>{formatTime(item.verifiedAt)}</span><strong>{item.titleZh}</strong><p>{item.correctionNote}</p><a href={item.source.url} target="_blank" rel="noreferrer">核对官方原文 ↗</a></article>)}</section>
+          <section className="table-panel"><div className="panel-heading"><div><h2>不可无痕删除的更正记录</h2></div></div>{corrections.length === 0 && <div className="empty">当前没有更正记录。</div>}{corrections.map((item) => <article className="audit-row" key={item.id}><span>{formatTime(item.verifiedAt)}</span><strong>{item.titleZh}</strong><p>{item.correctionNote}</p><a href={item.source.url} target="_blank" rel="noreferrer">核对官方原文 ↗</a></article>)}</section>
         )}
 
         {view === 'health' && (
-          <section className="table-panel"><div className="panel-heading"><div><span className="eyebrow">Crawler health</span><h2>采集与证据状态</h2></div></div>{health.length === 0 && <div className="empty">尚无 Worker 上报；这不等于来源健康。</div>}{health.map((item) => <article className="health-row" key={item.id}><span className={`health-dot ${item.lastFailureCode ? 'bad' : item.lastSuccessAt ? '' : 'unknown'}`} /><div><strong>{item.name}</strong><small>{item.jurisdiction} · 最近检查 {formatTime(item.lastCheckedAt)}</small></div><div><b>{item._count.snapshots}</b><small>证据快照</small></div><div><b>{item.lastFailureCode || '正常'}</b><small>{item.lastFailureCode ? `失败 ${formatTime(item.lastFailureAt)}` : `成功 ${formatTime(item.lastSuccessAt)}`}</small></div></article>)}</section>
+          <section className="table-panel"><div className="panel-heading"><div><h2>采集与证据状态</h2></div></div>{health.length === 0 && <div className="empty">采集器还没上报过，不能据此认为来源正常。</div>}{health.map((item) => <article className="health-row" key={item.id}><span className={`health-dot ${item.lastFailureCode ? 'bad' : item.lastSuccessAt ? '' : 'unknown'}`} /><div><strong>{item.name}</strong><small>{item.jurisdiction} · 最近检查 {formatTime(item.lastCheckedAt)}</small></div><div><b>{item._count.snapshots}</b><small>证据快照</small></div><div><b>{item.lastFailureCode || '正常'}</b><small>{item.lastFailureCode ? `失败 ${formatTime(item.lastFailureAt)}` : `成功 ${formatTime(item.lastSuccessAt)}`}</small></div></article>)}</section>
         )}
       </main>
     </div>
@@ -544,8 +725,8 @@ function ChangeWorkspace({ items, selected, selectedId, setSelectedId, summary, 
   onReview: (status: ReviewStatus) => Promise<void>
 }) {
   return <section className="workspace">
-    <div className="queue-panel"><div className="panel-heading"><div><span className="eyebrow">Review queue</span><h2>等待人工判断</h2></div></div><div className="queue-list">{items.length === 0 && <div className="empty">同步后显示真实队列；当前不使用演示数据冒充。</div>}{items.map((item) => <button key={item.id} className={`queue-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || '') }}><span className={`severity ${item.importance.toLowerCase()}`}>{severityLabel(item.importance)}</span><strong>{item.titleZh}</strong><span>{item.source.name}</span><time>{formatTime(item.discoveredAt)}</time></button>)}</div></div>
-    <div className="review-panel">{!selected ? <div className="empty large">选择一条变化开始审核</div> : <><div className="review-header"><div><span className={`severity ${selected.importance.toLowerCase()}`}>{severityLabel(selected.importance)}</span><h2>{selected.titleZh}</h2><a href={selected.source.url} target="_blank" rel="noreferrer">打开官方原文 ↗</a></div><span className="evidence">证据元数据已登记</span></div><div className="diff-grid"><article className="before"><span>上一版本</span><p>{selected.oldExcerpt || '首次记录，无上一版本。'}</p></article><article className="after"><span>当前版本</span><p>{selected.newExcerpt || '当前页面没有可展示的文字片段。'}</p></article></div><div className="source-facts"><div><span>司法辖区</span><strong>{selected.source.jurisdiction}</strong></div><div><span>发现时间</span><strong>{formatTime(selected.discoveredAt)}</strong></div><div><span>发布规则</span><strong>{selected.importance === 'GENERAL' ? '可标待核实，不推送' : '人工核实后发布'}</strong></div></div><label className="summary-field"><span>中文编辑摘要</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="只概述官方事实，不给出个人资格、路径或申请答案建议。" /></label><div className="guardrail"><strong>发布前检查</strong><span>来源可回溯</span><span>无个人资格判断</span><span>无政府隶属暗示</span></div><div className="actions"><button className="reject" onClick={() => onReview('REJECTED')} disabled={loading}>标记误报</button><button className="approve" onClick={() => onReview('VERIFIED')} disabled={loading || !summary.trim()}>核实并发布</button></div></>}</div>
+    <div className="queue-panel"><div className="panel-heading"><div><h2>等待人工判断</h2></div></div><div className="queue-list">{items.length === 0 && <div className="empty">当前没有待审核的政策变化。</div>}{items.map((item) => <button key={item.id} className={`queue-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || '') }}><span className={`severity ${item.importance.toLowerCase()}`}>{severityLabel(item.importance)}</span><strong>{item.titleZh}</strong><span>{item.source.name}</span><time>{formatTime(item.discoveredAt)}</time></button>)}</div></div>
+    <div className="review-panel">{!selected ? <div className="empty large">选择一条变化开始审核</div> : <><div className="review-header"><div><span className={`severity ${selected.importance.toLowerCase()}`}>{severityLabel(selected.importance)}</span><h2>{selected.titleZh}</h2><a href={selected.source.url} target="_blank" rel="noreferrer">打开官方原文 ↗</a></div></div><div className="diff-grid"><article className="before"><span>上一版本</span><p>{selected.oldExcerpt || '首次记录，无上一版本。'}</p></article><article className="after"><span>当前版本</span><p>{selected.newExcerpt || '当前页面没有可展示的文字片段。'}</p></article></div><div className="source-facts"><div><span>司法辖区</span><strong>{selected.source.jurisdiction}</strong></div><div><span>发现时间</span><strong>{formatTime(selected.discoveredAt)}</strong></div><div><span>发布规则</span><strong>{selected.importance === 'GENERAL' ? '可标待核实，不推送' : '人工核实后发布'}</strong></div></div><label className="summary-field"><span>中文编辑摘要</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="只概述官方事实，不给出个人资格、路径或申请答案建议。" /></label><div className="guardrail"><strong>发布前检查</strong><span>来源可回溯</span><span>无个人资格判断</span><span>无政府隶属暗示</span></div><div className="actions"><button className="reject" onClick={() => onReview('REJECTED')} disabled={loading}>标记误报</button><button className="approve" onClick={() => onReview('VERIFIED')} disabled={loading || !summary.trim()}>核实并发布</button></div></>}</div>
   </section>
 }
 

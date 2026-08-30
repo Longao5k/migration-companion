@@ -125,6 +125,10 @@ export class IngestNewsDto {
 
 export class UpdateNewsDto {
   @IsOptional()
+  @IsIn(['model', 'editor'])
+  draftAuthor?: 'model' | 'editor';
+
+  @IsOptional()
   @IsString()
   @Length(1, 240)
   titleZh?: string;

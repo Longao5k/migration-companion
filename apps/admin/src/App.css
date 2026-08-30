@@ -189,3 +189,86 @@ button:disabled { opacity: .55; cursor: wait; }
 }
 
 .login-notice { color: #a2544f; }
+
+/* 列表工具条：73 条平铺无筛选是「审不完」的直接原因。 */
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--line, #e2e6e1);
+}
+
+.list-toolbar .filter {
+  border: 1px solid var(--line, #e2e6e1);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.list-toolbar .filter.active {
+  background: var(--ink, #142231);
+  color: #fff;
+  border-color: var(--ink, #142231);
+}
+
+.list-toolbar .count { margin-left: 6px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+.filter-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.bulk-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 13px;
+}
+
+.bulk-bar label { display: inline-flex; gap: 8px; align-items: center; }
+
+/* 状态徽章。判据与服务端的发布闸门一致。 */
+.state-pill.needs-chinese { background: #f5e6c8; color: #6b5416; }
+.state-pill.ready { background: #d5e8de; color: #0a3f34; }
+.state-pill.published { background: #147b66; color: #fff; }
+.state-pill.model { background: #f0dcda; color: #a2544f; }
+
+/* 原文与译稿同屏。核实工具里必须有被核实的那个东西。 */
+.source-pane {
+  background: var(--sand, #f4f6f2);
+  border: 1px solid var(--line, #e2e6e1);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pane-label { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; color: #5b6660; }
+.source-excerpt {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.model-warning {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f7ecea;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #8a3f3a;
+}

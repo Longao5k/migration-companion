@@ -319,6 +319,17 @@ model NewsItem {
   titleZh     String
   summaryZh   String
   sourceTitle String
+  /// 官方原文摘录。采集时写入，**编辑永不覆盖**。
+  ///
+  /// 原先没有这一列，采集器把英文摘录临时塞进 summaryZh；运营写下中文摘要的那一刻
+  /// 原文就永久消失了。于是审核页物理上无法把译文和原文并排显示——而我们的硬规则是
+  /// 「重要变更必须人工核实后才发布」，核实工具里却没有被核实的那个东西。
+  sourceExcerpt String?
+  /// 中文编辑稿是谁写的：model（模型起草）/ editor（人工）/ null（还没写）。
+  ///
+  /// 模型起草过的稿子必须逐字对照原文——它编造过邀请人数，也写出过「建议申请」，
+  /// 那两条是校验层拦下的。人写的扫一眼即可。两种审法不同，界面上必须区分得开。
+  draftAuthor String?
   sourceUrl   String   @unique
   tags        String[]
   isPublished Boolean  @default(false)

@@ -224,7 +224,8 @@ def main() -> None:
         if index:
             time.sleep(1)
         try:
-            result = summarise(item["sourceTitle"], item["summaryZh"], args.model)
+            excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+            result = summarise(item["sourceTitle"], excerpt, args.model)
         except urllib.error.HTTPError as exc:
             print(f"  调用失败  {item['sourceTitle'][:50]}  HTTP {exc.code}")
             failed += 1
@@ -234,7 +235,7 @@ def main() -> None:
             failed += 1
             continue
 
-        problems = validate(result, item["summaryZh"], item["publishedAt"][:4])
+        problems = validate(result, excerpt, item["publishedAt"][:4])
         record.append({
             "id": item["id"],
             "publishedAt": item["publishedAt"][:10],
@@ -253,7 +254,13 @@ def main() -> None:
         admin_request(
             f"/content/admin/news/{item['id']}",
             method="PATCH",
-            body={"titleZh": result["title"], "summaryZh": result["summary"]},
+            body={
+                "titleZh": result["title"],
+                "summaryZh": result["summary"],
+                # 标注是模型起草的：这类稿子要在后台逐字对照原文，
+                # 它编造过邀请人数，也写出过「建议申请」。
+                "draftAuthor": "model",
+            },
         )
         print(f"  写回  {result['title'][:40]}")
         written += 1
