@@ -2,34 +2,28 @@
 
 ## 一次性设置：建你的后台账号
 
-后台签名密钥已在服务器上生成（`ADMIN_JWT_SECRET`，与内测密钥独立）。还差你的账号：
-
-**第一步**，在本机生成密码哈希——密码明文不出你的机器，服务器上只存哈希。
-在**仓库根目录**运行：
+**在服务器上跑，不在本机。** 密码在服务器上敲一次，直接哈希写库——不跨机器、
+不进本机 shell 历史、不用把哈希粘到命令行里：
 
 ```bash
-node services/api/scripts/hash-admin-password.mjs 你的邮箱 你的密码
+ssh tencent-light
 ```
-
-（这台机器上 `pnpm` 不在 PATH，所以别用 `pnpm --filter …` 那种写法，直接 `node` 跑脚本。）
-
-**不想让密码进 shell 历史**就改成这样，脚本会从环境变量读：
 
 ```bash
-ADMIN_PASSWORD_TO_HASH='你的密码' node services/api/scripts/hash-admin-password.mjs 你的邮箱
+cd ~/migration-companion/infra/server && docker compose exec api node scripts/create-admin.mjs
 ```
 
-密码至少 12 位。这个账号能向所有用户发布政策内容，别用你在别处用过的密码。
+会依次问你邮箱和密码（密码输入时不显示，要输两遍）。密码至少 12 位——这个账号能向
+所有用户发布政策内容。
 
-**第二步**，把输出（形如 `you@example.com=<salt>:<hash>`）写进服务器 `.env`：
+**改密码**：同一个邮箱再跑一次就覆盖。已签发的会话最长 8 小时后自然过期。
 
-```bash
-ssh tencent-light "cd ~/migration-companion/infra/server && printf 'ADMIN_LOGIN_CREDENTIALS=%s
-' '粘贴上一步的输出' >> ./.env && docker compose up -d api"
-```
+**停用账号**：`docker compose exec api node scripts/create-admin.mjs 邮箱 --disable`。
+是停用不是删除，审计记录要能指回是谁做的操作。
 
-连错 5 次会锁 15 分钟。这个计数和 App 的内测登录是分开的——在 App 上输错密码不会
-把后台锁死。
+> 早先的做法是在本机生成哈希再粘进 `.env`。那样密码要跨机器、哈希要过命令行、
+> 改密码要重启 API，而且逗号分隔的配置里一个格式错误会让**所有管理员一起登不进去**。
+> 账号已改为存数据库。
 
 ## 每次要用后台时
 

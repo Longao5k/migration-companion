@@ -20,7 +20,12 @@ const audience = 'migration-companion-console';
  * 共享密钥就不够了：**后台能发布政策内容**，密钥泄露等于别人可以向所有用户推送假政策。
  * 一个填在输入框里、会被复制粘贴、没有有效期、泄露了也无从察觉的字符串，不适合挂在公网上。
  *
- * 这里沿用内测登录那套已经验证过的做法（逐邮箱 scrypt、失败锁定、诱饵哈希防时序侧信道），
+ * 账号存在**数据库**里，不是环境变量。内测访问码用 env 是合理的——那是一次性、按人发的；
+ * 管理员账号不是。env 那条路要求「本机生成哈希 → 粘进服务器 .env → 重启 API」：密码要跨机器，
+ * 哈希要经过命令行，改一次密码重启一次服务，而且逗号分隔的配置里一个格式错误会让
+ * **所有管理员一起登不进去**。
+ *
+ * 这里沿用内测登录那套已经验证过的做法（逐账号 scrypt、失败锁定、诱饵哈希防时序侧信道），
  * 只改三处：
  *
  * 1. **会话短得多**（8 小时 vs 7 天）。后台的权限比用户账号大，token 泄露的代价也大。
@@ -46,16 +51,22 @@ export class AdminAuthService {
 
   async login(dto: AdminLoginDto) {
     const secret = this.requireSecret();
-    const accounts = this.configuredAccounts();
     const email = dto.email.trim().toLowerCase();
 
     await this.assertNotLocked(email);
-    const accepted = this.verifyPassword(dto.password, accounts.get(email));
+    const account = await this.prisma.adminUser.findUnique({ where: { email } });
+    // 停用的账号也走完整的校验流程再拒绝，否则响应快慢会暴露哪些邮箱存在。
+    const accepted =
+      this.verifyPassword(dto.password, account?.passwordHash) && !account?.disabled;
     if (!accepted) {
       await this.registerFailure(email);
       throw new UnauthorizedException('邮箱或密码无效');
     }
     await this.clearFailures(email);
+    await this.prisma.adminUser.update({
+      where: { email },
+      data: { lastLoginAt: new Date() },
+    });
 
     const accessToken = await this.jwt.signAsync(
       { email, kind: 'admin' },
@@ -98,38 +109,10 @@ export class AdminAuthService {
     return secret;
   }
 
-  /**
-   * `ADMIN_LOGIN_CREDENTIALS` 形如 `you@example.com=<salt>:<hash>`，逗号或换行分隔。
-   * 用 `pnpm --filter @migration-companion/api admin:hash-password -- <邮箱> <密码>` 生成。
-   */
-  private configuredAccounts() {
-    const raw = process.env.ADMIN_LOGIN_CREDENTIALS;
-    if (!raw?.trim()) {
-      throw new ServiceUnavailableException('后台身份服务配置不完整');
-    }
-    const accounts = new Map<string, string>();
-    for (const entry of raw.split(/[\n,]/)) {
-      const trimmed = entry.trim();
-      if (!trimmed) continue;
-      const separator = trimmed.indexOf('=');
-      if (separator <= 0) {
-        throw new ServiceUnavailableException('后台账号配置格式无效');
-      }
-      const email = trimmed.slice(0, separator).trim().toLowerCase();
-      const hash = trimmed.slice(separator + 1).trim();
-      if (!email.includes('@') || !/^[a-f0-9]{32}:[a-f0-9]{64}$/i.test(hash)) {
-        throw new ServiceUnavailableException('后台账号配置格式无效');
-      }
-      accounts.set(email, hash);
-    }
-    if (accounts.size === 0) {
-      throw new ServiceUnavailableException('后台身份服务配置不完整');
-    }
-    return accounts;
-  }
-
-  private verifyPassword(password: string, encoded: string | undefined) {
-    if (!encoded) {
+  private verifyPassword(password: string, encoded: string | undefined | null) {
+    if (!encoded || !/^[a-f0-9]{32}:[a-f0-9]{64}$/i.test(encoded)) {
+      // 账号不存在、被停用、或哈希格式损坏时，同样跑一次等价的 scrypt，
+      // 让「邮箱不对」和「密码不对」在耗时上无法区分。
       scryptSync(password, decoySalt, 32);
       return false;
     }

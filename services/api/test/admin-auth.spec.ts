@@ -2,10 +2,10 @@ import { HttpException, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, scryptSync } from 'node:crypto';
 import { AdminAuthService } from '../src/auth/admin-auth.service';
 
-function credential(email: string, password: string) {
+function passwordHash(password: string) {
   const salt = randomBytes(16);
   const digest = scryptSync(password, salt, 32);
-  return `${email}=${salt.toString('hex')}:${digest.toString('hex')}`;
+  return `${salt.toString('hex')}:${digest.toString('hex')}`;
 }
 
 describe('AdminAuthService', () => {
@@ -14,16 +14,22 @@ describe('AdminAuthService', () => {
   const password = 'correct horse battery staple';
 
   let attempts: Record<string, { attempts: number; lockedUntil: Date | null }>;
+  let admins: Record<string, { passwordHash: string; disabled: boolean }>;
   let jwt: { signAsync: jest.Mock; verifyAsync: jest.Mock };
   let service: AdminAuthService;
 
   beforeEach(() => {
     attempts = {};
+    admins = { [email]: { passwordHash: passwordHash(password), disabled: false } };
     jwt = {
       signAsync: jest.fn().mockResolvedValue('token'),
       verifyAsync: jest.fn(),
     };
     const prisma = {
+      adminUser: {
+        findUnique: jest.fn(({ where }) => Promise.resolve(admins[where.email] ?? null)),
+        update: jest.fn(() => Promise.resolve({})),
+      },
       pilotLoginAttempt: {
         findUnique: jest.fn(({ where }) => Promise.resolve(attempts[where.email] ?? null)),
         upsert: jest.fn(({ where, create, update }) => {
@@ -38,7 +44,6 @@ describe('AdminAuthService', () => {
     } as never;
     service = new AdminAuthService(jwt as never, prisma);
     process.env.ADMIN_JWT_SECRET = secret;
-    process.env.ADMIN_LOGIN_CREDENTIALS = credential(email, password);
   });
 
   it('signs a short-lived admin token on the right password', async () => {
@@ -83,6 +88,21 @@ describe('AdminAuthService', () => {
   it('accepts a genuine admin token', async () => {
     jwt.verifyAsync.mockResolvedValue({ email, kind: 'admin' });
     expect(await service.verify('any')).toEqual({ email });
+  });
+
+  it('refuses a disabled account even with the right password', async () => {
+    // 停用而不是删除，所以哈希还在——只靠密码校验就会放行。
+    admins[email].disabled = true;
+    await expect(service.login({ email, password })).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('refuses an unknown email without a shortcut', async () => {
+    // 不存在的邮箱也要走完整的 scrypt，否则响应快慢会暴露哪些账号存在。
+    await expect(
+      service.login({ email: 'nobody@example.com', password }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses to run without a long enough signing secret', async () => {
