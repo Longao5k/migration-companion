@@ -36,6 +36,9 @@ class RelevanceTests(unittest.TestCase):
             "Migration (Daily Maintenance Amount for Persons in Detention) 2026",
             "Combatting Antisemitism, Hate and Extremism (Criminal and Migration) Act 2026",
             "Migration (Subclass 192 (Pacific Engagement) Visa Pre-application) 2025",
+            # 这一条真的被收进过库：命中了 regional，其实是离岸处理国指定。
+            "Migration (Regional Processing Country—Republic of Nauru) Designation 2023",
+            "Migration Amendment (Removal and Other Measures) Act 2024",
         ]:
             self.assertFalse(is_relevant(row(name), since=SINCE), name)
 

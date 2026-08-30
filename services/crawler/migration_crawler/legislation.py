@@ -103,6 +103,21 @@ def fetch_titles() -> list[dict]:
     return rows
 
 
+# 明确排除的主题。
+#
+# 光靠「命中技术移民词表」不够：`Migration (Regional Processing Country—Republic of
+# Nauru) Designation 2023` 命中了 regional，但那是离岸处理国指定，和 190/491 毫无关系。
+# 这条真的被收进过库里。包含式词表总会有这种漏，加一层排除比不断给 regional 打补丁稳。
+EXCLUSIONS = re.compile(
+    r"\b("
+    r"regional processing|offshore|detention|detainee|prohibited things"
+    r"|removal|deportation|character test|citizenship|refugee|protection visa"
+    r"|maintenance amount|unlawful non-citizen"
+    r")\b",
+    re.I,
+)
+
+
 def is_relevant(row: dict, *, since: str) -> bool:
     """只保留仍然有效、够新、且标题命中技术移民词表的条目。"""
     making_date = (row.get("makingDate") or "")[:10]
@@ -111,7 +126,10 @@ def is_relevant(row: dict, *, since: str) -> bool:
     if not row.get("isInForce"):
         # 已失效的法规对正在准备申请的人没有意义，反而容易被误读成现行规定。
         return False
-    return bool(RELEVANCE.search(row.get("name") or ""))
+    name = row.get("name") or ""
+    if EXCLUSIONS.search(name):
+        return False
+    return bool(RELEVANCE.search(name))
 
 
 def describe(row: dict) -> str:
