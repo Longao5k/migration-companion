@@ -16,12 +16,39 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   int _index = 0;
+
+  /// 回到前台时重新拉一次提醒。
+  ///
+  /// 原先只在 initState 拉一次：手机上 App 很少被真正杀掉，用户切出去看邮件
+  /// 再切回来，看到的还是几小时前那一批。一个「政策更新提醒」产品，
+  /// 更新要等冷启动才出现，等于没有提醒。
+  ///
+  /// 只重拉提醒和内容，不碰云同步和过期副本清理——那两件事有各自的时机，
+  /// 每次切前台都跑一遍是白费流量。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) return;
+    final store = ref.read(appStoreProvider.notifier);
+    Future<void>.microtask(() async {
+      await store.refreshContent();
+      await store.refreshPolicyAlerts();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future<void>.microtask(() async {
       final store = ref.read(appStoreProvider.notifier);
       await store.ready;

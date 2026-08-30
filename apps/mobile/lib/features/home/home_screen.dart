@@ -72,6 +72,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ref,
                     state.policyAlerts,
                     state.projects,
+                    state.news,
+                    widget.onOpenChanges,
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -1312,11 +1314,9 @@ Future<void> _showNotifications(
   WidgetRef ref,
   List<PolicyAlert> alerts,
   List<VisaProject> projects,
+  List<NewsItem> news,
+  VoidCallback onOpenChanges,
 ) async {
-  // 打开就算看过。留着不确认会让同一批提醒每次都再冒出来。
-  if (alerts.isNotEmpty) {
-    unawaited(ref.read(appStoreProvider.notifier).acknowledgePolicyAlerts());
-  }
   final reminders = [
     for (final project in projects)
       for (final item in project.items)
@@ -1324,10 +1324,13 @@ Future<void> _showNotifications(
   ]..sort((a, b) => a.item.reminderAt!.compareTo(b.item.reminderAt!));
 
   if (!context.mounted) return;
-  await showModalBottomSheet<void>(
+  // 让面板带着「点了哪一条」关闭，回到这里之后再打开目标。
+  // 在 onTap 里 pop 完立刻 showModalBottomSheet，会撞上导航器还在处理
+  // 关闭动画的那一瞬间。
+  final tapped = await showModalBottomSheet<PolicyAlert>(
     context: context,
     showDragHandle: true,
-    builder: (context) => SafeArea(
+    builder: (sheetContext) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
         child: Column(
@@ -1335,12 +1338,26 @@ Future<void> _showNotifications(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (alerts.isNotEmpty) ...[
-              Text('政策更新', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                alerts.length > 1 ? '政策更新（${alerts.length}）' : '政策更新',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 8),
-              ...alerts
-                  .take(8)
-                  .map(
-                    (alert) => ListTile(
+              // 全部列出并可滚动，不再 take(8)。
+              //
+              // 之前这里只渲染前 8 条，关闭时却把**全部** id 报成已读——
+              // 攒了 50 条提醒的用户，有 42 条从没在屏幕上出现过就永久消失了，
+              // 而这些提醒正是这个产品存在的理由。要么让人看得到，要么别标已读。
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.38,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: alerts.length,
+                  itemBuilder: (listContext, index) {
+                    final alert = alerts[index];
+                    return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(
                         alert.isNews
@@ -1352,8 +1369,16 @@ Future<void> _showNotifications(
                       subtitle: Text(
                         DateFormat('M月d日 HH:mm').format(alert.createdAt),
                       ),
-                    ),
-                  ),
+                      trailing: const Icon(Icons.chevron_right, size: 20),
+                      // 提醒一直点不开：服务端早就下发了 route 和 entityId，
+                      // App 侧也解析进了模型，只是没有人接上去。收到「南澳
+                      // 公布名额」却打不开那一条，提醒就只剩一个感叹号。
+                      onTap: () =>
+                          Navigator.of(sheetContext).pop(alert),
+                    );
+                  },
+                ),
+              ),
               const SizedBox(height: 8),
             ],
             Text('材料提醒', style: Theme.of(context).textTheme.titleLarge),
@@ -1382,6 +1407,37 @@ Future<void> _showNotifications(
       ),
     ),
   );
+
+  // 关闭之后才标已读，而且此时列表里每一条都已经可滚动地呈现过。
+  // 原先是「打开就全部标已读」，配上只渲染 8 条的列表，等于把没看过的丢掉。
+  if (alerts.isNotEmpty) {
+    unawaited(ref.read(appStoreProvider.notifier).acknowledgePolicyAlerts());
+  }
+  if (tapped != null && context.mounted) {
+    _openAlert(context, ref, tapped, news, onOpenChanges);
+  }
+}
+
+/// 打开一条提醒指向的内容。
+///
+/// 资讯类在本地已加载的列表里按 entityId 找；找不到（比如本地还没刷到那一条）
+/// 就退回变更列表，而不是什么都不做——点了没反应比跳错地方更让人以为是坏的。
+void _openAlert(
+  BuildContext context,
+  WidgetRef ref,
+  PolicyAlert alert,
+  List<NewsItem> news,
+  VoidCallback onOpenChanges,
+) {
+  if (alert.isNews) {
+    for (final item in news) {
+      if (item.id == alert.entityId) {
+        unawaited(_showNews(context, ref, item));
+        return;
+      }
+    }
+  }
+  onOpenChanges();
 }
 
 class _NewsSearchDelegate extends SearchDelegate<void> {
