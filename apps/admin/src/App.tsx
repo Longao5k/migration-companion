@@ -144,6 +144,8 @@ function App() {
       }
       setToken(payload.accessToken)
       setSignedInAs(payload.email ?? email.trim())
+      // 登录完还要自己点一次「同步」才有数据，是没道理的。
+      queueMicrotask(() => void load())
       // 密码用完就从内存里抹掉，不留在 React 状态里等着被 devtools 看见。
       setPassword('')
       setNotice('已登录。会话 8 小时后过期。')
@@ -161,14 +163,31 @@ function App() {
     setNotice('已退出。')
   }
 
+  /** 顶部四个指标卡横跨多个页签，必须一次拉齐——否则会把「这一页没加载」显示成 0。 */
+  async function loadOverview() {
+    const [queueData, newsData, sourceData] = await Promise.all([
+      request<ChangeItem[]>('/v1/content/admin/review-queue'),
+      request<NewsItem[]>('/v1/content/admin/news'),
+      request<Source[]>('/v1/content/admin/sources'),
+    ])
+    setQueue(queueData)
+    setNews(newsData)
+    setSources(sourceData)
+    return { queueData, newsData }
+  }
+
   async function load(target: View = view) {
     setLoading(true)
     try {
       if (target === 'review') {
-        const data = await request<ChangeItem[]>('/v1/content/admin/review-queue')
-        setQueue(data)
-        setSelectedId(data[0]?.id ?? '')
-        setNotice(`已同步 ${data.length} 条待审核变化`)
+        const { queueData, newsData } = await loadOverview()
+        setSelectedId(queueData[0]?.id ?? '')
+        const drafts = newsData.filter((item) => !item.isPublished).length
+        setNotice(
+          queueData.length === 0 && drafts > 0
+            ? `没有待审核的政策变化。「已发布内容」里有 ${drafts} 条新闻草稿待发布。`
+            : `已同步 ${queueData.length} 条待审核变化`,
+        )
       } else if (target === 'published') {
         const [changeData, newsData, sourceData] = await Promise.all([
           request<ChangeItem[]>('/v1/content/admin/changes'),
@@ -350,11 +369,60 @@ function App() {
   const enabledCount = sources.filter((item) => item.enabled).length
   const healthyCount = health.filter((item) => item.lastSuccessAt && !item.lastFailureCode).length
 
+  // 未登录时只给登录页，不给控制台外壳。
+  // 原先把登录框塞在仪表盘头部，未登录的人会看到一整套侧栏和四个显示 0 的指标卡，
+  // 分不清是「没数据」还是「没登录」。
+  if (!token) {
+    return (
+      <div className="login-shell">
+        <form
+          className="login-card"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void signIn()
+          }}
+        >
+          <div className="brand-mark">W</div>
+          <h1>Waymark 内容控制台</h1>
+          <p className="login-hint">
+            这里可以审核政策变化、发布中文资讯。账号由服务器上直接创建。
+          </p>
+          <label>
+            邮箱
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="username"
+              required
+              autoFocus
+            />
+          </label>
+          <label>
+            密码
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? '登录中…' : '登录'}
+          </button>
+          {notice && <p className="login-notice">{notice}</p>}
+          <p className="login-foot">会话 8 小时后过期，凭据不写入浏览器存储。</p>
+        </form>
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand-mark">MC</div>
-        <div><strong>Migration Companion</strong><span>内容控制台</span></div>
+        <div className="brand-mark">W</div>
+        <div><strong>Waymark</strong><span>内容控制台</span></div>
         <nav aria-label="后台主导航">
           {nav.map((item) => (
             <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => openView(item.id)}>
@@ -370,24 +438,11 @@ function App() {
         <header>
           <div><p className="eyebrow">AU-SA · 第一阶段</p><h1>{nav.find((item) => item.id === view)?.label}</h1></div>
           <div className="key-box">
-            {token ? (
-              <>
-                <span className="signed-in">{signedInAs}</span>
-                <button onClick={() => load()} disabled={loading}>{loading ? '同步中' : '同步'}</button>
-                <button onClick={signOut}>退出</button>
-              </>
-            ) : (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  void signIn()
-                }}
-              >
-                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="管理员邮箱" aria-label="管理员邮箱" autoComplete="username" required />
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="密码" aria-label="密码" autoComplete="current-password" required />
-                <button type="submit" disabled={loading}>{loading ? '登录中' : '登录'}</button>
-              </form>
-            )}
+            <span className="signed-in">{signedInAs}</span>
+            <button onClick={() => load()} disabled={loading}>
+              {loading ? '同步中' : '同步'}
+            </button>
+            <button onClick={signOut}>退出</button>
           </div>
         </header>
 

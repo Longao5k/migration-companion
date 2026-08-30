@@ -126,3 +126,66 @@ button:disabled { opacity: .55; cursor: wait; }
   .management-grid { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
 }
+
+/* 独立登录页。未登录时不显示控制台外壳——看到一堆 0 的指标卡会让人
+   分不清是没数据还是没登录。 */
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--sand, #f4f6f2);
+  padding: 24px;
+}
+
+.login-card {
+  width: min(400px, 100%);
+  background: var(--paper, #fff);
+  border: 1px solid var(--line, #e2e6e1);
+  border-radius: 18px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-card h1 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-card input {
+  border: 1px solid var(--line, #e2e6e1);
+  border-radius: 10px;
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.login-card button {
+  margin-top: 6px;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--ink, #142231);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-card button:disabled { opacity: 0.6; cursor: default; }
+
+.login-hint, .login-foot, .login-notice {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #5b6660;
+}
+
+.login-notice { color: #a2544f; }
