@@ -195,18 +195,52 @@ export class ContentService {
     const source = await this.requireSource(dto.sourceId);
     this.assertSourceUrl(source.url, dto.sourceUrl);
     if (dto.isPublished) this.assertChineseEditorialCopy(dto.titleZh, dto.summaryZh);
-    return this.prisma.newsItem.create({
-      data: {
-        sourceId: source.id,
-        titleZh: dto.titleZh.trim(),
-        summaryZh: dto.summaryZh.trim(),
-        sourceTitle: dto.sourceTitle.trim(),
-        sourceUrl: dto.sourceUrl,
-        tags: this.cleanTags(dto.tags),
-        publishedAt: new Date(dto.publishedAt),
-        isPublished: dto.isPublished ?? false,
-      },
-      include: { source: true },
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.newsItem.create({
+        data: {
+          sourceId: source.id,
+          titleZh: dto.titleZh.trim(),
+          summaryZh: dto.summaryZh.trim(),
+          sourceTitle: dto.sourceTitle.trim(),
+          sourceUrl: dto.sourceUrl,
+          tags: this.cleanTags(dto.tags),
+          publishedAt: new Date(dto.publishedAt),
+          isPublished: dto.isPublished ?? false,
+          draftAuthor: 'editor',
+        },
+        include: { source: true },
+      });
+
+      // 后台「保存后立即发布」走的是这条路径，而它原先一行通知代码都没有：
+      // 同一个界面上两个发布按钮，只有「草稿→发布」那个会通知订阅者。
+      if (created.isPublished) {
+        await this.fanOutNewsPublished(tx, created);
+      }
+      return created;
+    });
+  }
+
+  /** 资讯发布时按订阅扇出。两条发布路径共用，避免其中一条再次漏掉。 */
+  private async fanOutNewsPublished(
+    tx: Prisma.TransactionClient,
+    item: { id: string; tags: string[]; source: { jurisdiction: string } },
+  ) {
+    const recipients = await this.matchSubscribers(tx, {
+      kind: 'news',
+      jurisdiction: item.source.jurisdiction,
+      tags: item.tags,
+    });
+    if (recipients.length === 0) return;
+    await tx.notificationOutbox.createMany({
+      data: recipients.map((preference) => ({
+        accountId: preference.accountId,
+        kind: 'NEWS_PUBLISHED',
+        entityId: item.id,
+        payload: NotificationsService.newsPayload(item.id, item.source.jurisdiction),
+        dedupeKey: `${item.id}:NEWS_PUBLISHED:${preference.accountId}`,
+      })),
+      skipDuplicates: true,
     });
   }
 
@@ -244,26 +278,8 @@ export class ContentService {
       // 只在「草稿 → 已发布」这一次跳变时通知。改个错别字再保存不该再发一遍，
       // 撤下再重新发布也不该——dedupeKey 会挡住，但先判断跳变更省事。
       if (dto.isPublished === true && !current.isPublished) {
-        const recipients = await this.matchSubscribers(tx, {
-          jurisdiction: updated.source.jurisdiction,
-          tags: updated.tags,
-          kind: 'news',
-        });
-        if (recipients.length > 0) {
-          await tx.notificationOutbox.createMany({
-            data: recipients.map((preference) => ({
-              accountId: preference.accountId,
-              kind: 'NEWS_PUBLISHED',
-              entityId: updated.id,
-              payload: NotificationsService.newsPayload(
-                updated.id,
-                updated.source.jurisdiction,
-              ),
-              dedupeKey: `${updated.id}:NEWS_PUBLISHED:${preference.accountId}`,
-            })),
-            skipDuplicates: true,
-          });
-        }
+        await this.fanOutNewsPublished(tx, updated);
+
       }
       return updated;
     });
