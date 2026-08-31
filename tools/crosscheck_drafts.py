@@ -96,6 +96,8 @@ B. 我们写的中文摘要和英文摘要
   用将来时；如果那个日期已经过去，摘要用过去时是正确的，不要报。
 - 摘要比原文短。概括本来就要取舍，只有漏掉**上面 high 例子那类**的
   适用前提和限制条件才算 omission。
+- 摘要标注了辖区（南澳/昆士兰/西澳等）而正文没写全称。辖区由官方来源本身
+  决定，上面已经告诉你这条来自哪个站点——只要与来源一致就不是问题。
 - 专有名词保留英文；中英文的措辞、语序、句子拆分方式不同。
   （但两版**陈述的事实**不同要报，那是 zh_en_mismatch。）"""
 
@@ -180,16 +182,23 @@ def crosscheck(item: dict, model: str, today: str) -> list[dict]:
     excerpt = (item.get("sourceExcerpt") or "").strip()
 
     # 第一步必须是盲测。先给稿子，模型只会附和，什么都查不出来。
+    # 来源必须一起给。复核模型只看正文时不知道这条出自哪个官方站点，
+    # 于是把「原文正文没写 South Australia，摘要却标了南澳」报成无依据——
+    # 而它来自 migration.sa.gov.au，归属是对的。实测第一轮就误报了一条。
+    origin = (
+        f"官方来源：{item['source']['name']}"
+        f"（辖区 {item['source']['jurisdiction']}，{item['sourceUrl']}）"
+    )
     facts = _raw(
         model,
         EXTRACT_PROMPT,
-        f"官方标题：{item['sourceTitle']}\n\n官方原文：\n{excerpt}",
+        origin + f"\n官方标题：{item['sourceTitle']}\n\n官方原文：\n{excerpt}",
     )
 
     compared = _raw(
         model,
         COMPARE_PROMPT.replace("{today}", today),
-        "A. 从官方原文提取的事实：\n"
+        origin + "\n\nA. 从官方原文提取的事实：\n"
         + json.dumps(facts, ensure_ascii=False, indent=2)
         + "\n\nB. 我们写的摘要：\n"
         + f"中文标题：{item['titleZh']}\n"
@@ -207,6 +216,11 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--ids",
+        default="",
+        help="只复核这个 JSON 数组里列出的条目 id。改了提示词之后重跑有分歧的那些。",
+    )
     parser.add_argument("--out", default="crosscheck.json")
     args = parser.parse_args()
 
@@ -222,6 +236,9 @@ def main() -> None:
         if (item.get("sourceExcerpt") or "").strip()
         and (item.get("summaryZh") or "").strip()
     ]
+    if args.ids:
+        wanted = set(json.loads(io.open(args.ids, encoding="utf-8").read()))
+        targets = [item for item in targets if item["id"] in wanted]
     targets.sort(key=lambda item: item["publishedAt"], reverse=True)
     if args.limit:
         targets = targets[: args.limit]
@@ -278,7 +295,12 @@ def main() -> None:
             "highCount": len(high),
         })
 
-        if not args.dry_run and findings:
+        # 无论有没有分歧都要写。
+        #
+        # 原先是 `if findings` 才写：改了提示词重跑之后，那些变干净的条目
+        # 仍然挂着上一轮的 ⚠ 警告——界面上显示着当前复核已经不再支持的结论，
+        # 而人看到红色警告是会认真对待的。误报留在那里比没有复核更糟。
+        if not args.dry_run:
             # 写进 draftChecks，就显示在审核界面上那条稿子旁边——
             # 人打开它的时候正好看到该重点看哪里。
             # 用 ⚠ 开头，界面上和「已核过」的条目区分开：这不是核过了，
@@ -289,11 +311,14 @@ def main() -> None:
                 for f in findings
             ]
             existing = [c for c in (item.get("draftChecks") or []) if not c.startswith("⚠ 复核")]
-            sd.admin_request(
-                f"/content/admin/news/{item['id']}",
-                method="PATCH",
-                body={"draftChecks": existing + lines},
-            )
+            merged = existing + lines
+            # 只在真的变了的时候才发请求：重跑几十条时，没变的那些不必写。
+            if merged != (item.get("draftChecks") or []):
+                sd.admin_request(
+                    f"/content/admin/news/{item['id']}",
+                    method="PATCH",
+                    body={"draftChecks": merged},
+                )
         time.sleep(1)
 
     with io.open(args.out, "w", encoding="utf-8") as handle:
