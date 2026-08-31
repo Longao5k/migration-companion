@@ -221,27 +221,41 @@ def _normalise(text: str) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
+def _grams(text: str, size: int = 3) -> set[str]:
+    normalised = _normalise(text)
+    return {normalised[i:i + size] for i in range(max(0, len(normalised) - size + 1))}
+
+
 def _same_finding(merged: list[dict], finding: dict) -> dict | None:
     """在已合并的结果里找同一个发现。
 
-    不能只比前 N 个字符。实测同一个发现在两轮里写成：
-      「…更广泛的职业范围 / more occupations…」
-      「…更广泛的职业范围」/「more occupations…」
-    只差标点，前缀比对就把它们算成两条，票数被拆散，本该 2/3 的显示成两个 1/3——
-    投票机制因此完全失效。
+    用字符三元组的**包含度**（交集 / 较短一方），不用整串相似度：同一个发现在
+    不同轮里的长度可以差一倍，相似度会被长度差异压低，包含度不会。
 
-    改用归一化之后的相似度。0.6 是实测值：同一发现的不同措辞普遍在 0.7 以上，
-    而不同类型的发现即使谈同一段原文也很少超过 0.5。
+    阈值 0.25 是量出来的，不是拍的。取实跑输出里的五对做基准：
+
+        应当合并  0.48 / 0.32 / 0.72
+        不应合并  0.06 / 0.00
+
+    中间有五倍的空隙，0.25 落在空隙里。样本只有五对，若以后误合并了不同的
+    发现，就把这里的数字连同新的反例一起更新——不要凭感觉调。
+
+    上一版用整串相似度、阈值 0.6，实测把「英文摘要称该计划 helps fill
+    hard-to-source roles」和「英文摘要称 This government-led initiative helps
+    fill hard-to-source roles」算成两条，本该 3/3 的拆成 2 票加 1 票。
     """
     kind = finding.get("kind")
-    candidate = _normalise(finding.get("detail", ""))
+    candidate = _grams(finding.get("detail", ""))
+    if not candidate:
+        return None
     for entry in merged:
         if entry.get("kind") != kind:
             continue
-        ratio = difflib.SequenceMatcher(
-            None, candidate, _normalise(entry.get("detail", ""))
-        ).ratio()
-        if ratio >= 0.6:
+        existing = _grams(entry.get("detail", ""))
+        if not existing:
+            continue
+        containment = len(candidate & existing) / min(len(candidate), len(existing))
+        if containment >= 0.25:
             return entry
     return None
 
