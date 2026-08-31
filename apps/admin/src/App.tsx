@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 
@@ -65,6 +65,33 @@ type DraftState =
   | 'machine-drafted'
   | 'ready'
   | 'published'
+
+const SESSION_KEY = 'waymark.admin.session'
+
+type StoredSession = { token: string; email: string }
+
+/** 从 sessionStorage 读回会话。读不出来就当没登录，绝不抛错。 */
+function readStoredSession(): StoredSession {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return { token: '', email: '' }
+    const parsed = JSON.parse(raw) as Partial<StoredSession>
+    return { token: parsed.token ?? '', email: parsed.email ?? '' }
+  } catch {
+    // 隐私模式、被禁用的站点数据、损坏的 JSON——任何一种都只意味着
+    // 「这次要重新登录」，不该让整个控制台白屏。
+    return { token: '', email: '' }
+  }
+}
+
+function writeStoredSession(session: StoredSession | null) {
+  try {
+    if (session?.token) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    else sessionStorage.removeItem(SESSION_KEY)
+  } catch {
+    // 存不进去只是下次刷新要重新登录，不影响当前这次操作。
+  }
+}
 
 const CJK = /[㐀-鿿]/
 
@@ -134,9 +161,21 @@ function App() {
   const [view, setView] = useState<View>('published')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [token, setToken] = useState('')
-  const [signedInAs, setSignedInAs] = useState('')
-  const [notice, setNotice] = useState('请登录后台账号。会话 8 小时后过期，凭据不写入浏览器存储。')
+  // 会话存进 sessionStorage，否则按一下 F5 就退回登录页。
+  //
+  // 审 73 条要两三个小时，中途刷新是必然会发生的事——之前 token 只在
+  // React state 里，刷新即丢失，看起来像被登出了。
+  //
+  // 用 sessionStorage 不用 localStorage：这个控制台有发布和撤下的权限，
+  // 令牌在标签页关闭时就该消失，而不是留在磁盘上等下一个打开浏览器的人。
+  // 服务端的会话本来就是 8 小时，两边的存活期这样才对得上。
+  const [token, setToken] = useState(() => readStoredSession().token)
+  const [signedInAs, setSignedInAs] = useState(() => readStoredSession().email)
+  // 这句话必须跟着实现走。原文是「凭据不写入浏览器存储」——在会话改存
+  // sessionStorage 之后它就成了假话，而这是安全承诺，不是文案。
+  const [notice, setNotice] = useState(
+    '请登录后台账号。会话 8 小时后过期，登录状态只保留在当前标签页，关闭即失效。',
+  )
   const [loading, setLoading] = useState(false)
   const [queue, setQueue] = useState<ChangeItem[]>([])
   const [changes, setChanges] = useState<ChangeItem[]>([])
@@ -188,6 +227,17 @@ function App() {
     [visibleNews],
   )
 
+  // 刷新恢复会话之后要自己把数据拉回来。
+  //
+  // 修好 token 持久化只解决了一半：load() 原先只在登录成功和切换页签时调用，
+  // 刷新后 token 有了、列表却是空的——看起来像「登录了但什么都没有」，
+  // 比直接退回登录页更让人困惑。
+  useEffect(() => {
+    if (token) void load(view)
+    // 只在挂载时跑一次：之后的加载由登录、切页签和保存各自触发。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!token) throw new Error('请先登录')
     const response = await fetch(path, {
@@ -201,9 +251,11 @@ function App() {
     const payload = (await response.json().catch(() => null)) as { message?: string } | null
     if (response.status === 401) {
       // 会话过期后继续拿旧 token 请求，每一步都会报一句无关的错。
-      // 直接清掉，让界面回到登录态。
+      // 直接清掉，让界面回到登录态。存起来的那份也要清——否则刷新之后
+      // 又拿着同一个过期 token 进来，看起来像登录成功了，一操作就报错。
       setToken('')
       setSignedInAs('')
+      writeStoredSession(null)
       throw new Error('会话已过期，请重新登录')
     }
     if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`)
@@ -224,8 +276,13 @@ function App() {
       if (!response.ok || !payload?.accessToken) {
         throw new Error(payload?.message || `登录失败（HTTP ${response.status}）`)
       }
-      setToken(payload.accessToken)
-      setSignedInAs(payload.email ?? email.trim())
+      const signedIn = {
+        token: payload.accessToken,
+        email: payload.email ?? email.trim(),
+      }
+      setToken(signedIn.token)
+      setSignedInAs(signedIn.email)
+      writeStoredSession(signedIn)
       // 登录完还要自己点一次「同步」才有数据，是没道理的。
       queueMicrotask(() => void load())
       // 密码用完就从内存里抹掉，不留在 React 状态里等着被 devtools 看见。
@@ -242,6 +299,7 @@ function App() {
     setToken('')
     setSignedInAs('')
     setPassword('')
+    writeStoredSession(null)
     setNotice('已退出。')
   }
 
@@ -602,7 +660,10 @@ function App() {
             {loading ? '登录中…' : '登录'}
           </button>
           {notice && <p className="login-notice">{notice}</p>}
-          <p className="login-foot">会话 8 小时后过期，凭据不写入浏览器存储。</p>
+          <p className="login-foot">
+            会话 8 小时后过期。登录状态只保留在当前标签页（sessionStorage），
+            关闭标签页即失效；密码不保存。
+          </p>
         </form>
       </div>
     )
