@@ -26,6 +26,7 @@
 """
 
 import argparse
+import difflib
 import importlib.util
 import io
 import json
@@ -116,7 +117,7 @@ KIND_LABEL = {
 _NO_TEMPERATURE: set[str] = set()
 
 
-def _raw(model: str, system: str, user: str) -> dict:
+def _raw(model: str, system: str, user: str, attempts_left: int = 2) -> dict:
     body = {
         "model": model,
         "messages": [
@@ -169,6 +170,11 @@ def _raw(model: str, system: str, user: str) -> dict:
     try:
         return json.loads(content)
     except json.JSONDecodeError as exc:
+        # 非法 JSON 通常是正文里的引号没转义（实测：称该倡议"helps fill..."）。
+        # 这是一次性的生成失误，换一次多半就对了——不该让整条内容因此没被复核。
+        if attempts_left > 0:
+            time.sleep(2)
+            return _raw(model, system, user, attempts_left - 1)
         raise RuntimeError(f"返回不是合法 JSON：{content[:150]}") from exc
 
 
@@ -210,6 +216,36 @@ def crosscheck(item: dict, model: str, today: str) -> list[dict]:
     return [f for f in findings if isinstance(f, dict) and f.get("detail")]
 
 
+def _normalise(text: str) -> str:
+    """去掉标点与空白，只留下可比较的实质字符。"""
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def _same_finding(merged: list[dict], finding: dict) -> dict | None:
+    """在已合并的结果里找同一个发现。
+
+    不能只比前 N 个字符。实测同一个发现在两轮里写成：
+      「…更广泛的职业范围 / more occupations…」
+      「…更广泛的职业范围」/「more occupations…」
+    只差标点，前缀比对就把它们算成两条，票数被拆散，本该 2/3 的显示成两个 1/3——
+    投票机制因此完全失效。
+
+    改用归一化之后的相似度。0.6 是实测值：同一发现的不同措辞普遍在 0.7 以上，
+    而不同类型的发现即使谈同一段原文也很少超过 0.5。
+    """
+    kind = finding.get("kind")
+    candidate = _normalise(finding.get("detail", ""))
+    for entry in merged:
+        if entry.get("kind") != kind:
+            continue
+        ratio = difflib.SequenceMatcher(
+            None, candidate, _normalise(entry.get("detail", ""))
+        ).ratio()
+        if ratio >= 0.6:
+            return entry
+    return None
+
+
 def crosscheck_repeated(item: dict, model: str, today: str, runs: int) -> list[dict]:
     """独立跑若干轮，给每条分歧标上它在几轮里出现过。
 
@@ -226,17 +262,23 @@ def crosscheck_repeated(item: dict, model: str, today: str, runs: int) -> list[d
     if runs <= 1:
         return crosscheck(item, model, today)
 
-    tally: dict[str, dict] = {}
+    merged: list[dict] = []
     for _ in range(runs):
         for finding in crosscheck(item, model, today):
-            key = f"{finding.get('kind', '?')}|{finding.get('detail', '')[:40]}"
-            entry = tally.setdefault(key, {**finding, "votes": 0})
-            entry["votes"] += 1
+            existing = _same_finding(merged, finding)
+            if existing is None:
+                merged.append({**finding, "votes": 1})
+                continue
+            existing["votes"] += 1
             # 任一轮判为 high 就按 high 记：漏掉一个真问题比多看一眼贵。
             if finding.get("severity") == "high":
-                entry["severity"] = "high"
+                existing["severity"] = "high"
+            # 留下更长的那一版说明：同一个发现的不同措辞里，
+            # 长的那版通常把「原文说什么、摘要说了什么」说得更全。
+            if len(finding.get("detail", "")) > len(existing.get("detail", "")):
+                existing["detail"] = finding["detail"]
         time.sleep(1)
-    return sorted(tally.values(), key=lambda f: -f["votes"])
+    return sorted(merged, key=lambda f: -f["votes"])
 
 
 def main() -> None:
