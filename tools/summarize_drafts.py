@@ -32,6 +32,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 import urllib.error
 from urllib.request import Request, urlopen
 
@@ -284,6 +285,31 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
         raise RuntimeError(f"返回不是合法 JSON：{content[:150]}") from exc
 
 
+# 摘要里要核对的数字：带千分位逗号的，或四位以上的纯数字。
+#
+# 原先是 `\d[\d,]{3,}`，它要求至少四个字符，于是把英文里的
+# 「subclass 491, and…」当成了数字 491——而中文写「491签证」时只有三位，不匹配。
+# 结果每条提到签证类别的英文摘要都会被判成「数字在原文里找不到」外加
+# 「中英数字对不上」。签证类别恰好全是三位数，英文里后面又常跟逗号。
+#
+# 真正要防的是编造的名额、金额、门槛（实测抓到过 9224、6540），
+# 那些要么四位以上，要么带千分位逗号。
+NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+|\d{4,}")
+
+
+def display_width(text: str) -> int:
+    """标题的显示宽度：汉字算 2，拉丁字母算 1。
+
+    按字符数卡长度会误伤含英文专名的标题——「Migration Queensland」二十个字符，
+    但它在屏幕上只占十个汉字的宽度。而系统提示词要求专有名词保留英文，
+    于是这类标题被系统性打回（实测两条 43、44 字）。
+    """
+    return sum(
+        2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+        for char in text
+    )
+
+
 def validate(
     result: dict,
     excerpt: str,
@@ -316,8 +342,10 @@ def validate(
         problems.append("标题没有中文")
     if not re.search(r"[㐀-鿿]", summary):
         problems.append("摘要没有中文")
-    if len(title) > 40:
-        problems.append(f"标题 {len(title)} 字，超过 40")
+    # 40 个汉字 = 80 显示宽度。纯中文标题的上限一点没放松，
+    # 只是不再把「Migration Queensland」当成二十个汉字那么宽。
+    if display_width(title) > 80:
+        problems.append(f"标题显示宽度 {display_width(title)}，超过 80（约 40 个汉字）")
     if len(summary) > 300:
         problems.append(f"摘要 {len(summary)} 字，超过 300")
     for word in BANNED:
@@ -331,21 +359,30 @@ def validate(
     # 名额和收入门槛写错一位，用户就会按错的数字做决定。
     # 语料含标题：「2023 - 24 Program closed」的年份写在标题里、摘录里没有，
     # 只比对摘录会把一条完全正确的稿子打回去（第一轮四条打回里就有这么一条）。
-    corpus = (source_title + " " + excerpt).replace(" ", "")
-    excerpt_digits = set(re.findall(r"\d[\d,]{3,}", corpus))
+    corpus = source_title + " " + excerpt
+    # 两种读法都算数：
+    #   - 原样：让「+61 8 9224 6540」里的 9224 和 6540 各自成立；
+    #   - 去空格：让原文里写成「40, 000」的数字也能对上摘要里的「40,000」。
+    #
+    # 只用去空格那一种会把相邻数字粘成一个：电话号码 +61 8 9224 6540 变成
+    # 892246540，于是摘要里照抄的 9224 和 6540 双双「在原文中找不到」。
+    # 我据此判过一条内容是模型编造数字——其实是这行代码编的。
+    excerpt_digits = set(re.findall(NUMBER, corpus)) | set(
+        re.findall(NUMBER, corpus.replace(" ", ""))
+    )
     excerpt_plain = {d.replace(",", "") for d in excerpt_digits}
     # 发布年份是我们喂给模型的上下文，不是它编的。原文常只写「25 November」，
     # 年份要靠发布日期补，这是正确行为，不该打回。
     if known_year:
         excerpt_plain.add(known_year)
     for label, text in (("中文", summary), ("英文", summary_en)):
-        for number in re.findall(r"\d[\d,]{3,}", text):
+        for number in re.findall(NUMBER, text):
             if number.replace(",", "") not in excerpt_plain:
                 problems.append(f"{label}摘要里的数字 {number} 在原文摘录中找不到")
 
     # 中英两份必须陈述同一组事实。数字对不上说明至少有一份是编的。
-    zh_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary)}
-    en_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,]{3,}", summary_en)}
+    zh_numbers = {n.replace(",", "") for n in re.findall(NUMBER, summary)}
+    en_numbers = {n.replace(",", "") for n in re.findall(NUMBER, summary_en)}
     # 年份例外：只要它在标题或摘录里出现过，就不是模型编的。中英对同一个财年的
     # 惯用写法不同（中文「2023-24 年度」对英文「the 2024 program」），
     # 强求两边年份集合相同只会制造假警报。名额、金额、门槛这些实质数字仍然严格。
