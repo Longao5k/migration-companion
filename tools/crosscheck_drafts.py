@@ -293,6 +293,7 @@ def main() -> None:
         title = (item["titleZh"] or item["sourceTitle"])[:46]
         print(f"[{index + 1}/{len(targets)}] {title}", flush=True)
         findings = None
+        exhausted = False
         while True:
             try:
                 findings = crosscheck_repeated(item, pool.current, today, args.runs)
@@ -303,13 +304,19 @@ def main() -> None:
                     if pool.retire_current():
                         continue
                     print("  候选模型都没额度了，本轮停止", flush=True)
-                    findings = None
+                    exhausted = True
                     break
                 print(f"  复核失败  {exc}", flush=True)
                 failed += 1
                 break
-        if findings is None:
+        # 「这一条失败」和「没模型可用了」是两回事。
+        # 原先两种情况都让 findings 停在 None，然后一律 break 掉整个 for 循环——
+        # 一条内容返回了不合法 JSON，剩下 24 条就再也不会被复核，
+        # 而结尾只会印一句「失败 1 条」，看不出后面根本没跑。
+        if exhausted:
             break
+        if findings is None:
+            continue
 
         high = [f for f in findings if f.get("severity") == "high"]
         for finding in findings:
@@ -369,7 +376,13 @@ def main() -> None:
         json.dump(report, handle, ensure_ascii=False, indent=2)
 
     high_total = sum(entry["highCount"] for entry in report)
+    processed = flagged + clean + failed
     print()
+    # 必须报「处理了几条 / 共几条」。上一轮跑到第 3 条就整轮停了，
+    # 而结尾只写「失败 1 条」——看不出后面 22 条根本没跑。
+    print(f"已处理 {processed}/{len(targets)} 条")
+    if processed < len(targets):
+        print(f"⚠ 提前结束，还有 {len(targets) - processed} 条没有复核")
     print(f"有分歧 {flagged} 条（其中重要 {high_total} 处），无分歧 {clean} 条，失败 {failed} 条")
     print(f"报告已存到 {args.out}")
     print()
