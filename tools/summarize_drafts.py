@@ -17,6 +17,11 @@
     python tools/summarize_drafts.py --dry-run     # 只看会生成什么
     python tools/summarize_drafts.py               # 写回草稿
     python tools/summarize_drafts.py --limit 5     # 先试几条
+    python tools/summarize_drafts.py --list-models # 看哪些模型还有额度
+    python tools/summarize_drafts.py --apply out.json  # 改了验证规则后重放，不调模型
+
+免费额度是**按模型**算的，不是按账号。默认按 DEFAULT_MODEL 里的顺序用，
+前一个耗尽自动换下一个；七个都用完再用 --list-models 找替代，用 --model 指定。
 """
 
 import argparse
@@ -30,7 +35,21 @@ import time
 import urllib.error
 from urllib.request import Request, urlopen
 
-DEFAULT_MODEL = "qwen3.8-27b"
+# 默认模型链，按顺序用，前一个额度耗尽自动换下一个。
+#
+# 免费额度是**按模型**计的。原先写死一个 qwen3.8-27b，它耗尽的那天
+# 73 条里有 23 条直接失败——而同一个 key 下当时还有二十多个模型有额度。
+# 顺序按实测排：deepseek 两条两条过、稳定出正文；qwen3.8-max 质量相当但
+# 三条超时一条。后面几个是备胎，前面的额度用完才轮到。
+DEFAULT_MODEL = ",".join([
+    "deepseek-v4-pro-0813",
+    "qwen3.8-max",
+    "qwen3.7-max-2026-06-08",
+    "kimi-k3",
+    "glm-5.2",
+    "qwen3.7-plus",
+    "qwen3.8-flash",
+])
 
 # 产品规则的硬约束，写进提示词。这些不是风格偏好：
 # 「不构成移民建议」是签核过的边界，越过它是 Migration Act s.276 的问题，不是文案问题。
@@ -77,6 +96,42 @@ BANNED = [
     "有资格", "符合条件的你", "你可能", "预计将", "料将", "有望",
     "我们通知", "本机构", "官方授权", "我们建议",
 ]
+
+
+class ModelPool:
+    """按顺序使用模型，某个模型额度耗尽就换下一个。
+
+    免费额度是**按模型**计的，不是按账号。第一轮 73 条里 23 条失败，
+    原因是我把「这个模型没额度了」当成了「没得用了」，撞上就停整轮——
+    而同一个 key 下当时还有二十多个模型有额度。
+
+    退役是单向的：一个模型报过额度耗尽就不再回头试，否则每条内容都要
+    重新撞一遍同样的 403。
+    """
+
+    def __init__(self, models: list[str]) -> None:
+        self.models = [m.strip() for m in models if m.strip()]
+        if not self.models:
+            raise SystemExit("至少要给一个模型")
+        self.index = 0
+        self.retired: list[str] = []
+
+    @property
+    def current(self) -> str:
+        return self.models[self.index]
+
+    def retire_current(self) -> bool:
+        """当前模型不可用，换下一个。没有下一个就返回 False。"""
+        self.retired.append(self.current)
+        if self.index + 1 >= len(self.models):
+            return False
+        self.index += 1
+        return True
+
+
+def is_quota_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "quota" in text or "insufficient" in text or "arrearage" in text
 
 
 def load_env_file(path: str) -> None:
@@ -154,7 +209,16 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
         ],
         # 低温度：这是事实转述，不是创作。同一段原文两次跑出不同数字是不能接受的。
         "temperature": 0.1,
-        "max_tokens": 600,
+        # 不设 max_tokens。
+        #
+        # 原先是 600，而 deepseek、kimi、glm 以及带思考的 qwen3.x 会先产出一段
+        # `reasoning_content`，它同样计入这个额度——deepseek 实测思考 10048 字符，
+        # 600 甚至 3000 都会在思考阶段就被截断，`content` 返回空字符串，
+        # 解析报「Expecting value: line 1 column 1」，看上去像模型不听话。
+        #
+        # 长度本来就不该靠 token 上限来控制：validate() 卡的是成品长度
+        # （标题 40 字、中文摘要 300 字、英文 700 字符），超了就打回。
+        # token 上限只会把好答案截断成坏答案。
     }
     request = Request(
         f"{require('SUMMARIZER_BASE_URL').rstrip('/')}/chat/completions",
@@ -173,7 +237,10 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
     last: Exception | None = None
     for attempt in range(3):
         try:
-            with urlopen(request, timeout=180) as response:
+            # 300 秒不是保守，是实测：去掉 max_tokens 之后推理模型会先写
+            # 一万字符的思考再出正文，qwen3.8-max 在 180 秒下三条超时一条，
+            # 而每次超时要赔上三轮重试共九分钟。
+            with urlopen(request, timeout=300) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             break
         except urllib.error.HTTPError as exc:
@@ -187,10 +254,23 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
             time.sleep(3 * (attempt + 1))
     else:
         raise RuntimeError(f"三次都失败：{last}")
-    content = payload["choices"][0]["message"]["content"].strip()
+    message = payload["choices"][0]["message"]
+    content = (message.get("content") or "").strip()
+    if not content:
+        # 空正文几乎总是被 max_tokens 截断：推理模型把额度花在思考上了。
+        # 直接说清楚，不要留一个「Expecting value: line 1 column 1」让人去猜。
+        reason = payload["choices"][0].get("finish_reason", "?")
+        thinking = len(message.get("reasoning_content") or "")
+        raise RuntimeError(
+            f"模型只返回了思考过程、没有正文（finish_reason={reason}，"
+            f"思考 {thinking} 字符）。多半是 max_tokens 不够。"
+        )
     # 模型有时仍会裹一层代码块。
     content = re.sub(r"^```(?:json)?|```$", "", content, flags=re.M).strip()
-    return json.loads(content)
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"返回不是合法 JSON：{content[:150]}") from exc
 
 
 def validate(
@@ -309,6 +389,55 @@ def admin_patch_many(entries: list[dict]) -> dict:
     return codes
 
 
+def list_models() -> None:
+    """列出端点上哪些文本模型还有额度。
+
+    免费额度按模型计。默认链上的七个都用完时，用这个查还有什么能用，
+    再用 --model 指定。每个模型只发一次 5 token 的请求，代价可忽略。
+    """
+    base = require("SUMMARIZER_BASE_URL").rstrip("/")
+    key = require("SUMMARIZER_API_KEY")
+    request = Request(base + "/models", headers={"Authorization": "Bearer " + key})
+    with urlopen(request, timeout=60) as response:
+        catalogue = json.loads(response.read().decode("utf-8"))
+
+    # 图像、音频、翻译、向量这些模型接不了这个任务，不必浪费一次请求。
+    skip = ("image", "audio", "video", "asr", "tts", "embedding", "rerank",
+            "vl", "vq", "omni", "ocr", "mt-", "character", "search")
+    names = sorted(
+        entry.get("id", "")
+        for entry in catalogue.get("data", [])
+        if entry.get("id") and not any(word in entry["id"].lower() for word in skip)
+    )
+    print(f"文本模型 {len(names)} 个，逐个探测额度")
+    print()
+
+    usable = []
+    for name in names:
+        body = json.dumps({
+            "model": name,
+            "messages": [{"role": "user", "content": "回复一个字：好"}],
+            "max_tokens": 5,
+        }).encode("utf-8")
+        probe = Request(
+            base + "/chat/completions",
+            data=body,
+            headers={"Authorization": "Bearer " + key,
+                     "Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(probe, timeout=90) as response:
+                response.read()
+            usable.append(name)
+            print(f"  可用  {name}")
+        except Exception:  # noqa: BLE001
+            continue
+        time.sleep(0.3)
+
+    print()
+    print(f"有额度 {len(usable)} 个。用法：--model " + ",".join(usable[:3]))
+
+
 def apply_stored(path: str, items: dict, dry_run: bool) -> None:
     """重新校验一次存好的生成结果，把现在能通过的写回。
 
@@ -370,8 +499,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
-    parser.add_argument("--model", default=os.environ.get("SUMMARIZER_MODEL", DEFAULT_MODEL))
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("SUMMARIZER_MODEL", DEFAULT_MODEL),
+        help="逗号分隔的模型顺序。免费额度按模型计，前一个耗尽自动换下一个。",
+    )
     parser.add_argument("--env-file", default="")
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="列出端点上还有额度的文本模型。默认链都用完时用它找替代。",
+    )
     parser.add_argument(
         "--apply",
         default="",
@@ -387,6 +525,10 @@ def main() -> None:
 
     if args.env_file:
         load_env_file(args.env_file)
+
+    if args.list_models:
+        list_models()
+        return
 
     items = admin_request("/content/admin/news")
 
@@ -406,30 +548,41 @@ def main() -> None:
     if args.limit:
         drafts = drafts[: args.limit]
 
-    print(f"待处理草稿 {len(drafts)} 条，模型 {args.model}\n")
+    pool = ModelPool(args.model.split(","))
+    print(f"待处理草稿 {len(drafts)} 条")
+    print("模型顺序：" + " → ".join(pool.models))
+    print()
     written = skipped = failed = 0
     record = []
+    exhausted = False
 
     for index, item in enumerate(drafts):
+        if exhausted:
+            break
         if index:
             time.sleep(1)
-        try:
-            excerpt = item.get("sourceExcerpt") or item["summaryZh"]
-            result = summarise(item["sourceTitle"], excerpt, args.model)
-        except urllib.error.HTTPError as exc:
-            print(f"  调用失败  {item['sourceTitle'][:50]}  HTTP {exc.code}")
-            failed += 1
-            continue
-        except Exception as exc:  # noqa: BLE001
-            print(f"  调用失败  {item['sourceTitle'][:50]}  {exc}")
-            failed += 1
-            # 配额耗尽是账号级状态，不是这一条内容的问题：剩下的每一条都会以同样的
-            # 方式失败。继续跑只是把同一个 403 撞几十遍，还让人以为是内容有问题。
-            if "quota" in str(exc).lower() or "HTTP 403" in str(exc):
-                print()
-                print("  额度已耗尽，本轮停止。补额度或换 key 之后重跑即可，"
-                      "已写回的不会被重复处理。")
+        excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+        result = None
+        # 同一条内容在换模型之后重试。额度是按模型算的，换一个就继续，
+        # 不该让这一条以及后面所有条陪着一起失败。
+        while True:
+            try:
+                result = summarise(item["sourceTitle"], excerpt, pool.current)
                 break
+            except Exception as exc:  # noqa: BLE001
+                if is_quota_error(exc):
+                    print(f"  {pool.current} 额度耗尽，换下一个")
+                    if pool.retire_current():
+                        continue
+                    print()
+                    print("  候选模型都没有额度了，本轮停止。"
+                          "已写回的不会被重复处理，补额度或加模型后重跑即可。")
+                    exhausted = True
+                    break
+                print(f"  调用失败  {item['sourceTitle'][:50]}  {exc}")
+                failed += 1
+                break
+        if result is None:
             continue
 
         problems = validate(
@@ -437,6 +590,7 @@ def main() -> None:
         )
         record.append({
             "id": item["id"],
+            "model": pool.current,
             "publishedAt": item["publishedAt"][:10],
             "sourceTitle": item["sourceTitle"],
             "title": result.get("title"),
@@ -473,6 +627,9 @@ def main() -> None:
 
     verb = "可写回" if args.dry_run else "已写回"
     print(f"\n{verb} {written}，打回 {skipped}，调用失败 {failed}")
+    if pool.retired:
+        print("额度耗尽的模型：" + "、".join(pool.retired))
+    print("当前使用：" + pool.current)
     print(f"全文已存到 {args.out}，请过目后再到后台发布。")
 
 
