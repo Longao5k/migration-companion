@@ -207,7 +207,21 @@ def admin_request(path: str, *, method: str = "GET", body: dict | None = None):
     if result.returncode != 0:
         raise RuntimeError(f"后台调用失败：{last}")
     raw = result.stdout.strip()
-    return json.loads(raw) if raw else None
+    if not raw:
+        return None
+    parsed = json.loads(raw)
+    # curl 拿到 4xx/5xx 时 ssh 仍然返回 0，错误 JSON 就这样被当成正常返回值收下。
+    # 实测后果：一批写回全被 400 拒绝（字段超长），工具却报告「已写回 N 条」，
+    # 库里一个字都没变。这正是这个项目里反复出现的那类静默失败。
+    if isinstance(parsed, dict) and isinstance(parsed.get("statusCode"), int):
+        if parsed["statusCode"] >= 400:
+            message = parsed.get("message")
+            if isinstance(message, list):
+                message = "；".join(str(m) for m in message)
+            raise RuntimeError(
+                f"接口拒绝（HTTP {parsed['statusCode']}）：{str(message)[:300]}"
+            )
+    return parsed
 
 
 def summarise(source_title: str, excerpt: str, model: str) -> dict:
@@ -604,6 +618,7 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
             code = codes.get(entry["id"], "无响应")
             if not code.startswith("2"):
                 failed.append(f"{entry['id']} -> HTTP {code}")
+                print(f"  写回被拒  {entry['id']}  HTTP {code}")
         written -= len(failed)
 
     verb = "可写回" if dry_run else "已写回"

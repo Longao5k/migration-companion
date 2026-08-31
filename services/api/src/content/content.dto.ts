@@ -143,7 +143,11 @@ export class UpdateNewsDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @Length(0, 120, { each: true })
+  // 300 而不是 120：复核结论要说清楚「原文说什么、摘要说了什么」，
+  // 120 字符装不下一句有用的话。第一版按 120 卡，23 行警告里 14 行超长，
+  // 整个 PATCH 被 400 拒绝——而工具那边把错误 JSON 当成了正常返回值，
+  // 报告「已写回」，库里一个字都没变。
+  @Length(0, 300, { each: true })
   draftChecks?: string[];
 
   // 允许空串 = 「这条不提供英文」。
