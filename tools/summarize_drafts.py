@@ -465,16 +465,25 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
             print(f"  打回  {(row.get('title') or '')[:30]}  —— {'；'.join(problems)}")
             skipped += 1
             continue
-        pending.append({
-            "id": row["id"],
-            "body": {
+        if item["isPublished"]:
+            # 已发布的中文是审过的、正在用户眼前的文案，只补英文，绝不覆盖中文。
+            #
+            # 种子内容的 draftAuthor 是 null（直接经 Prisma 写入的），
+            # 上面那道「人工改过就跳过」的闸拦不住它们——只看 draftAuthor
+            # 会把人写的中文用模型稿盖掉。已发布本身就是「审过了」的证据。
+            body = {
+                "titleEn": row["titleEn"],
+                "summaryEn": row["summaryEn"],
+            }
+        else:
+            body = {
                 "titleZh": row["title"],
                 "summaryZh": row["summary"],
                 "titleEn": row["titleEn"],
                 "summaryEn": row["summaryEn"],
                 "draftAuthor": "model",
-            },
-        })
+            }
+        pending.append({"id": row["id"], "body": body})
         written += 1
     failed = []
     if pending and not dry_run:
@@ -506,6 +515,13 @@ def main() -> None:
     )
     parser.add_argument("--env-file", default="")
     parser.add_argument(
+        "--include-published",
+        action="store_true",
+        help="把已发布但缺英文的条目也纳入。这些内容已经在用户眼前，"
+             "模型稿直接写回等于绕过人工闸门——建议配 --dry-run 生成后过目，"
+             "再用 --apply 写回。",
+    )
+    parser.add_argument(
         "--list-models",
         action="store_true",
         help="列出端点上还有额度的文本模型。默认链都用完时用它找替代。",
@@ -536,7 +552,11 @@ def main() -> None:
         apply_stored(args.apply, {item["id"]: item for item in items}, args.dry_run)
         return
 
-    drafts = [item for item in items if not item["isPublished"]]
+    # 默认只处理草稿。已发布的内容改动会立刻出现在用户面前，
+    # 而这个工具产出的是模型稿——它编造过邀请人数，也写出过带建议口吻的句子。
+    drafts = items if args.include_published else [
+        item for item in items if not item["isPublished"]
+    ]
     # 需要处理的：还没写中文的，或者写了中文但缺英文的。
     # 人手写过的中文不会被覆盖——只有整条都缺才会重写。
     drafts = [
@@ -606,10 +626,12 @@ def main() -> None:
         if args.dry_run:
             written += 1
             continue
-        admin_request(
-            f"/content/admin/news/{item['id']}",
-            method="PATCH",
-            body={
+        if item["isPublished"]:
+            # 已发布的中文正在用户眼前、且已经过审，只补英文。
+            # 用模型稿覆盖审过的中文，是把一次审核成果直接抹掉。
+            body = {"titleEn": result["titleEn"], "summaryEn": result["summaryEn"]}
+        else:
+            body = {
                 "titleZh": result["title"],
                 "summaryZh": result["summary"],
                 "titleEn": result["titleEn"],
@@ -617,7 +639,11 @@ def main() -> None:
                 # 标注是模型起草的：这类稿子要在后台逐字对照原文，
                 # 它编造过邀请人数，也写出过「建议申请」。
                 "draftAuthor": "model",
-            },
+            }
+        admin_request(
+            f"/content/admin/news/{item['id']}",
+            method="PATCH",
+            body=body,
         )
         print(f"  写回  {result['title'][:40]}")
         written += 1
