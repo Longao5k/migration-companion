@@ -457,16 +457,27 @@ def admin_patch_many(entries: list[dict]) -> dict:
         entry["id"] + " " + json.dumps(entry["body"], ensure_ascii=False) + chr(10)
         for entry in entries
     )
-    result = subprocess.run(
-        ["ssh", "-o", "ConnectTimeout=20", host, remote],
-        input=payload,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=600,
-    )
+    # 这里当初漏了重试——只给 admin_request 加了。整批写回是一次连接，
+    # 一次抖动就赔掉整批（实测连着赔了两批）。同样只重试连不上，
+    # 服务端的拒绝照常抛出：curl 拿到 4xx 时 ssh 仍返回 0。
+    last = ""
+    for attempt in range(4):
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=20", host, remote],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=600,
+        )
+        if result.returncode == 0:
+            break
+        last = result.stderr.strip()[:300]
+        if "onnect" not in last and "imed out" not in last and "banner" not in last:
+            break
+        time.sleep(6 * (attempt + 1))
     if result.returncode != 0:
-        raise RuntimeError("批量写回失败：" + result.stderr.strip()[:300])
+        raise RuntimeError("批量写回失败：" + last)
     codes = {}
     for line in result.stdout.split(chr(10)):
         parts = line.split()
@@ -532,7 +543,7 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
     是好的，不该为了重新量一遍再花一次额度（何况额度可能已经没了）。
     """
     rows = json.load(io.open(path, encoding="utf-8"))
-    written = skipped = missing = skipped_human = 0
+    written = skipped = missing = skipped_human = no_source = 0
     pending: list[dict] = []
     for row in rows:
         item = items.get(row["id"])
@@ -549,7 +560,7 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
         if not excerpt:
             # 同上：没有原文就没有可核对的基准，不能算「校验通过」。
             print(f"  跳过（无原文摘录）  {(row.get('title') or '')[:34]}")
-            skipped += 1
+            no_source += 1
             continue
         problems = validate(row, excerpt, row["publishedAt"][:4], row["sourceTitle"])
         if problems:
@@ -597,8 +608,10 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
 
     verb = "可写回" if dry_run else "已写回"
     print()
+    # 「打回」和「跳过」是两回事：打回是稿子有问题，跳过是我们没有原文可比对。
+    # 混在一个数字里会让人以为模型出错了，其实是我们缺材料。
     print(
-        f"{verb} {written}，打回 {skipped}，"
+        f"{verb} {written}，打回 {skipped}，无原文跳过 {no_source}，"
         f"已不在草稿列表 {missing}，人工改过跳过 {skipped_human}"
     )
     for line in failed:
@@ -615,6 +628,12 @@ def main() -> None:
         help="逗号分隔的模型顺序。免费额度按模型计，前一个耗尽自动换下一个。",
     )
     parser.add_argument("--env-file", default="")
+    parser.add_argument(
+        "--force-urls",
+        default="",
+        help="只处理这个 JSON 文件里列出的 sourceUrl，且无视「已经有中英文」的过滤。"
+             "用于重新生成那些当初在没有官方原文的情况下写出来的稿子。",
+    )
     parser.add_argument(
         "--include-published",
         action="store_true",
@@ -665,6 +684,19 @@ def main() -> None:
         for item in drafts
         if not re.search(r"[㐀-鿿]", item["titleZh"]) or not item.get("summaryEn")
     ]
+    if args.force_urls:
+        # 强制重跑：这些条目当初是在没有官方原文摘录的情况下生成的，
+        # 摘要转写自上一版摘要，数字从未与官方页面比对过。现在原文补上了，
+        # 必须拿真原文重写一遍——否则溯源里那句「已与官方原文逐项比对」是假的，
+        # 而这份记录的全部价值就在于可信。
+        wanted = set(json.loads(io.open(args.force_urls, encoding="utf-8").read()))
+        drafts = [item for item in items if item["sourceUrl"] in wanted]
+        missing = wanted - {item["sourceUrl"] for item in drafts}
+        if missing:
+            print(f"警告：{len(missing)} 个 URL 在库里找不到")
+            for url in sorted(missing)[:5]:
+                print("   ", url)
+
     drafts.sort(key=lambda item: item["publishedAt"])
     if args.limit:
         drafts = drafts[: args.limit]
