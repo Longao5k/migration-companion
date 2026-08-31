@@ -210,6 +210,35 @@ def crosscheck(item: dict, model: str, today: str) -> list[dict]:
     return [f for f in findings if isinstance(f, dict) and f.get("detail")]
 
 
+def crosscheck_repeated(item: dict, model: str, today: str, runs: int) -> list[dict]:
+    """独立跑若干轮，给每条分歧标上它在几轮里出现过。
+
+    为什么需要：同一批 25 条用同样的提示词跑三次，分别得到 15/17/14 条有分歧。
+    这不是缺陷，是这类检查的固有性质——但它意味着单看一轮会同时有漏和有误。
+
+    实测三轮合并的结果里，已确认的那条误报（把「原文正文没写 South Australia、
+    摘要标了南澳」当成无依据）只出现在 1/3 轮，而三条已发布的真问题三轮全中。
+    票数和可信度是对得上的，所以把它显示出来，让审的人自己决定先看哪条。
+
+    合并按「类型 + 前 40 字」做键。不同轮的措辞会有出入，全文比对会把同一个
+    发现算成两个。
+    """
+    if runs <= 1:
+        return crosscheck(item, model, today)
+
+    tally: dict[str, dict] = {}
+    for _ in range(runs):
+        for finding in crosscheck(item, model, today):
+            key = f"{finding.get('kind', '?')}|{finding.get('detail', '')[:40]}"
+            entry = tally.setdefault(key, {**finding, "votes": 0})
+            entry["votes"] += 1
+            # 任一轮判为 high 就按 high 记：漏掉一个真问题比多看一眼贵。
+            if finding.get("severity") == "high":
+                entry["severity"] = "high"
+        time.sleep(1)
+    return sorted(tally.values(), key=lambda f: -f["votes"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", default="")
@@ -220,6 +249,14 @@ def main() -> None:
         "--ids",
         default="",
         help="只复核这个 JSON 数组里列出的条目 id。改了提示词之后重跑有分歧的那些。",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="每条独立复核几轮，取票数。默认 1；建议 3。"
+             "同一批 25 条用同样的提示词跑三次，分别得到 15/17/14 条有分歧——"
+             "波动是这类检查的固有性质，单看一轮会同时有漏和误。",
     )
     parser.add_argument("--out", default="crosscheck.json")
     args = parser.parse_args()
@@ -258,7 +295,7 @@ def main() -> None:
         findings = None
         while True:
             try:
-                findings = crosscheck(item, pool.current, today)
+                findings = crosscheck_repeated(item, pool.current, today, args.runs)
                 break
             except Exception as exc:  # noqa: BLE001
                 if sd.is_quota_error(exc):
@@ -278,7 +315,9 @@ def main() -> None:
         for finding in findings:
             mark = "‼" if finding.get("severity") == "high" else "·"
             label = KIND_LABEL.get(finding.get("kind", ""), finding.get("kind", "?"))
-            print(f"  {mark} {label}：{finding['detail'][:90]}", flush=True)
+            votes = finding.get("votes")
+            tag = f"[{votes}/{args.runs}] " if votes and args.runs > 1 else ""
+            print(f"  {mark} {tag}{label}：{finding['detail'][:90]}", flush=True)
         if findings:
             flagged += 1
         else:
@@ -305,9 +344,14 @@ def main() -> None:
             # 人打开它的时候正好看到该重点看哪里。
             # 用 ⚠ 开头，界面上和「已核过」的条目区分开：这不是核过了，
             # 是「这里可能有问题」。
+            # 票数写进去：3/3 和 1/3 对审的人是两种东西。
+            def vote_tag(f: dict) -> str:
+                votes = f.get("votes")
+                return f"[{votes}/{args.runs} 轮]" if votes and args.runs > 1 else ""
+
             lines = [
-                f"⚠ 复核（{pool.current}）{KIND_LABEL.get(f.get('kind',''), '')}"
-                f"{'【重要】' if f.get('severity') == 'high' else ''}：{f['detail'][:100]}"
+                f"⚠ 复核{vote_tag(f)}{KIND_LABEL.get(f.get('kind',''), '')}"
+                f"{'【重要】' if f.get('severity') == 'high' else ''}：{f['detail'][:200]}"
                 for f in findings
             ]
             existing = [c for c in (item.get("draftChecks") or []) if not c.startswith("⚠ 复核")]
