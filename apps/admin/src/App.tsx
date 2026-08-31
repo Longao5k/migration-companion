@@ -849,7 +849,21 @@ function App() {
                   {selectedNews.draftChecks.length > 0 && (
                     <ul className="draft-checks">
                       {selectedNews.draftChecks.map((line) => (
-                        <li key={line}>{line}</li>
+                        <li
+                          key={line}
+                          // ⚠ 开头的是另一个模型独立复核后提出的分歧，
+                          // 不是「已核过」。两者混在一个样式里，最该看的那几行
+                          // 会淹没在「已核过」的列表中间。
+                          className={
+                            line.startsWith('⚠')
+                              ? line.includes('【重要】')
+                                ? 'check-alert high'
+                                : 'check-alert'
+                              : undefined
+                          }
+                        >
+                          {line}
+                        </li>
                       ))}
                     </ul>
                   )}

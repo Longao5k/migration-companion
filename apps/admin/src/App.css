@@ -106,9 +106,13 @@ button:disabled { opacity: .55; cursor: wait; }
 .editor-form .check-row input { width: auto; }
 .draft-checks { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 3px; }
 .draft-checks li { font-size: 11px; line-height: 1.45; font-weight: 600; }
-/* 最后一项是「机器没验、要人自己盯」的清单，必须和上面几项区分开——
+/* 另一个模型独立复核提出的分歧。它不是「已核过」，是「这里可能有问题」——
+   混在同一个样式里，最该看的几行会淹没在已核过的列表中间。 */
+.draft-checks li.check-alert { list-style: none; margin-left: -18px; padding: 6px 9px; border-radius: 7px; background: #fff3d6; color: #6b4a10; border-left: 3px solid #c9922e; }
+.draft-checks li.check-alert.high { background: #fbe0dc; color: #7d2c22; border-left-color: #b3392b; font-weight: 800; }
+/* 「机器没验、要人自己盯」的那一条，同样要和上面几项区分开——
    否则它读起来像又一条「已经核过了」。 */
-.draft-checks li:last-child { list-style: none; margin-left: -18px; margin-top: 5px; padding: 6px 8px; border-radius: 7px; background: #ffffffa8; color: #8a3b32; }
+.draft-checks li:not(.check-alert):last-child { list-style: none; margin-left: -18px; margin-top: 5px; padding: 6px 8px; border-radius: 7px; background: #ffffffa8; color: #8a3b32; }
 .draft-origin { display: block; margin-top: 8px; font-size: 10px; font-weight: 700; opacity: .75; }
 .editor-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .editor-actions .approve { flex: 1 1 auto; }
