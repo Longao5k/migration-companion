@@ -269,8 +269,12 @@ function App() {
         setChanges(changeData)
         setNews(newsData)
         setSources(sourceData)
-        const first = changeData.find((item) => item.publishedAt)
-        setSelectedId(first?.id ?? '')
+        // 不要在这里动 selectedId。
+        //
+        // 原先它会选中第一条已发布变更，于是页面底部的「发布更正」编辑器
+        // 自动展开——而 saveNewsDraft 每次保存后都会调 load('published')。
+        // 结果是：每审完一条资讯，页面下方就弹出一个和资讯审核毫无关系、
+        // 却能误触的发布动作。连审 73 条就是弹 73 次。
         setNotice(`已同步 ${newsData.length} 条新闻与 ${changeData.length} 条变更记录`)
       } else if (target === 'sources') {
         const data = await request<Source[]>('/v1/content/admin/sources')
@@ -409,6 +413,18 @@ function App() {
   }
 
   function editNews(item: NewsItem) {
+    // 未保存的修改不能静默丢弃。
+    //
+    // 原先无条件覆盖表单的五个 state：改了一半 A 条、手滑点了 B 条的「核对」，
+    // A 的修改无声消失。73 条连着审，这一定会发生至少一次，
+    // 而且发生时没有任何提示——你以为存过了。
+    if (selectedNews && selectedNews.id !== item.id && hasUnsavedEdits()) {
+      const ok = window.confirm(
+        `《${selectedNews.titleZh || selectedNews.sourceTitle}》有未保存的修改，` +
+          '切换到另一条会丢掉它们。要继续吗？',
+      )
+      if (!ok) return
+    }
     setSelectedNewsId(item.id)
     // 点「编辑」之后要让表单出现在眼前。
     // 原先什么都不做：在第 30 条的位置点编辑，表单在两千像素以外的页顶，
@@ -455,6 +471,18 @@ function App() {
         : `已发布 ${done} 条，${failures.length} 条未通过：${failures.slice(0, 3).join('；')}`,
     )
     setLoading(false)
+  }
+
+  /** 表单里是否有相对已保存内容的改动。 */
+  function hasUnsavedEdits(): boolean {
+    if (!selectedNews) return false
+    return (
+      newsTitle.trim() !== (selectedNews.titleZh || '').trim() ||
+      newsSummary.trim() !== (selectedNews.summaryZh || '').trim() ||
+      newsTitleEn.trim() !== (selectedNews.titleEn || '').trim() ||
+      newsSummaryEn.trim() !== (selectedNews.summaryEn || '').trim() ||
+      newsTags.trim() !== selectedNews.tags.join(', ').trim()
+    )
   }
 
   /** 保存后要打开的下一条：当前筛选列表里，排在这条之后的第一条未核对草稿。 */

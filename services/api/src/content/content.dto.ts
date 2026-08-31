@@ -128,14 +128,19 @@ export class UpdateNewsDto {
   @IsIn(['model', 'editor'])
   draftAuthor?: 'model' | 'editor';
 
+  // 允许空串 = 「这条不提供英文」。
+  //
+  // `@IsOptional()` 只放过 undefined/null，空串照样触发 `@Length(1,...)` 返回 400。
+  // 后台的英文输入框写着「留空则 App 内不显示英文」，而保存发的是 trim 后的空串——
+  // 想清掉一段写错的英文摘要，第一次就会撞上一串 NestJS 报错。
   @IsOptional()
   @IsString()
-  @Length(1, 240)
+  @Length(0, 240)
   titleEn?: string;
 
   @IsOptional()
   @IsString()
-  @Length(1, 2000)
+  @Length(0, 2000)
   summaryEn?: string;
 
   @IsOptional()
