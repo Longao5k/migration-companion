@@ -509,7 +509,12 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
         if item.get("draftAuthor") not in (None, "", "model"):
             skipped_human += 1
             continue
-        excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+        excerpt = (item.get("sourceExcerpt") or "").strip()
+        if not excerpt:
+            # 同上：没有原文就没有可核对的基准，不能算「校验通过」。
+            print(f"  跳过（无原文摘录）  {(row.get('title') or '')[:34]}")
+            skipped += 1
+            continue
         problems = validate(row, excerpt, row["publishedAt"][:4], row["sourceTitle"])
         if problems:
             print(f"  打回  {(row.get('title') or '')[:30]}  —— {'；'.join(problems)}")
@@ -631,7 +636,25 @@ def main() -> None:
             break
         if index:
             time.sleep(1)
-        excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+        excerpt = (item.get("sourceExcerpt") or "").strip()
+        if not excerpt:
+            # 没有原文摘录就不生成。
+            #
+            # 原先这里退回 item["summaryZh"]，也就是拿已有的中文摘要当「原文」
+            # 再摘一次。后果有两层：产出是摘要的摘要，与官方页面隔了一手；
+            # 而「摘要里的数字必须在原文中出现」那道校验比对的也是上一版摘要，
+            # 于是它只能证明「这一版和上一版一致」，证明不了「与官方一致」——
+            # 一个数字错了一位，只会被忠实地传下去。
+            #
+            # 实测线上有 12 条是这种情况（11 条昆士兰 + 1 条联邦法规），
+            # 它们和另外 66 条在后台长得一模一样，看不出没经过原文核对。
+            print(
+                f"[{index + 1}/{len(drafts)}] 跳过（无原文摘录）"
+                f"  {item['sourceTitle'][:44]}",
+                flush=True,
+            )
+            skipped += 1
+            continue
         # 开始之前就报一行。原先只在成功时打印，一条卡住就完全看不出跑到哪了——
         # 实际发生过：后台跑了 25 分钟，输出里只有开头两行，无法判断是慢还是死。
         print(f"[{index + 1}/{len(drafts)}] {item['sourceTitle'][:52]}", flush=True)

@@ -1,10 +1,11 @@
 import argparse
+import json
 import os
 from pathlib import Path
 from urllib.parse import urlparse
 
 from .api import submit_news_draft
-from .backfill import backfill_sa_news
+from .backfill import backfill_excerpts, backfill_sa_news
 from .legislation import discover_legislation, set_user_agent
 from .fetcher import OfficialFetcher
 from .runner import load_sources, run_source
@@ -37,6 +38,13 @@ def main() -> None:
         help="只列出会补哪些条目，不提交",
     )
     parser.add_argument(
+        "--backfill-excerpts",
+        type=Path,
+        help="给已入库但缺 sourceExcerpt 的条目补官方原文摘录。"
+             "参数是一个 JSON 数组，每项含 url / title / publishedAt——"
+             "日期必须从库里带来，不能让抓取端重新推断。",
+    )
+    parser.add_argument(
         "--legislation",
         action="store_true",
         help="从联邦法规注册库补技术移民相关法规；与 --source 无关，手动跑",
@@ -55,6 +63,10 @@ def main() -> None:
         return
 
     source = _resolve(sources, args.source)
+
+    if args.backfill_excerpts:
+        _run_backfill_excerpts(source, args)
+        return
 
     if not args.backfill:
         print(run_source(source, sources, args.state_dir))
@@ -76,6 +88,33 @@ def main() -> None:
 
     for date, title, outcome in results:
         print(f"{date}  {outcome:<10}  {title[:70]}")
+    print(f"共 {len(results)} 条")
+
+
+def _run_backfill_excerpts(source, args) -> None:
+    """给已入库但缺原文摘录的条目补上摘录。
+
+    走的是和采集同一个 upsert 入口，`ingestNews` 的 update 分支只写
+    publishedAt / sourceTitle / sourceExcerpt，不碰中文编辑稿和标签。
+    """
+    api_url = os.environ.get("REVIEW_API_URL", "")
+    worker_key = os.environ.get("WORKER_API_KEY", "")
+    if not args.dry_run and not (api_url and worker_key):
+        raise SystemExit("补摘录需要 REVIEW_API_URL 和 WORKER_API_KEY")
+
+    user_agent = os.environ.get("CRAWLER_USER_AGENT", "")
+    if not user_agent:
+        raise SystemExit("补摘录需要 CRAWLER_USER_AGENT")
+
+    entries = json.loads(args.backfill_excerpts.read_text(encoding="utf-8"))
+    sources = load_sources(args.registry)
+    fetcher = OfficialFetcher(user_agent, approved_hosts(sources))
+    results = backfill_excerpts(
+        source, fetcher, api_url, worker_key, entries, dry_run=args.dry_run
+    )
+
+    for date, title, outcome in results:
+        print(f"{date}  {outcome:<24}  {title[:60]}")
     print(f"共 {len(results)} 条")
 
 

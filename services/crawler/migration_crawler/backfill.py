@@ -97,3 +97,74 @@ def backfill_sa_news(
         results.append((item.published_at[:10], item.title, "已建草稿"))
 
     return results
+
+
+def backfill_excerpts(
+    source: Source,
+    fetcher: OfficialFetcher,
+    api_url: str,
+    worker_key: str,
+    entries: list[dict],
+    *,
+    dry_run: bool = False,
+    delay_seconds: float = 2.0,
+) -> list[tuple[str, str, str]]:
+    """给已入库但缺 sourceExcerpt 的条目补上官方原文摘录。
+
+    为什么需要它：后台审核靠原文与译稿左右对照，没有摘录的条目在界面上
+    只剩一句「原文摘录已丢失，请打开官方页面核对」——等于这条没法在后台审。
+    线上实测有 12 条这种情况（11 条昆士兰 + 1 条联邦法规）。
+
+    更糟的是摘要工具当时会退回拿已有中文摘要当「原文」再摘一次，于是产出是
+    摘要的摘要，而「数字必须在原文中出现」那道校验比对的也是上一版摘要——
+    它只能证明前后两版一致，证明不了与官方一致。
+
+    与 `backfill_sa_news` 的区别：那个是从列表页发现新条目并建草稿；
+    这个针对**已知 URL 的已有条目**，走同一个 upsert 入口。
+    `ingestNews` 的 update 分支只写 publishedAt / sourceTitle / sourceExcerpt，
+    不碰 titleZh / summaryZh / tags，所以重新提交不会覆盖任何人写的东西。
+
+    publishedAt 必须由调用方从库里带过来。让抓取端重新推断日期，
+    等于给每条内容一次改错日期的机会——西澳那次就是把标题里的
+    「until 31 December 2026」当成了发布日期。
+    """
+    results: list[tuple[str, str, str]] = []
+
+    for index, entry in enumerate(entries):
+        if index:
+            time.sleep(delay_seconds)
+        url = entry["url"]
+        title = entry["title"]
+        article_source = replace(source, url=url, discovery_url=None)
+        try:
+            article = fetcher.fetch(article_source, ConditionalHeaders())
+        except Exception as exc:  # noqa: BLE001
+            results.append((entry["publishedAt"][:10], title, f"取不到：{exc}"))
+            continue
+
+        excerpt = extract_article_excerpt(article.body, title)
+        if len(excerpt) < MIN_EXCERPT_CHARS:
+            results.append((entry["publishedAt"][:10], title, "正文过短，跳过"))
+            continue
+
+        item = DiscoveredNews(
+            title=title,
+            url=url,
+            category=entry.get("category", ""),
+            published_at=entry["publishedAt"],
+            excerpt=excerpt,
+        )
+        if dry_run:
+            results.append(
+                (entry["publishedAt"][:10], title, f"试运行（摘录 {len(excerpt)} 字符）")
+            )
+            continue
+
+        try:
+            submit_news_draft(api_url, worker_key, source, item)
+        except Exception as exc:  # noqa: BLE001
+            results.append((entry["publishedAt"][:10], title, f"提交失败：{exc}"))
+            continue
+        results.append((entry["publishedAt"][:10], title, f"已补摘录 {len(excerpt)} 字符"))
+
+    return results
