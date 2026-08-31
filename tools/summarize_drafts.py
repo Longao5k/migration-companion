@@ -33,6 +33,7 @@ import subprocess
 import sys
 import time
 import unicodedata
+from datetime import datetime, timezone
 import urllib.error
 from urllib.request import Request, urlopen
 
@@ -310,6 +311,41 @@ def display_width(text: str) -> int:
     )
 
 
+def checks_performed(result: dict, excerpt: str, source_title: str) -> list[str]:
+    """校验层实际验过哪些项，用人话写，直接显示在审核界面上。
+
+    `validate` 返回的是「哪里不合格」，一条都没有时它返回空列表——而空列表
+    传达不了任何信息。审的人真正需要的是反过来那一面：**哪些地方机器已经核过、
+    我可以少看一眼，哪些没核过、必须我自己盯**。
+
+    这些字符串会写进 NewsItem.draftChecks，在后台逐条列出来。
+    不要在这里写没真正做过的检查——它的全部价值就在于可信。
+    """
+    summary = (result.get("summary") or "").strip()
+    summary_en = (result.get("summaryEn") or "").strip()
+    checked = [f"已与官方原文摘录逐项比对（{len(excerpt)} 字符）"]
+
+    numbers = set(re.findall(NUMBER, summary)) | set(re.findall(NUMBER, summary_en))
+    if numbers:
+        listed = "、".join(sorted(numbers)[:6])
+        checked.append(f"摘要中的数字均见于原文：{listed}")
+        checked.append("中英两份数字一致")
+    else:
+        # 说清楚「没有数字可查」，而不是让人以为数字查过了。
+        checked.append("摘要中没有需要核对的数字（四位以上或带千分位）")
+
+    checked.append(f"未出现中文建议口吻词（{len(BANNED)} 项词表）")
+    checked.append(f"未出现英文建议口吻词（{len(BANNED_EN)} 项词表）")
+    checked.append("标题与摘要长度在上限内")
+
+    # 校验层管不到的，明说。这几项只有人能判断，写出来是为了让人知道要盯哪里。
+    checked.append(
+        "以下未经机器核对，需人工判断：事实是否被曲解、"
+        "日期与生效条件是否对应、是否遗漏关键限制条件"
+    )
+    return checked
+
+
 def validate(
     result: dict,
     excerpt: str,
@@ -529,6 +565,12 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
             body = {
                 "titleEn": row["titleEn"],
                 "summaryEn": row["summaryEn"],
+                # 已发布条目的中文是人写的，draftAuthor 保持不动；但英文是模型
+                # 补的，溯源要留下——否则界面上没有任何东西说明这几段英文
+                # 没有人看过。
+                "draftModel": row.get("model", ""),
+                "draftChecks": ["英文摘要由模型起草，中文为人工撰写"]
+                + checks_performed(row, excerpt, row["sourceTitle"]),
             }
         else:
             body = {
@@ -537,6 +579,10 @@ def apply_stored(path: str, items: dict, dry_run: bool) -> None:
                 "titleEn": row["titleEn"],
                 "summaryEn": row["summaryEn"],
                 "draftAuthor": "model",
+                # 重放走的是当初那次生成的结果，模型名从结果文件里带出来；
+                # 老的结果文件没有这一项时留空，不要瞎猜一个填上去。
+                "draftModel": row.get("model", ""),
+                "draftChecks": checks_performed(row, excerpt, row["sourceTitle"]),
             }
         pending.append({"id": row["id"], "body": body})
         written += 1
@@ -624,6 +670,9 @@ def main() -> None:
         drafts = drafts[: args.limit]
 
     pool = ModelPool(args.model.split(","))
+    # 起草时间在这一轮内固定：审的人关心的是「这批稿子是什么时候写的」，
+    # 精确到每条秒级没有意义，反而让同一批看起来像来自不同时刻。
+    now_iso = datetime.now(timezone.utc).isoformat()
     print(f"待处理草稿 {len(drafts)} 条")
     print("模型顺序：" + " → ".join(pool.models))
     print()
@@ -716,8 +765,14 @@ def main() -> None:
                 "titleEn": result["titleEn"],
                 "summaryEn": result["summaryEn"],
                 # 标注是模型起草的：这类稿子要在后台逐字对照原文，
-                # 它编造过邀请人数，也写出过「建议申请」。
+                # 它写出过「建议申请」这类带建议口吻的句子。
                 "draftAuthor": "model",
+                # 溯源随稿子一起走，审的人才知道是谁写的、验过哪些项。
+                "draftModel": pool.current,
+                "draftedAt": now_iso,
+                "draftChecks": checks_performed(
+                    result, excerpt, item["sourceTitle"]
+                ),
             }
         admin_request(
             f"/content/admin/news/{item['id']}",

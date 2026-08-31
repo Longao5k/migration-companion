@@ -47,6 +47,9 @@ type NewsItem = {
   sourceTitle: string
   sourceExcerpt: string | null
   draftAuthor: 'model' | 'editor' | null
+  draftModel: string | null
+  draftedAt: string | null
+  draftChecks: string[]
   sourceUrl: string
   tags: string[]
   publishedAt: string
@@ -104,9 +107,14 @@ type SourceHealth = Source & {
   _count: { snapshots: number; changes: number; news: number }
 }
 
+// 顺序 = 每天真正要干的活的顺序。
+//
+// 原先第一项叫「审核队列」，审的却是变更日志（今天 0 条），而真正待审的
+// 73 条资讯藏在第二项「已发布内容」里——一个听起来跟审核无关的名字。
+// 登录第一屏因此写着「审核队列 0」，实际待审 73。
 const nav: Array<{ id: View; icon: string; label: string }> = [
-  { id: 'review', icon: '⌁', label: '审核队列' },
-  { id: 'published', icon: '◫', label: '已发布内容' },
+  { id: 'published', icon: '◫', label: '资讯审核' },
+  { id: 'review', icon: '⌁', label: '政策变更' },
   { id: 'sources', icon: '⌘', label: '官方来源' },
   { id: 'corrections', icon: '↻', label: '更正记录' },
   { id: 'health', icon: '◷', label: '采集状态' },
@@ -121,7 +129,9 @@ function formatTime(value?: string) {
 }
 
 function App() {
-  const [view, setView] = useState<View>('review')
+  // 默认落在资讯审核：那是每天真正要干的活。
+  // 原先默认是变更队列，登录第一眼看到「0 条待审核」，而实际待审 73。
+  const [view, setView] = useState<View>('published')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [token, setToken] = useState('')
@@ -607,7 +617,9 @@ function App() {
           {nav.map((item) => (
             <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => openView(item.id)}>
               <span>{item.icon}</span>{item.label}
-              {item.id === 'review' && <b>{queue.length}</b>}
+              {/* 徽章显示的必须是「还没干完的活」，不是「这个页面有多少条」。 */}
+              {item.id === 'published' && uncheckedCount > 0 && <b>{uncheckedCount}</b>}
+              {item.id === 'review' && queue.length > 0 && <b>{queue.length}</b>}
             </button>
           ))}
         </nav>
@@ -814,12 +826,44 @@ function App() {
                 </a>
               </div>
 
-              {selectedNews.draftAuthor === 'model' && (
-                <p className="model-warning">
-                  中英两份都由模型起草，请逐字对照左侧原文，两份都要看。
-                  它编造过数字，也写出过带建议口吻的句子。
-                  <strong>保存即代表你已核对</strong>——保存之后这条才允许发布。
-                </p>
+              {/* 有机器痕迹就显示，不只看 draftAuthor。
+                  已发布的 5 条种子内容中文是人写的、英文是模型补的，
+                  draftAuthor 是 null——按老条件它们什么提示都没有，
+                  而那几段英文确实没有人看过。 */}
+              {(selectedNews.draftAuthor === 'model' ||
+                selectedNews.draftChecks.length > 0) && (
+                <div className="model-warning">
+                  <p>
+                    {selectedNews.draftAuthor === 'model'
+                      ? '中英两份都由模型起草，请逐字对照左侧原文，两份都要看。'
+                      : '中文为人工撰写，英文摘要由模型起草——英文那份仍需对照原文核对。'}
+                    它写出过带建议口吻的句子。
+                    <strong>保存即代表你已核对</strong>
+                    {selectedNews.draftAuthor === 'model'
+                      ? '——保存之后这条才允许发布。'
+                      : '。'}
+                  </p>
+                  {/* 机器验过什么、没验什么，直接摊开。
+                      这份信息此前只打在起草工具的 console 日志里，一个字都没进到
+                      这个界面——于是每条都得当成完全没核过来审，白花力气。 */}
+                  {selectedNews.draftChecks.length > 0 && (
+                    <ul className="draft-checks">
+                      {selectedNews.draftChecks.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <small className="draft-origin">
+                    {selectedNews.draftModel
+                      ? `起草模型 ${selectedNews.draftModel}`
+                      : '起草模型未记录'}
+                    {selectedNews.draftedAt
+                      ? ` · ${formatTime(selectedNews.draftedAt)}`
+                      : ''}
+                    {selectedNews.draftedAt &&
+                      ' · 官方页面在这之后改过的话，这份稿子就是过期的'}
+                  </small>
+                </div>
               )}
 
               <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>

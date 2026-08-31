@@ -128,6 +128,24 @@ export class UpdateNewsDto {
   @IsIn(['model', 'editor'])
   draftAuthor?: 'model' | 'editor';
 
+  // 模型稿的溯源：谁写的、何时写的、校验层验过哪些项。
+  // 这些只由起草工具写入，编辑在后台保存时不会带上，因此人一改就自然停留在
+  // 「这是当初机器留下的记录」——正是它该有的含义。
+  @IsOptional()
+  @IsString()
+  @Length(0, 120)
+  draftModel?: string;
+
+  @IsOptional()
+  @IsDateString()
+  draftedAt?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Length(0, 120, { each: true })
+  draftChecks?: string[];
+
   // 允许空串 = 「这条不提供英文」。
   //
   // `@IsOptional()` 只放过 undefined/null，空串照样触发 `@Length(1,...)` 返回 400。

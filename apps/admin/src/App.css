@@ -104,6 +104,12 @@ button:disabled { opacity: .55; cursor: wait; }
 .editor-form textarea { min-height: 86px; resize: vertical; }
 .editor-form .check-row { display: flex; align-items: center; gap: 8px; }
 .editor-form .check-row input { width: auto; }
+.draft-checks { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+.draft-checks li { font-size: 11px; line-height: 1.45; font-weight: 600; }
+/* 最后一项是「机器没验、要人自己盯」的清单，必须和上面几项区分开——
+   否则它读起来像又一条「已经核过了」。 */
+.draft-checks li:last-child { list-style: none; margin-left: -18px; margin-top: 5px; padding: 6px 8px; border-radius: 7px; background: #ffffffa8; color: #8a3b32; }
+.draft-origin { display: block; margin-top: 8px; font-size: 10px; font-weight: 700; opacity: .75; }
 .editor-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .editor-actions .approve { flex: 1 1 auto; }
 .editor-actions kbd { margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: #ffffff30; font-size: 10px; font-weight: 700; }
