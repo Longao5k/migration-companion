@@ -735,12 +735,16 @@ function App() {
                           )
                           if (ok) void toggleNews(item)
                         }}
-                        disabled={loading || state === 'machine-drafted' || state === 'no-source'}
+                        disabled={
+                          loading ||
+                          state === 'machine-drafted' ||
+                          (state === 'no-source' && item.draftAuthor !== 'editor')
+                        }
                         title={
                           state === 'machine-drafted'
                             ? '这条还没人核对过。请先点「核对」逐字对照原文并保存。'
-                            : state === 'no-source'
-                              ? '这条没有官方原文摘录，无法核对，服务端不允许发布。'
+                            : state === 'no-source' && item.draftAuthor !== 'editor'
+                              ? '这条没有官方原文摘录。请先点「核对」，打开官方页面逐项核对并保存。'
                               : undefined
                         }
                       >
@@ -775,7 +779,7 @@ function App() {
                   {selectedNews.sourceExcerpt ||
                     '这条没有留存官方原文摘录。它的中英摘要是由上一版摘要转写的，' +
                       '其中的数字从未与官方页面比对过——必须打开官方页面逐个核对。' +
-                      '在补上原文摘录之前，服务端不允许发布这条。'}
+                      '核对完保存，这一下就是你对此负责的记号；未保存前服务端不允许发布。'}
                 </p>
                 <a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">
                   打开官方页面 ↗
