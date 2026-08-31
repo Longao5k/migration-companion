@@ -86,14 +86,25 @@ summaryEn：2 到 4 句，不超过 400 字符。"""
 
 # 输出里出现这些词就打回。宁可少一条，不可发出一条带建议口吻的。
 # 英文侧的同类词。中文拦住了不等于英文也拦住了。
+# 这两张表挡的是**对读者的建议和资格判断**，不是「资格」这个词本身。
+#
+# 第一版里有裸的「有资格」和 "eligible for"，它们会把转述官方规则的句子
+# 一并打回——「文件过期将没有资格获得 NSW 提名」是在复述规则，
+# 正是这个工具该做的事；「你可能有资格申请 190」才是越界。
+# 同理 "Employers are eligible for DAMA concessions" 是事实，
+# "you may be eligible" 是判断。
+#
+# 收窄到第二人称与推测形态，是让这道闸对准真正的危险，不是放松它。
 BANNED_EN = [
-    "you should", "we recommend", "recommended", "advisable", "eligible for",
-    "you may qualify", "likely to", "expected to be approved", "we advise",
+    "you should", "we recommend", "recommended", "advisable",
+    "you are eligible", "you may be eligible", "you may qualify", "you qualify",
+    "likely to", "expected to be approved", "we advise",
 ]
 
 BANNED = [
     "建议你", "建议申请", "你应该", "应尽快", "值得考虑", "不妨",
-    "有资格", "符合条件的你", "你可能", "预计将", "料将", "有望",
+    "你有资格", "您有资格", "可能有资格", "符合条件的你", "你可能",
+    "预计将", "料将", "有望",
     "我们通知", "本机构", "官方授权", "我们建议",
 ]
 
@@ -297,8 +308,10 @@ def validate(
     # 英文上限不能照搬中文的 400：一个中文字承载的信息约等于两三个英文字符，
     # 同一组事实的英文写法天然长一倍多。第一版用 400 卡英文，打回的两条读下来
     # 都没有多余的话，纯粹是被单位不同的尺子量了。
-    if len(summary_en) > 700:
-        problems.append(f"英文摘要 {len(summary_en)} 字符，超过 700")
+    # 上限与中文上限成比例：中文摘要卡 300 字，一段忠实的英文转述约为其 2.4~2.7 倍。
+    # 700 定得偏紧，一条无一句废话的完整转述实测 711 字符被打回。
+    if len(summary_en) > 800:
+        problems.append(f"英文摘要 {len(summary_en)} 字符，超过 800")
     if not re.search(r"[㐀-鿿]", title):
         problems.append("标题没有中文")
     if not re.search(r"[㐀-鿿]", summary):
@@ -582,6 +595,9 @@ def main() -> None:
         if index:
             time.sleep(1)
         excerpt = item.get("sourceExcerpt") or item["summaryZh"]
+        # 开始之前就报一行。原先只在成功时打印，一条卡住就完全看不出跑到哪了——
+        # 实际发生过：后台跑了 25 分钟，输出里只有开头两行，无法判断是慢还是死。
+        print(f"[{index + 1}/{len(drafts)}] {item['sourceTitle'][:52]}", flush=True)
         result = None
         # 同一条内容在换模型之后重试。额度是按模型算的，换一个就继续，
         # 不该让这一条以及后面所有条陪着一起失败。
@@ -620,7 +636,10 @@ def main() -> None:
             "problems": problems,
         })
         if problems:
-            print(f"  打回  {result.get('title', '')[:30]}  —— {'；'.join(problems)}")
+            print(
+                f"  打回  {result.get('title', '')[:30]}  —— {'；'.join(problems)}",
+                flush=True,
+            )
             skipped += 1
             continue
         if args.dry_run:
@@ -645,7 +664,7 @@ def main() -> None:
             method="PATCH",
             body=body,
         )
-        print(f"  写回  {result['title'][:40]}")
+        print(f"  写回  {result['title'][:40]}", flush=True)
         written += 1
 
     with io.open(args.out, "w", encoding="utf-8") as handle:
