@@ -24,7 +24,7 @@ ALLOWED = {0x09, 0x0A, 0x0D}
 SUFFIXES = {".py", ".sh", ".mjs", ".json", ".toml", ".cfg"}
 
 _ROOT = Path(__file__).resolve().parents[3]
-_SCAN_DIRS = ("services/crawler", "tools")
+_SCAN_DIRS = ("services/crawler", "tools", "infra/server", "services/api/scripts")
 
 
 def _sources() -> list[Path]:
@@ -51,6 +51,29 @@ def test_source_has_no_literal_control_characters(path: Path) -> None:
     )
 
 
+LF_ONLY = {".sh"}
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in _sources() if p.suffix in LF_ONLY], ids=lambda p: p.name
+)
+def test_shell_scripts_use_lf(path: Path) -> None:
+    """在 Linux 上执行的脚本不能带 CRLF。
+
+    .gitattributes 管的是提交与检出，管不住「在 Windows 上写完直接 scp 上去」。
+    带 CRLF 的脚本里，`set -euo pipefail` 末尾会多一个回车，bash 把
+    `pipefail` 连同那个回车当成一个非法选项名直接退出——服务器上六个脚本
+    曾经同时中招，而错误信息完全看不出是换行符的问题。
+    """
+    crlf = bytes([13, 10])
+    assert crlf not in path.read_bytes(), (
+        f"{path} 是 CRLF 换行。它在 Linux 上执行，必须是 LF。"
+    )
+
+
 def test_scan_actually_covers_files() -> None:
-    # 防止上面那条因为路径写错而变成「零个文件全部通过」。
+    # 防止上面那些因为路径写错而变成「零个文件全部通过」。
+    # CRLF 那条第一版就踩了这个坑：扫描目录里没有任何 .sh，
+    # 参数化拿到空列表，pytest 报 skipped，看起来一切正常。
     assert len(_sources()) > 20
+    assert len([p for p in _sources() if p.suffix == ".sh"]) >= 5
