@@ -257,6 +257,10 @@ export class ContentService {
         dto.titleZh ?? current.titleZh,
         dto.summaryZh ?? current.summaryZh,
       );
+      this.assertHumanReviewed(
+        dto.draftAuthor ?? current.draftAuthor,
+        current.sourceExcerpt,
+      );
     }
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.newsItem.update({
@@ -586,6 +590,37 @@ export class ContentService {
         count: tagCounts.get(code) ?? 0,
       })),
     };
+  }
+
+  /**
+   * 模型稿不能直接发布。
+   *
+   * 「人工核实后发布」是签核过的规则，但闸门此前只检查「有没有汉字」——
+   * 而中英两份都是摘要工具一次跑出来的，全都有汉字。后台的「全选可发布」
+   * 因此圈中了 73 条从没有人看过的模型稿，一次点击就能推给所有订阅者。
+   * 这个模型编造过数字，也写出过带建议口吻的句子。
+   *
+   * 判据用 `!== 'model'` 而不是 `=== 'editor'`：null 是种子内容和这个字段
+   * 存在之前的老条目，那些是人写的，不该被误伤。要挡的是明确标记为机器起草、
+   * 且此后没有人保存过的那些——编辑在后台按一次保存，标记就变成 editor。
+   *
+   * 同时挡住没有原文摘录的：审核靠原文与译稿左右对照，没有原文就没有
+   * 可核对的基准，「审过了」无从谈起。
+   */
+  private assertHumanReviewed(
+    draftAuthor: string | null,
+    sourceExcerpt: string | null,
+  ) {
+    if (draftAuthor === 'model') {
+      throw new BadRequestException(
+        '这条还是模型起草的稿子。请在后台逐字对照官方原文核对并保存后再发布。',
+      );
+    }
+    if (!sourceExcerpt?.trim()) {
+      throw new BadRequestException(
+        '这条没有留存官方原文摘录，无法在后台核对。请先补齐原文摘录再发布。',
+      );
+    }
   }
 
   private assertChineseEditorialCopy(title: string, summary: string) {

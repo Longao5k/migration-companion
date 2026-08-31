@@ -55,12 +55,22 @@ type NewsItem = {
 }
 
 /** 一条草稿处在哪个阶段。中文那一档的判据和服务端的发布闸门用同一个正则。 */
-type DraftState = 'needs-chinese' | 'needs-english' | 'ready' | 'published'
+type DraftState =
+  | 'no-source'
+  | 'needs-chinese'
+  | 'needs-english'
+  | 'machine-drafted'
+  | 'ready'
+  | 'published'
 
 const CJK = /[㐀-鿿]/
 
 function draftState(item: NewsItem): DraftState {
   if (item.isPublished) return 'published'
+  // 没有官方原文摘录 = 没有可核对的基准，这条在后台审不了。
+  // 排在最前面：它比「缺中文」更严重，因为缺中文一眼看得出来，
+  // 没有原文却是**看起来完全正常**的——列表上和其它条目长得一模一样。
+  if (!item.sourceExcerpt?.trim()) return 'no-source'
   if (!CJK.test(item.titleZh) || !CJK.test(item.summaryZh)) return 'needs-chinese'
   // 英文缺失单独成一档，而不是并进「待发布」。申请人常要把政策转述给雇主、
   // 律师或职业评估机构，英文那份是给那些场合用的；混在「待发布」里，
@@ -69,13 +79,19 @@ function draftState(item: NewsItem): DraftState {
   // 只在后台拦，不在服务端拦：英文缺失是完整度问题，不是安全问题，
   // 不该让一条紧急的政策变更因为没写英文而发不出去。
   if (!item.titleEn?.trim() || !item.summaryEn?.trim()) return 'needs-english'
+  // 中英俱全 ≠ 可以发布。这两份都是摘要工具一次跑出来的，
+  // 「有汉字」这个判据对 73 条模型稿全部成立。把它叫「待发布」并配成绿色，
+  // 等于告诉人「已放行，等着发」——而实际含义只是「机器把稿子写完了」。
+  if (item.draftAuthor === 'model') return 'machine-drafted'
   return 'ready'
 }
 
 const DRAFT_STATE_LABEL: Record<DraftState, string> = {
+  'no-source': '无原文',
   'needs-chinese': '待写中文',
   'needs-english': '待写英文',
-  ready: '待发布',
+  'machine-drafted': '未核对',
+  ready: '已核对',
   published: '已发布',
 }
 
@@ -148,8 +164,15 @@ function App() {
       }),
     [news, newsFilter, onlyModelDrafts],
   )
-  // 只有中文写好的才可批量发布——没写中文的会被服务端闸门 400 挡回，
-  // 让人一条条点着试正是现在最耗时间的地方。
+  // 只有**人核对过**的才可批量发布。
+  //
+  // 这里原先圈的是 draftState === 'ready'，而 ready 当时的判据只是
+  // 「中英文都非空」——两份都是摘要工具一次跑出来的，于是 73 条从没有人
+  // 看过的模型稿全部被圈中，页面上最醒目的绿色按钮一次点击就能把它们
+  // 推给所有订阅者。这不是审核的加速器，是审核的跳过键。
+  //
+  // 服务端也已经补上同一道闸（assertHumanReviewed），前端可以出 bug，
+  // 闸门不能只在前端。
   const readySelectable = useMemo(
     () => visibleNews.filter((item) => draftState(item) === 'ready'),
     [visibleNews],
@@ -387,6 +410,15 @@ function App() {
 
   function editNews(item: NewsItem) {
     setSelectedNewsId(item.id)
+    // 点「编辑」之后要让表单出现在眼前。
+    // 原先什么都不做：在第 30 条的位置点编辑，表单在两千像素以外的页顶，
+    // 屏幕上毫无变化，看起来像没反应。
+    requestAnimationFrame(() => {
+      const form = document.querySelector('.editor-form')
+      form?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const first = form?.querySelector('input') as HTMLInputElement | null
+      first?.focus()
+    })
     setNewsTitle(item.titleZh)
     setNewsSummary(item.summaryZh)
     setNewsTitleEn(item.titleEn || '')
@@ -425,7 +457,18 @@ function App() {
     setLoading(false)
   }
 
-  async function saveNewsDraft(event: FormEvent<HTMLFormElement>) {
+  /** 保存后要打开的下一条：当前筛选列表里，排在这条之后的第一条未核对草稿。 */
+  function nextUnchecked(currentId: string): NewsItem | undefined {
+    const index = visibleNews.findIndex((item) => item.id === currentId)
+    return visibleNews
+      .slice(index + 1)
+      .find((item) => draftState(item) === 'machine-drafted')
+  }
+
+  async function saveNewsDraft(
+    event: FormEvent<HTMLFormElement>,
+    advance = false,
+  ) {
     event.preventDefault()
     if (!selectedNews) return
     setLoading(true)
@@ -445,9 +488,22 @@ function App() {
           draftAuthor: 'editor',
         }),
       })
-      setNotice('中文编辑稿已保存；确认事实和原文链接后再发布。')
-      setSelectedNewsId('')
+      // 保存后不再无条件收起编辑器。
+      //
+      // 原先是 setSelectedNewsId('')，右栏立刻翻回「新增新闻」表单——
+      // 一个在审核流程里完全用不到的表单。73 条就是 73 次「保存 → 表单消失 →
+      // 滚回列表 → 找下一条 → 点编辑 → 滚回顶部」。
+      const next = advance ? nextUnchecked(selectedNews.id) : undefined
       await load('published')
+      if (next) {
+        editNews(next)
+        setNotice(`已核对，进入下一条（${nextUnchecked(next.id) ? '后面还有' : '这是最后一条'}）`)
+      } else if (advance) {
+        setSelectedNewsId('')
+        setNotice('这一批已经核对完了。勾选「已核对」的条目即可批量发布。')
+      } else {
+        setNotice('已保存并标记为已核对；确认原文链接后即可发布。')
+      }
     } catch (error) {
       setNotice(`编辑稿未保存：${error instanceof Error ? error.message : '未知错误'}`)
     } finally {
@@ -455,6 +511,13 @@ function App() {
     }
   }
 
+  // 审核进度：审到一半合上电脑，第二天回来要能一眼知道还剩多少。
+  const uncheckedCount = news.filter(
+    (item) => !item.isPublished && item.draftAuthor === 'model',
+  ).length
+  const checkedCount = news.filter(
+    (item) => !item.isPublished && draftState(item) === 'ready',
+  ).length
   const enabledCount = sources.filter((item) => item.enabled).length
   const healthyCount = health.filter((item) => item.lastSuccessAt && !item.lastFailureCode).length
 
@@ -536,7 +599,9 @@ function App() {
         </header>
 
         <section className="metrics" aria-label="运营概览">
-          <article><span>待审核</span><strong>{queue.length}</strong><small>重大/重要不自动发布</small></article>
+          {/* 第一格原先显示的是变更队列（今天是 0），而实际待核对的资讯有 73 条。
+              登录第一屏写着「待审核 0」、实际待审 73，是这个后台最误导人的一处。 */}
+          <article><span>待核对资讯</span><strong>{uncheckedCount}</strong><small>模型稿，逐字对照原文后保存</small></article>
           <article><span>已发布新闻</span><strong>{news.filter((item) => item.isPublished).length}</strong><small>摘要必须回到原文</small></article>
           <article><span>启用来源</span><strong>{enabledCount}</strong><small>新增来源默认停用</small></article>
           <article><span>健康来源</span><strong>{health.length ? `${healthyCount}/${health.length}` : '—'}</strong><small>故障不会生成政策结论</small></article>
@@ -551,16 +616,30 @@ function App() {
           <section className="management-grid">
             <div className="management-list">
               <div className="panel-heading">
-                <div><h2>新闻与发布状态</h2></div>
+                <div>
+                  <h2>资讯审核</h2>
+                  <small>
+                    已核对 {checkedCount} / 待核对 {uncheckedCount}
+                    {checkedCount > 0 && ' —— 勾选已核对的可批量发布'}
+                  </small>
+                </div>
               </div>
 
               {/* 73 条平铺、无筛选、无批量，只能逐条点——这是「审不完」的直接原因。 */}
               <div className="list-toolbar">
-                {(['all', 'needs-chinese', 'needs-english', 'ready', 'published'] as const).map((key) => (
+                {([
+                  'all',
+                  'machine-drafted',
+                  'ready',
+                  'no-source',
+                  'needs-chinese',
+                  'needs-english',
+                  'published',
+                ] as const).map((key) => (
                   <button
                     key={key}
                     className={newsFilter === key ? 'filter active' : 'filter'}
-                    onClick={() => setNewsFilter(key)}
+                    onClick={() => { setNewsFilter(key); setSelectedIds(new Set()) }}
                   >
                     {key === 'all' ? '全部' : DRAFT_STATE_LABEL[key]}
                     <span className="count">
@@ -603,7 +682,7 @@ function App() {
                     disabled={loading || selectedIds.size === 0}
                     onClick={() => void publishSelected()}
                   >
-                    发布选中 {selectedIds.size} 条
+                    发布已核对的 {selectedIds.size} 条
                   </button>
                 </div>
               )}
@@ -640,8 +719,31 @@ function App() {
                       </small>
                     </div>
                     <span className="card-actions">
-                      <button onClick={() => editNews(item)} disabled={loading}>编辑</button>
-                      <button onClick={() => toggleNews(item)} disabled={loading}>
+                      <button onClick={() => editNews(item)} disabled={loading}>
+                        {state === 'machine-drafted' ? '核对' : '编辑'}
+                      </button>
+                      {/* 发布是不可撤的：撤下能改状态，但推送已经发出去了。
+                          它此前和「编辑」长成一对灰按钮，还没有二次确认。 */}
+                      <button
+                        className={item.isPublished ? undefined : 'publish'}
+                        onClick={() => {
+                          if (item.isPublished) return void toggleNews(item)
+                          const ok = window.confirm(
+                            `发布《${item.titleZh || item.sourceTitle}》？
+` +
+                              '订阅了对应辖区与标签的用户会立刻收到推送，推送发出后收不回来。',
+                          )
+                          if (ok) void toggleNews(item)
+                        }}
+                        disabled={loading || state === 'machine-drafted' || state === 'no-source'}
+                        title={
+                          state === 'machine-drafted'
+                            ? '这条还没人核对过。请先点「核对」逐字对照原文并保存。'
+                            : state === 'no-source'
+                              ? '这条没有官方原文摘录，无法核对，服务端不允许发布。'
+                              : undefined
+                        }
+                      >
                         {item.isPublished ? '撤下' : '发布'}
                       </button>
                     </span>
@@ -649,7 +751,18 @@ function App() {
                 )
               })}
             </div>
-            {selectedNews ? <form className="editor-form" onSubmit={saveNewsDraft}>
+            {selectedNews ? <form
+              className="editor-form"
+              onSubmit={(event) => saveNewsDraft(event, true)}
+              // 连审时手不必离开键盘。73 条逐条填表，每次 4 次鼠标往返，
+              // 光是往返就足以让人中途放弃。
+              onKeyDown={(event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  void saveNewsDraft(event as unknown as FormEvent<HTMLFormElement>, true)
+                }
+              }}
+            >
               <h2>编辑新闻草稿</h2>
 
               {/* 原文和译稿必须同屏。原先原文被中文摘要覆盖掉了，审核只能开外部
@@ -660,7 +773,9 @@ function App() {
                 <strong>{selectedNews.sourceTitle}</strong>
                 <p className="source-excerpt">
                   {selectedNews.sourceExcerpt ||
-                    '这条采集于加入原文留存之前，原文摘录已丢失。请打开官方页面核对。'}
+                    '这条没有留存官方原文摘录。它的中英摘要是由上一版摘要转写的，' +
+                      '其中的数字从未与官方页面比对过——必须打开官方页面逐个核对。' +
+                      '在补上原文摘录之前，服务端不允许发布这条。'}
                 </p>
                 <a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">
                   打开官方页面 ↗
@@ -670,7 +785,8 @@ function App() {
               {selectedNews.draftAuthor === 'model' && (
                 <p className="model-warning">
                   中英两份都由模型起草，请逐字对照左侧原文，两份都要看。
-                  它曾编造过邀请人数，也写出过带建议口吻的句子。
+                  它编造过数字，也写出过带建议口吻的句子。
+                  <strong>保存即代表你已核对</strong>——保存之后这条才允许发布。
                 </p>
               )}
 
@@ -684,8 +800,23 @@ function App() {
               <label>英文摘要<textarea maxLength={2000} value={newsSummaryEn} onChange={(event) => setNewsSummaryEn(event.target.value)} placeholder="与中文陈述同一组事实，数字必须一致" /></label>
 
               <label>标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
-              <button className="approve" disabled={loading}>保存编辑稿</button>
-              <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>取消</button>
+              <div className="editor-actions">
+                <button className="approve" disabled={loading}>
+                  核对无误，保存并下一条 <kbd>Ctrl+Enter</kbd>
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) =>
+                    saveNewsDraft(event as unknown as FormEvent<HTMLFormElement>, false)
+                  }
+                  disabled={loading}
+                >
+                  只保存
+                </button>
+                <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>
+                  取消
+                </button>
+              </div>
             </form> : <form className="editor-form" onSubmit={createNews}>
               <h2>新增新闻</h2>
               <label>批准来源<select name="sourceId" required defaultValue=""><option value="" disabled>选择来源</option>{sources.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>

@@ -94,12 +94,21 @@ button:disabled { opacity: .55; cursor: wait; }
 .card-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .state-pill { border-radius: 20px; padding: 3px 7px; background: #eee9e2; color: #735d4b; font-size: 10px; font-weight: 900; }
 .state-pill.online { color: #246659; background: #d9f3ec; }
-.editor-form { padding: 22px; display: grid; gap: 13px; }
+/* 编辑器吸顶。
+   左列 73 张卡片约四千多像素高，右列编辑器七百像素钉在最顶上——
+   在第 30 条的位置点「编辑」，屏幕上什么都不会发生，表单在两千像素以外。
+   每条两次长距离滚动，73 条就是二十多分钟纯滚动。 */
+.editor-form { padding: 22px; display: grid; gap: 13px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
 .editor-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 800; }
 .editor-form input, .editor-form select, .editor-form textarea, .correction-editor textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; background: #fafaf7; color: var(--ink); outline-color: var(--green); }
 .editor-form textarea { min-height: 86px; resize: vertical; }
 .editor-form .check-row { display: flex; align-items: center; gap: 8px; }
 .editor-form .check-row input { width: auto; }
+.editor-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.editor-actions .approve { flex: 1 1 auto; }
+.editor-actions kbd { margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: #ffffff30; font-size: 10px; font-weight: 700; }
+/* 「发布」是不可撤的——推送发出去就收不回来了。不能和「编辑」长成一对灰按钮。 */
+.management-card .publish { background: #147b66; color: #fff; }
 .guard-copy { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .full-width { grid-column: 1 / -1; }
 .wide-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 14px 18px; text-align: left; color: var(--ink); }
@@ -123,8 +132,16 @@ button:disabled { opacity: .55; cursor: wait; }
   main { padding: 30px 28px; }
   .workspace { grid-template-columns: 330px 1fr; }
   .metrics article { padding: 14px; }
-  .management-grid { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
+}
+
+/* 双列塌成单列的断点单独降到 900px。
+   两列的最小宽度是 460+340+间距 ≈ 816px，1220 这个门槛把它提前了四百像素。
+   把浏览器拉到半屏、另一半开官方页面，正是「逐字对照原文」最自然的姿势——
+   不该在那个宽度就把编辑器挤到 73 张卡片下面去。 */
+@media (max-width: 900px) {
+  .management-grid { grid-template-columns: 1fr; }
+  .editor-form { position: static; max-height: none; }
 }
 
 /* 独立登录页。未登录时不显示控制台外壳——看到一堆 0 的指标卡会让人
@@ -238,6 +255,12 @@ button:disabled { opacity: .55; cursor: wait; }
 
 /* 状态徽章。判据与服务端的发布闸门一致。 */
 .state-pill.needs-chinese { background: #f5e6c8; color: #6b5416; }
+/* 「无原文」最重：这条在后台没有可核对的基准，服务端也不允许发布。 */
+.state-pill.no-source { background: #7a2b25; color: #fff; }
+/* 「未核对」= 机器写完了、没人看过。绿色留给真正核对过的，
+   否则界面在鼓励人去发它们——之前它就是绿的，叫「待发布」。 */
+.state-pill.machine-drafted { background: #f0dcda; color: #a2544f; }
+.state-pill.needs-english { background: #e3e0f0; color: #4a4270; }
 .state-pill.ready { background: #d5e8de; color: #0a3f34; }
 .state-pill.published { background: #147b66; color: #fff; }
 .state-pill.model { background: #f0dcda; color: #a2544f; }
