@@ -6,7 +6,7 @@
 密钥只从环境变量读，绝不写进代码或提交：
 
     export SUMMARIZER_API_KEY=...        # 模型服务的 key
-    export SUMMARIZER_BASE_URL=...       # OpenAI 兼容地址
+    export SUMMARIZER_BASE_URL=...       # 与 API key 同地域的 OpenAI 兼容地址
     export SUMMARIZER_SSH_HOST=tencent-light   # 后台只监听回环，经 ssh 转发调用
 
 后台密钥留在服务器上，本机不需要也不应该持有——脚本经 ssh 在服务器上读它。
