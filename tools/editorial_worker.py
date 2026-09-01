@@ -85,7 +85,14 @@ def create_draft(item: dict, pool: sd.ModelPool) -> tuple[dict, str]:
             item["publishedAt"][:4],
             item["sourceTitle"],
         )
-        if not problems and item.get("draftModel"):
+        # Historical drafts may come from the family now reserved for review.
+        # Reusing one would either make the reviewer check its own family or leave
+        # the item permanently pending. Re-draft those with the active draft family.
+        if (
+            not problems
+            and item.get("draftModel")
+            and model_family(item["draftModel"]) == model_family(pool.current)
+        ):
             return existing, item["draftModel"]
 
     while True:
