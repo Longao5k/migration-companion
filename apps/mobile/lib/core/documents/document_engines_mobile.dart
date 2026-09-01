@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:document_sdk/document_sdk.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -7,21 +8,17 @@ import 'package:path_provider/path_provider.dart';
 import 'document_engine.dart';
 import 'document_preflight.dart';
 
-PdfDocumentEngine createPdfDocumentEngine() => SystemViewerPdfEngine();
+PdfDocumentEngine createPdfDocumentEngine() => DocumentSdkPdfEngine();
 DocxDocumentEngine createDocxDocumentEngine() => _SystemViewerDocxEngine();
 
-/// 用系统自带的阅读器打开文档，不捆绑任何第三方文档 SDK。
+/// 自研 Document SDK 的宿主边界。
 ///
-/// 此前这里接的是 Apryse 免费评估版。ADR-011 明确规定「发布构建不得包含仅限评估、
-/// 不允许终端用户使用的组件」，因此评估版不能进商店包——那是许可违约，不是风格问题。
-/// 在自研 SDK 完成或购买生产许可之前，第一版只提供**查看**：把文件交给系统阅读器，
-/// 不承诺批注、表单、签名和页面整理。
-///
-/// 保留的仍然是我们自己的逻辑：先做兼容性预检、校验 `%PDF-` 文件头、复制出 App 自有的
-/// 工作副本再交给外部程序——原件在任何情况下都不被外部程序直接持有。
-class SystemViewerPdfEngine implements PdfDocumentEngine {
+/// 先用元数据挡住缺文件和超限，再让 SDK 对实际字节逐份给出兼容等级和 capability。
+/// 原件只用于创建 App 私有工作副本；编辑器打开副本，保存时再产出一个新的、经过
+/// SDK 验证的文件，所以不会把用户材料原地覆盖。
+class DocumentSdkPdfEngine implements PdfDocumentEngine {
   @override
-  String get implementationName => '系统阅读器（仅查看）';
+  String get implementationName => 'Waymark 自研 PDF 引擎';
 
   @override
   Future<DocumentPreflightResult> preflight({
@@ -34,39 +31,72 @@ class SystemViewerPdfEngine implements PdfDocumentEngine {
       byteSize: byteSize,
       hasLocalPath: localPath != null,
     );
-    if (result.kind != DocumentKind.pdf || localPath == null) return result;
+    if (result.kind != DocumentKind.pdf ||
+        !result.canOpen ||
+        localPath == null) {
+      return result;
+    }
 
     final file = File(localPath);
-    final header = await file
-        .openRead(0, 5)
-        .fold<List<int>>(<int>[], (bytes, part) => bytes..addAll(part));
-    if (header.length < 5 || String.fromCharCodes(header) != '%PDF-') {
-      return const DocumentPreflightResult(
+    final sdk = DocumentSdk();
+    try {
+      final report = await sdk.probe(
+        await file.readAsBytes(),
+        fileName: fileName,
+      );
+      if (report.info.format != DocumentFormat.pdf) {
+        return const DocumentPreflightResult(
+          kind: DocumentKind.pdf,
+          access: DocumentAccess.unavailable,
+          title: '这个文件不是 PDF',
+          message: '文件的实际内容和扩展名对不上。原件没有被修改。',
+        );
+      }
+      final issueNote = report.issues.isEmpty
+          ? ''
+          : ' 另有 ${report.issues.length} 项兼容性提示，打开后会逐页说明。';
+      if (report.canEdit) {
+        return DocumentPreflightResult(
+          kind: DocumentKind.pdf,
+          access: DocumentAccess.editable,
+          title: '可在 Waymark 内编辑',
+          message: '这份 PDF 已通过兼容性检查；工具会按文件实际支持的能力开启。$issueNote',
+        );
+      }
+      if (report.compatibility == CompatibilityLevel.readOnly) {
+        return DocumentPreflightResult(
+          kind: DocumentKind.pdf,
+          access: DocumentAccess.readOnly,
+          title: '可以查看，但不能保存修改',
+          message: 'SDK 判断这份文件只能安全查看，因此不会显示保存编辑的入口。$issueNote',
+        );
+      }
+      return DocumentPreflightResult(
         kind: DocumentKind.pdf,
         access: DocumentAccess.unavailable,
-        title: '这个文件不是 PDF',
-        message: '文件的实际内容和扩展名对不上，为了不损坏原件，我们不会打开它。',
+        title: '暂时打不开这份 PDF',
+        message: report.issues.isEmpty
+            ? 'SDK 不支持这份文件的结构，原件没有被修改。'
+            : report.issues.first.message,
       );
+    } on DocumentSdkException catch (error) {
+      return DocumentPreflightResult(
+        kind: DocumentKind.pdf,
+        access: DocumentAccess.unavailable,
+        title: 'PDF 兼容性检查失败',
+        message: error.message,
+      );
+    } finally {
+      await sdk.dispose();
     }
-    // 编辑能力尚未提供，如实降级为只读，不用「已保存」掩盖做不到的事。
-    return const DocumentPreflightResult(
-      kind: DocumentKind.pdf,
-      access: DocumentAccess.readOnly,
-      title: '可以查看',
-      message: '当前版本用系统阅读器打开 PDF。批注和签名还在开发中。',
-    );
   }
 
   @override
-  Future<String> openWorkingCopy({
+  Future<String> createWorkingCopy({
     required String sourcePath,
     required String displayName,
   }) async {
     final target = await _createWorkingCopy(sourcePath, displayName);
-    final result = await OpenFilex.open(target.path, type: 'application/pdf');
-    if (result.type != ResultType.done) {
-      throw FileSystemException('这台设备没有可以打开 PDF 的应用。', target.path);
-    }
     return target.path;
   }
 }

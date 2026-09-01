@@ -6,9 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   testWidgets('renders the guest-first home experience', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(
-      const ProviderScope(child: WaymarkApp()),
-    );
+    await tester.pumpWidget(const ProviderScope(child: WaymarkApp()));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 

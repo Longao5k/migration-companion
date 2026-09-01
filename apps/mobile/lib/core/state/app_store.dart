@@ -1960,7 +1960,8 @@ class AppStore extends StateNotifier<AppState> {
         payload['cloudFileUploads'] as Map<String, dynamic>? ??
         const <String, dynamic>{};
     final purchases =
-        payload['purchases'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+        payload['purchases'] as Map<String, dynamic>? ??
+        const <String, dynamic>{};
     state = state.copyWith(
       entitlementTier: payload['tier'] as String? ?? 'FREE',
       trialEndsAt: payload['trialEndsAt'] == null
@@ -1980,8 +1981,7 @@ class AppStore extends StateNotifier<AppState> {
       cloudFileUploadsDisabledReason: cloudUploads['disabledReason'] as String?,
       purchasesEnabled: purchases['enabled'] as bool? ?? false,
       purchasesDisabledReason:
-          purchases['disabledReason'] as String? ??
-          '订阅购买暂未开放，开放后会在应用内提示。',
+          purchases['disabledReason'] as String? ?? '订阅购买暂未开放，开放后会在应用内提示。',
       clearCloudFileUploadsDisabledReason:
           cloudUploads['disabledReason'] == null,
     );

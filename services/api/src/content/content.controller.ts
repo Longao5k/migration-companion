@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AdminApiKeyGuard, WorkerApiKeyGuard } from './api-key.guard';
 import {
+  AutomatedEditorialReviewDto,
   CreateNewsDto,
   CreateSourceDto,
   IngestChangeDto,
@@ -119,6 +120,21 @@ export class ContentController {
   @UseGuards(WorkerApiKeyGuard)
   ingestNews(@Body() body: IngestNewsDto) {
     return this.content.ingestNews(body);
+  }
+
+  @Get('worker/editorial-queue')
+  @UseGuards(WorkerApiKeyGuard)
+  editorialQueue() {
+    return this.content.editorialQueue();
+  }
+
+  @Patch('worker/news/:id/editorial-review')
+  @UseGuards(WorkerApiKeyGuard)
+  applyAutomatedEditorialReview(
+    @Param('id') id: string,
+    @Body() body: AutomatedEditorialReviewDto,
+  ) {
+    return this.content.applyAutomatedEditorialReview(id, body);
   }
 
   @Post('worker/source-checks')

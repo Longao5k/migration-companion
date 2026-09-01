@@ -13,6 +13,7 @@ import {
   IsString,
   IsUrl,
   Length,
+  Matches,
 } from 'class-validator';
 
 export class CreateSourceDto {
@@ -125,8 +126,8 @@ export class IngestNewsDto {
 
 export class UpdateNewsDto {
   @IsOptional()
-  @IsIn(['model', 'editor'])
-  draftAuthor?: 'model' | 'editor';
+  @IsIn(['model', 'editor', 'automation'])
+  draftAuthor?: 'model' | 'editor' | 'automation';
 
   // 模型稿的溯源：谁写的、何时写的、校验层验过哪些项。
   // 这些只由起草工具写入，编辑在后台保存时不会带上，因此人一改就自然停留在
@@ -197,6 +198,64 @@ export class UpdateNewsDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+}
+
+/** Result produced by the isolated editorial worker after drafting and review. */
+export class AutomatedEditorialReviewDto {
+  /** SHA-256 of sourceTitle + newline + sourceExcerpt used by the worker. */
+  @IsString()
+  @Length(64, 64)
+  @Matches(/^[a-f0-9]{64}$/)
+  sourceDigest!: string;
+
+  @IsString()
+  @Length(1, 240)
+  titleZh!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  summaryZh!: string;
+
+  @IsString()
+  @Length(1, 240)
+  titleEn!: string;
+
+  @IsString()
+  @Length(1, 2000)
+  summaryEn!: string;
+
+  @IsString()
+  @Length(1, 120)
+  draftModel!: string;
+
+  @IsString()
+  @Length(1, 240)
+  reviewModel!: string;
+
+  @IsInt()
+  @Min(3)
+  @Max(5)
+  reviewRuns!: number;
+
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @Length(1, 300, { each: true })
+  checks!: string[];
+
+  /** Any possible disagreement, retained for audit and shown to the editor. */
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 300, { each: true })
+  findings!: string[];
+
+  /** High-severity or repeated disagreements. These can never auto-publish. */
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 300, { each: true })
+  blockingFindings!: string[];
 }
 
 export class IngestChangeDto {

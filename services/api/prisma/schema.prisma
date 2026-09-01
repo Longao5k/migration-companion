@@ -34,6 +34,14 @@ enum ReviewStatus {
   CORRECTED
 }
 
+enum EditorialReviewStatus {
+  PENDING
+  AUTO_APPROVED
+  HUMAN_REQUIRED
+  HUMAN_APPROVED
+  FAILED
+}
+
 enum ChangeImportance {
   GENERAL
   IMPORTANT
@@ -351,6 +359,13 @@ model NewsItem {
   /// 哪些没核过、必须我自己盯」。这个信息此前只打在 console 日志里，
   /// 一个字都没进到审核界面——于是每条都得当成完全没核过来审。
   draftChecks String[] @default([])
+  /// 自动编辑流水线的结论。模型起草和审核是两步，不能用 draftAuthor 猜审核状态。
+  editorialReviewStatus EditorialReviewStatus @default(PENDING)
+  editorialReviewModel  String?
+  editorialReviewedAt   DateTime?
+  editorialReviewRuns   Int?
+  editorialFindings     Json?
+  editorialRiskReasons  String[]              @default([])
   sourceUrl   String   @unique
   tags        String[]
   isPublished Boolean  @default(false)
@@ -360,6 +375,7 @@ model NewsItem {
 
   @@index([publishedAt])
   @@index([isPublished, publishedAt])
+  @@index([editorialReviewStatus, publishedAt])
 }
 
 model Subscription {

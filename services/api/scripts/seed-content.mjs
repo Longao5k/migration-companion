@@ -7,9 +7,9 @@
 //    返回 403、我们据此停用了它，重跑一次 seed 就会把它重新打开并继续抓。
 //    registry 决定来源存在与否，后台决定它开不开。
 //
-// 2. 直接写 isPublished，不走发布扇出，因此订阅者不会收到通知。这对历史内容
-//    是对的：一次播种几十条陈年公告，挨个推送就是刷屏。**新内容不要走这里**，
-//    走后台发布，那条路径才会通知订阅者。
+// 2. reviewed-news 只负责首次创建。已经入库的条目绝不在每次容器启动时覆盖：
+//    官方原文变化后采集器会撤下旧摘要并重新审核；如果 seed 又把它改回已发布，
+//    就绕过了整条编辑流水线。首次创建也不走通知扇出，避免历史内容刷屏。
 import { PrismaClient } from '@prisma/client'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -59,16 +59,11 @@ try {
         tags: item.tags,
         publishedAt: new Date(item.publishedAt),
         isPublished: true,
+        draftAuthor: 'editor',
+        editorialReviewStatus: 'HUMAN_APPROVED',
+        editorialReviewedAt: new Date(),
       },
-      update: {
-        sourceId: source.id,
-        titleZh: item.titleZh,
-        summaryZh: item.summaryZh,
-        sourceTitle: item.sourceTitle,
-        tags: item.tags,
-        publishedAt: new Date(item.publishedAt),
-        isPublished: true,
-      },
+      update: {},
     })
   }
   console.log(`Reviewed news ready: ${reviewedNews.length} published items`)

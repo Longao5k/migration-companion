@@ -28,6 +28,16 @@ class RelevanceTests(unittest.TestCase):
         ]:
             self.assertTrue(is_relevant(row(name), since=SINCE), name)
 
+    def test_收录技术移民以外的签证与入籍主题(self):
+        for name in [
+            "Migration (Subclass 600 (Visitor) Visa) Instrument 2026",
+            "Migration (Family and Partner Visa Arrangements) Instrument 2025",
+            "Migration (Protection Visa Requirements) Instrument 2025",
+            "Migration (Subclass 192 (Pacific Engagement) Visa Pre-application) 2025",
+            "Australian Citizenship Amendment Act 2026",
+        ]:
+            self.assertTrue(is_relevant(row(name), since=SINCE), name)
+
     def test_不收与技术移民无关的(self):
         # 这些都真实出现在 contains(name,'Migration') 的结果里。
         # 收进来用户会以为它跟自己的 190/491 申请有关。
@@ -35,7 +45,6 @@ class RelevanceTests(unittest.TestCase):
             "Migration (Prohibited Things) Determination 2025",
             "Migration (Daily Maintenance Amount for Persons in Detention) 2026",
             "Combatting Antisemitism, Hate and Extremism (Criminal and Migration) Act 2026",
-            "Migration (Subclass 192 (Pacific Engagement) Visa Pre-application) 2025",
             # 这一条真的被收进过库：命中了 regional，其实是离岸处理国指定。
             "Migration (Regional Processing Country—Republic of Nauru) Designation 2023",
             "Migration Amendment (Removal and Other Measures) Act 2024",

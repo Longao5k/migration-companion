@@ -23,10 +23,13 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'lib\pnpm.ps1')
 
 $pnpm = Resolve-PnpmCommand
-$env:DATABASE_URL = 'postgresql://migration:local-only-migration@localhost:55432/migration?schema=public'
+if (-not $env:LOCAL_POSTGRES_PORT) { $env:LOCAL_POSTGRES_PORT = '55432' }
+if (-not $env:LOCAL_MINIO_PORT) { $env:LOCAL_MINIO_PORT = '45900' }
+if (-not $env:LOCAL_MINIO_CONSOLE_PORT) { $env:LOCAL_MINIO_CONSOLE_PORT = '45901' }
+$env:DATABASE_URL = "postgresql://migration:local-only-migration@localhost:$($env:LOCAL_POSTGRES_PORT)/migration?schema=public"
 $env:AWS_ACCESS_KEY_ID = 'localmigration'
 $env:AWS_SECRET_ACCESS_KEY = 'local-only-migration-storage'
-$env:S3_ENDPOINT = 'http://127.0.0.1:59000'
+$env:S3_ENDPOINT = "http://127.0.0.1:$($env:LOCAL_MINIO_PORT)"
 $env:S3_FORCE_PATH_STYLE = 'true'
 $env:S3_USER_BUCKET = 'migration-user-files'
 

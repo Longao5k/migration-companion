@@ -13,7 +13,7 @@ const defaults: Record<string, string> = {
   DATABASE_URL: 'postgresql://migration:local-only-migration@localhost:55432/migration?schema=public',
   AWS_ACCESS_KEY_ID: 'localmigration',
   AWS_SECRET_ACCESS_KEY: 'local-only-migration-storage',
-  S3_ENDPOINT: 'http://127.0.0.1:59000',
+  S3_ENDPOINT: 'http://127.0.0.1:45900',
   S3_FORCE_PATH_STYLE: 'true',
   S3_USER_BUCKET: 'migration-user-files',
   S3_REGION: 'ap-southeast-2',
@@ -21,6 +21,11 @@ const defaults: Record<string, string> = {
   DEV_AUTH: 'true',
   DEV_AUTO_SCAN: 'true',
   DEV_STORE: 'true',
+  // Production keeps both gates closed until their external services exist.
+  // Acceptance tests deliberately open them so the guarded paths are tested;
+  // individual tests then close each switch and verify the fail-safe behavior.
+  CLOUD_FILES_ENABLED: 'true',
+  STORE_VERIFICATION_ENABLED: 'true',
   WORKER_API_KEY: 'local-worker',
   ADMIN_API_KEY: 'local-admin',
 };

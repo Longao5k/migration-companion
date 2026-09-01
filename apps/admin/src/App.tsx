@@ -4,6 +4,12 @@ import './App.css'
 
 type Importance = 'MAJOR' | 'IMPORTANT' | 'GENERAL'
 type ReviewStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'CORRECTED'
+type EditorialReviewStatus =
+  | 'PENDING'
+  | 'AUTO_APPROVED'
+  | 'HUMAN_REQUIRED'
+  | 'HUMAN_APPROVED'
+  | 'FAILED'
 type View = 'review' | 'published' | 'sources' | 'corrections' | 'health'
 
 type Source = {
@@ -46,10 +52,19 @@ type NewsItem = {
   summaryEn: string | null
   sourceTitle: string
   sourceExcerpt: string | null
-  draftAuthor: 'model' | 'editor' | null
+  draftAuthor: 'model' | 'editor' | 'automation' | null
   draftModel: string | null
   draftedAt: string | null
   draftChecks: string[]
+  // Keep these optional while the API and admin image are rolling over. The
+  // previous API legitimately returns no editorial fields until its migration
+  // has run; the review console must stay usable during that short window.
+  editorialReviewStatus?: EditorialReviewStatus
+  editorialReviewModel?: string | null
+  editorialReviewedAt?: string | null
+  editorialReviewRuns?: number | null
+  editorialFindings?: string[] | null
+  editorialRiskReasons?: string[]
   sourceUrl: string
   tags: string[]
   publishedAt: string
@@ -112,7 +127,11 @@ function draftState(item: NewsItem): DraftState {
   // 中英俱全 ≠ 可以发布。这两份都是摘要工具一次跑出来的，
   // 「有汉字」这个判据对 73 条模型稿全部成立。把它叫「待发布」并配成绿色，
   // 等于告诉人「已放行，等着发」——而实际含义只是「机器把稿子写完了」。
-  if (item.draftAuthor === 'model') return 'machine-drafted'
+  if (
+    item.editorialReviewStatus === 'HUMAN_REQUIRED' ||
+    item.editorialReviewStatus === 'FAILED' ||
+    item.draftAuthor === 'model'
+  ) return 'machine-drafted'
   return 'ready'
 }
 
@@ -120,7 +139,7 @@ const DRAFT_STATE_LABEL: Record<DraftState, string> = {
   'no-source': '无原文',
   'needs-chinese': '待写中文',
   'needs-english': '待写英文',
-  'machine-drafted': '未核对',
+  'machine-drafted': '需人工复核',
   ready: '已核对',
   published: '已发布',
 }
@@ -208,7 +227,7 @@ function App() {
     () =>
       news.filter((item) => {
         if (newsFilter !== 'all' && draftState(item) !== newsFilter) return false
-        if (onlyModelDrafts && item.draftAuthor !== 'model') return false
+        if (onlyModelDrafts && draftState(item) !== 'machine-drafted') return false
         return true
       }),
     [news, newsFilter, onlyModelDrafts],
@@ -233,17 +252,21 @@ function App() {
   // 刷新后 token 有了、列表却是空的——看起来像「登录了但什么都没有」，
   // 比直接退回登录页更让人困惑。
   useEffect(() => {
-    if (token) void load(view)
+    if (token) void load(view, token)
     // 只在挂载时跑一次：之后的加载由登录、切页签和保存各自触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    if (!token) throw new Error('请先登录')
+  async function request<T>(
+    path: string,
+    init?: RequestInit,
+    accessToken: string = token,
+  ): Promise<T> {
+    if (!accessToken) throw new Error('请先登录')
     const response = await fetch(path, {
       ...init,
       headers: {
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${accessToken}`,
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers,
       },
@@ -283,11 +306,12 @@ function App() {
       setToken(signedIn.token)
       setSignedInAs(signedIn.email)
       writeStoredSession(signedIn)
-      // 登录完还要自己点一次「同步」才有数据，是没道理的。
-      queueMicrotask(() => void load())
       // 密码用完就从内存里抹掉，不留在 React 状态里等着被 devtools 看见。
       setPassword('')
-      setNotice('已登录。会话 8 小时后过期。')
+      // React 的 token state 要到下一次 render 才更新。直接调用使用闭包 token 的
+      // load() 会拿到空令牌，造成「登录后必须刷新一次才有数据」。首次同步明确使用
+      // 登录接口刚返回的令牌，并等它完成后再结束 loading。
+      await load(view, signedIn.token)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '登录失败')
     } finally {
@@ -304,11 +328,11 @@ function App() {
   }
 
   /** 顶部四个指标卡横跨多个页签，必须一次拉齐——否则会把「这一页没加载」显示成 0。 */
-  async function loadOverview() {
+  async function loadOverview(accessToken: string = token) {
     const [queueData, newsData, sourceData] = await Promise.all([
-      request<ChangeItem[]>('/v1/content/admin/review-queue'),
-      request<NewsItem[]>('/v1/content/admin/news'),
-      request<Source[]>('/v1/content/admin/sources'),
+      request<ChangeItem[]>('/v1/content/admin/review-queue', undefined, accessToken),
+      request<NewsItem[]>('/v1/content/admin/news', undefined, accessToken),
+      request<Source[]>('/v1/content/admin/sources', undefined, accessToken),
     ])
     setQueue(queueData)
     setNews(newsData)
@@ -316,11 +340,11 @@ function App() {
     return { queueData, newsData }
   }
 
-  async function load(target: View = view) {
+  async function load(target: View = view, accessToken: string = token) {
     setLoading(true)
     try {
       if (target === 'review') {
-        const { queueData, newsData } = await loadOverview()
+        const { queueData, newsData } = await loadOverview(accessToken)
         setSelectedId(queueData[0]?.id ?? '')
         const drafts = newsData.filter((item) => !item.isPublished).length
         setNotice(
@@ -330,9 +354,9 @@ function App() {
         )
       } else if (target === 'published') {
         const [changeData, newsData, sourceData] = await Promise.all([
-          request<ChangeItem[]>('/v1/content/admin/changes'),
-          request<NewsItem[]>('/v1/content/admin/news'),
-          request<Source[]>('/v1/content/admin/sources'),
+          request<ChangeItem[]>('/v1/content/admin/changes', undefined, accessToken),
+          request<NewsItem[]>('/v1/content/admin/news', undefined, accessToken),
+          request<Source[]>('/v1/content/admin/sources', undefined, accessToken),
         ])
         setChanges(changeData)
         setNews(newsData)
@@ -345,15 +369,19 @@ function App() {
         // 却能误触的发布动作。连审 73 条就是弹 73 次。
         setNotice(`已同步 ${newsData.length} 条新闻与 ${changeData.length} 条变更记录`)
       } else if (target === 'sources') {
-        const data = await request<Source[]>('/v1/content/admin/sources')
+        const data = await request<Source[]>('/v1/content/admin/sources', undefined, accessToken)
         setSources(data)
         setNotice(`已同步 ${data.length} 个来源`)
       } else if (target === 'corrections') {
-        const data = await request<ChangeItem[]>('/v1/content/admin/corrections')
+        const data = await request<ChangeItem[]>('/v1/content/admin/corrections', undefined, accessToken)
         setCorrections(data)
         setNotice(`已同步 ${data.length} 条更正记录`)
       } else {
-        const data = await request<SourceHealth[]>('/v1/content/admin/source-health')
+        const data = await request<SourceHealth[]>(
+          '/v1/content/admin/source-health',
+          undefined,
+          accessToken,
+        )
         setHealth(data)
         setNotice(`已同步 ${data.length} 个来源的采集状态`)
       }
@@ -609,10 +637,13 @@ function App() {
 
   // 审核进度：审到一半合上电脑，第二天回来要能一眼知道还剩多少。
   const uncheckedCount = news.filter(
-    (item) => !item.isPublished && item.draftAuthor === 'model',
+    (item) => !item.isPublished && draftState(item) === 'machine-drafted',
   ).length
   const checkedCount = news.filter(
     (item) => !item.isPublished && draftState(item) === 'ready',
+  ).length
+  const autoPublishedCount = news.filter(
+    (item) => item.isPublished && item.editorialReviewStatus === 'AUTO_APPROVED',
   ).length
   const enabledCount = sources.filter((item) => item.enabled).length
   const healthyCount = health.filter((item) => item.lastSuccessAt && !item.lastFailureCode).length
@@ -684,7 +715,7 @@ function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-note"><span className="status-dot" />南澳数据单元<small>重大与重要变化必须人工核实</small></div>
+        <div className="sidebar-note"><span className="status-dot" />全澳数据单元<small>低风险自动发布，高风险人工复核</small></div>
       </aside>
 
       <main>
@@ -702,8 +733,8 @@ function App() {
         <section className="metrics" aria-label="运营概览">
           {/* 第一格原先显示的是变更队列（今天是 0），而实际待核对的资讯有 73 条。
               登录第一屏写着「待审核 0」、实际待审 73，是这个后台最误导人的一处。 */}
-          <article><span>待核对资讯</span><strong>{uncheckedCount}</strong><small>模型稿，逐字对照原文后保存</small></article>
-          <article><span>已发布新闻</span><strong>{news.filter((item) => item.isPublished).length}</strong><small>摘要必须回到原文</small></article>
+          <article><span>人工审核队列</span><strong>{uncheckedCount}</strong><small>仅高风险或复核冲突</small></article>
+          <article><span>已发布新闻</span><strong>{news.filter((item) => item.isPublished).length}</strong><small>其中自动审核 {autoPublishedCount} 条</small></article>
           <article><span>启用来源</span><strong>{enabledCount}</strong><small>新增来源默认停用</small></article>
           <article><span>健康来源</span><strong>{health.length ? `${healthyCount}/${health.length}` : '—'}</strong><small>故障不会生成政策结论</small></article>
         </section>
@@ -720,7 +751,7 @@ function App() {
                 <div>
                   <h2>资讯审核</h2>
                   <small>
-                    已核对 {checkedCount} / 待核对 {uncheckedCount}
+                    人工已核对 {checkedCount} / 待人工复核 {uncheckedCount}
                     {checkedCount > 0 && ' —— 勾选已核对的可批量发布'}
                   </small>
                 </div>
@@ -756,7 +787,7 @@ function App() {
                     checked={onlyModelDrafts}
                     onChange={(event) => setOnlyModelDrafts(event.target.checked)}
                   />
-                  只看模型稿
+                  只看人工队列
                 </label>
               </div>
 
@@ -809,9 +840,9 @@ function App() {
                         />
                       )}
                       <span className={`state-pill ${state}`}>{DRAFT_STATE_LABEL[state]}</span>
-                      {item.draftAuthor === 'model' && (
-                        <span className="state-pill model" title="模型起草，需逐字对照原文">
-                          模型稿
+                      {draftState(item) === 'machine-drafted' && (
+                        <span className="state-pill model" title="自动流程判定需要人工复核">
+                          人工队列
                         </span>
                       )}
                       <strong>{item.titleZh || item.sourceTitle}</strong>
@@ -892,18 +923,28 @@ function App() {
                   draftAuthor 是 null——按老条件它们什么提示都没有，
                   而那几段英文确实没有人看过。 */}
               {(selectedNews.draftAuthor === 'model' ||
+                selectedNews.draftAuthor === 'automation' ||
                 selectedNews.draftChecks.length > 0) && (
                 <div className="model-warning">
                   <p>
-                    {selectedNews.draftAuthor === 'model'
-                      ? '中英两份都由模型起草，请逐字对照左侧原文，两份都要看。'
-                      : '中文为人工撰写，英文摘要由模型起草——英文那份仍需对照原文核对。'}
-                    它写出过带建议口吻的句子。
-                    <strong>保存即代表你已核对</strong>
-                    {selectedNews.draftAuthor === 'model'
-                      ? '——保存之后这条才允许发布。'
-                      : '。'}
+                    {selectedNews.editorialReviewStatus === 'HUMAN_REQUIRED'
+                      ? '自动流程已完成起草和独立复核，但服务器判定为高风险或存在冲突。'
+                      : selectedNews.editorialReviewStatus === 'AUTO_APPROVED'
+                        ? '这条已通过低风险自动审核并发布；以下保留完整机器审计记录。'
+                        : selectedNews.draftAuthor === 'model'
+                          ? '这是旧版模型草稿，尚未完成新的独立自动复核。'
+                          : '这条含机器生成内容，请结合审计记录核对。'}
+                    {selectedNews.editorialReviewStatus !== 'AUTO_APPROVED' && (
+                      <><strong>保存即代表你已人工核对</strong>，保存之后才允许发布。</>
+                    )}
                   </p>
+                  {(selectedNews.editorialRiskReasons ?? []).length > 0 && (
+                    <ul className="draft-checks">
+                      {(selectedNews.editorialRiskReasons ?? []).map((reason) => (
+                        <li className="check-alert high" key={reason}>人工审核原因：{reason}</li>
+                      ))}
+                    </ul>
+                  )}
                   {/* 机器验过什么、没验什么，直接摊开。
                       这份信息此前只打在起草工具的 console 日志里，一个字都没进到
                       这个界面——于是每条都得当成完全没核过来审，白花力气。 */}
@@ -937,6 +978,12 @@ function App() {
                       : ''}
                     {selectedNews.draftedAt &&
                       ' · 官方页面在这之后改过的话，这份稿子就是过期的'}
+                    {selectedNews.editorialReviewModel
+                      ? ` · 复核模型 ${selectedNews.editorialReviewModel}`
+                      : ''}
+                    {selectedNews.editorialReviewRuns
+                      ? ` · ${selectedNews.editorialReviewRuns} 轮`
+                      : ''}
                   </small>
                 </div>
               )}
@@ -975,7 +1022,7 @@ function App() {
               <label>中文原创摘要<textarea name="summaryZh" required maxLength={2000} /></label>
               <label>原文标题<input name="sourceTitle" required maxLength={240} /></label>
               <label>原文链接<input name="sourceUrl" type="url" required /></label>
-              <label>标签（逗号分隔）<input name="tags" placeholder="190, 职业清单" /></label>
+              <label>标签（逗号分隔）<input name="tags" placeholder="学生签证, 500, 工作权益" /></label>
               <label>官方发布时间<input name="publishedAt" type="datetime-local" required /></label>
               <label className="check-row"><input name="isPublished" type="checkbox" />保存后立即发布</label>
               <p className="guard-copy">只写事实性摘要，不判断个人资格，不复制官方网页全文。</p>
@@ -1003,7 +1050,7 @@ function App() {
               <h2>登记候选来源</h2>
               <label>名称<input name="name" required maxLength={160} /></label>
               <label>HTTPS 地址<input name="url" type="url" required /></label>
-              <label>司法辖区<select name="jurisdiction" defaultValue="AU-SA"><option value="AU-SA">AU-SA 南澳</option><option value="AU-FED">AU-FED 联邦上游</option></select></label>
+              <label>司法辖区<select name="jurisdiction" defaultValue="AU-SA"><option value="AU-FED">AU-FED 联邦</option><option value="AU-ACT">AU-ACT 首都领地</option><option value="AU-NSW">AU-NSW 新州</option><option value="AU-NT">AU-NT 北领地</option><option value="AU-QLD">AU-QLD 昆州</option><option value="AU-SA">AU-SA 南澳</option><option value="AU-TAS">AU-TAS 塔州</option><option value="AU-VIC">AU-VIC 维州</option><option value="AU-WA">AU-WA 西澳</option></select></label>
               <label>授权/引用备注<textarea name="licenseNote" maxLength={1000} required /></label>
               <p className="guard-copy">新增后保持停用；确认 robots、条款、版权和页面级第三方内容后再启用。</p>
               <button className="approve" disabled={loading}>保存为停用</button>

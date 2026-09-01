@@ -136,6 +136,19 @@ services:
       - crawler-evidence:/data/evidence
     restart: "no"
 
+  editorial:
+    image: migration-companion-crawler
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      EDITORIAL_API_URL: http://api:3000
+    command: ["python", "/worker/tools/editorial_worker.py", "--loop"]
+    depends_on:
+      api:
+        condition: service_healthy
+      crawler-init:
+        condition: service_completed_successfully
+
   maintenance:
     image: curlimages/curl:8.16.0
     restart: unless-stopped

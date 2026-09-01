@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/documents/document_engine.dart';
 import '../../core/documents/document_engines.dart';
+import '../../core/documents/pdf_editor_screen.dart';
 import '../../shared/widgets/common.dart';
 
 class ToolsScreen extends StatelessWidget {
@@ -15,16 +16,13 @@ class ToolsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          // 界面不得出现当前构建做不到的能力词。编辑能力随评估版文档 SDK 一并移出
-          // 发布构建（ADR-011），订阅入口也已关闭——继续挂着「编辑」「试用」
-          // 既是对用户的虚假陈述，也过不了商店审核。
           Text(
-            '打开前先看清楚，原件不动',
+            '在副本上编辑，原件不动',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
           Text(
-            '打开的始终是副本，原件留在原处。文件对不上类型时我们不会打开它。',
+            '每份 PDF 都先做兼容性检查，只开放它确实支持的工具。保存会生成新文件。',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -33,8 +31,8 @@ class ToolsScreen extends StatelessWidget {
           _ToolCard(
             icon: Icons.picture_as_pdf_outlined,
             title: 'PDF',
-            description: '用手机自带的阅读器打开',
-            badge: '可查看',
+            description: '批注、签名、表单填写与页面整理',
+            badge: '可编辑',
             onTap: () => _pickDocument(context, ['pdf']),
           ),
           const SizedBox(height: 12),
@@ -47,19 +45,19 @@ class ToolsScreen extends StatelessWidget {
           ),
           const SectionHeader(title: '这个版本能做什么'),
           const _CapabilityRow(
-            icon: Icons.visibility_outlined,
-            title: '查看和整理',
-            body: '把材料放进清单、查看、导出原件',
+            icon: Icons.draw_outlined,
+            title: '批注与签名',
+            body: '文字高亮、便签、手写签名；可以撤销和重做',
           ),
           const _CapabilityRow(
-            icon: Icons.open_in_new,
-            title: '交给其他应用打开',
-            body: '文件副本会交给你手机上的阅读器，请留意那个应用是否会同步到云端',
+            icon: Icons.view_carousel_outlined,
+            title: '页面与表单',
+            body: '旋转、删除、排序、提取、合并、填写和扁平化',
           ),
           const _CapabilityRow(
-            icon: Icons.construction_outlined,
-            title: '编辑还在做',
-            body: '批注、签名、表单填写和页面整理都还没上线',
+            icon: Icons.shield_outlined,
+            title: '不掩盖兼容性缺口',
+            body: '字体、图片或结构无法完整显示时会明确提示，不把近似结果说成精确',
           ),
         ],
       ),
@@ -75,12 +73,13 @@ class ToolsScreen extends StatelessWidget {
       allowedExtensions: extensions,
     );
     if (file == null) return;
+    final pageContext = context;
     final length = await file.length();
     final isPdf = (file.extension ?? '').toLowerCase() == 'pdf';
     // 两种引擎的调用形状一样，这里只挑一个，后面的 UI 不再分叉——
     // 之前 DOCX 分支只会弹一句提示，卡片却说「可以查看」，是自相矛盾的。
     final Future<DocumentPreflightResult> Function() preflight;
-    final Future<String> Function() open;
+    final Future<void> Function() open;
     if (isPdf) {
       final engine = createPdfDocumentEngine();
       preflight = () => engine.preflight(
@@ -88,10 +87,21 @@ class ToolsScreen extends StatelessWidget {
         localPath: file.path,
         byteSize: length,
       );
-      open = () => engine.openWorkingCopy(
-        sourcePath: file.path!,
-        displayName: file.name,
-      );
+      open = () async {
+        final workingPath = await engine.createWorkingCopy(
+          sourcePath: file.path!,
+          displayName: file.name,
+        );
+        if (!pageContext.mounted) return;
+        await Navigator.of(pageContext).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PdfEditorScreen(
+              sourcePath: workingPath,
+              displayName: file.name,
+            ),
+          ),
+        );
+      };
     } else {
       final engine = createDocxDocumentEngine();
       preflight = () => engine.preflight(
@@ -99,17 +109,19 @@ class ToolsScreen extends StatelessWidget {
         localPath: file.path,
         byteSize: length,
       );
-      open = () => engine.openWorkingCopy(
-        sourcePath: file.path!,
-        displayName: file.name,
-      );
+      open = () async {
+        await engine.openWorkingCopy(
+          sourcePath: file.path!,
+          displayName: file.name,
+        );
+      };
     }
     final result = await preflight();
     if (!context.mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) => Padding(
+      builder: (sheetContext) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -117,16 +129,17 @@ class ToolsScreen extends StatelessWidget {
           children: [
             SourceBadge(label: result.title, verified: result.canOpen),
             const SizedBox(height: 16),
-            Text(file.name, style: Theme.of(context).textTheme.titleLarge),
+            Text(file.name, style: Theme.of(sheetContext).textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(result.message),
             if (result.canOpen) ...[
               const SizedBox(height: 8),
-              // 交给外部应用是一次真实的数据流出，用户有权在点开之前知道。
               Text(
-                '文件副本会交给你手机上的其他应用打开。那个应用可能会把它同步到自己的云端。',
+                isPdf
+                    ? 'PDF 会在 Waymark 内打开。逐页提示代表实际兼容性缺口；保存只会生成新副本。'
+                    : 'Word 副本会交给手机上的其他应用；该应用可能把文件同步到自己的云端。',
                 style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
                   fontSize: 12,
                 ),
               ),
@@ -136,17 +149,21 @@ class ToolsScreen extends StatelessWidget {
               onPressed: !result.canOpen || file.path == null
                   ? null
                   : () async {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetContext);
                       try {
                         await open();
                       } catch (error) {
-                        if (!context.mounted) return;
+                        if (!pageContext.mounted) return;
                         ScaffoldMessenger.of(
-                          context,
+                          pageContext,
                         ).showSnackBar(SnackBar(content: Text('打不开：$error')));
                       }
                     },
-              child: const Text('打开查看'),
+              child: Text(
+                isPdf && result.access == DocumentAccess.editable
+                    ? '打开编辑'
+                    : '打开查看',
+              ),
             ),
           ],
         ),

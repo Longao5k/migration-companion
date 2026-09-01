@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: migration
       POSTGRES_PASSWORD: local-only-migration
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${LOCAL_POSTGRES_PORT:-55432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U migration -d migration"]
       interval: 3s
@@ -22,12 +22,13 @@ services:
       MINIO_ROOT_USER: localmigration
       MINIO_ROOT_PASSWORD: local-only-migration-storage
     ports:
-      - "127.0.0.1:59000:9000"
-      - "127.0.0.1:59001:9001"
+      # Windows/Hyper-V frequently reserves random high-port blocks around
+      # 59000. Keep these configurable and default outside that common range.
+      - "127.0.0.1:${LOCAL_MINIO_PORT:-45900}:9000"
+      - "127.0.0.1:${LOCAL_MINIO_CONSOLE_PORT:-45901}:9001"
     volumes:
       - migration-minio:/data
 
 volumes:
   migration-postgres:
   migration-minio:
-

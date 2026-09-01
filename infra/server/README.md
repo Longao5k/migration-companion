@@ -26,7 +26,7 @@
    然后把 `migration-companion.nginx.example` 里的示例域名替换为真实域名，保留服务器现有站点，再启用该配置。
 3. 在 `infra/server` 运行 `docker compose build --no-cache`，然后 `docker compose up -d`。API 会先执行已提交的 Prisma migrations 和幂等内容来源初始化。
 4. DNS 生效后用 Certbot 申请 HTTPS；App 只使用 HTTPS 地址。
-   证书就绪后把 `.env` 里的 `PUBLIC_WEB_URL`、`APP_ORIGIN`、`SHARE_BASE_URL` 从回环地址改成正式域名
+   证书就绪后把 `.env` 里的 `PUBLIC_WEB_URL`、`PUBLIC_API_URL`、`APP_ORIGIN`、`SHARE_ORIGIN` 从回环地址改成正式域名
    （`bash infra/server/set-env-var.sh <KEY> <VALUE>`），再 `docker compose up -d api web`。
 
 ## 常用脚本
@@ -48,6 +48,16 @@
 开放云存储时需要同时具备：澳洲区域的 AWS S3、独立病毒扫描 Worker（否则文件会永远停在 `PENDING`，
 既不能下载也不会出现在分享里），以及跨境/数据驻留评审结论。
 
+## 自动资讯编辑
+
+`editorial` 服务从 API 领取已保存官方原文的待处理资讯，先生成中英文稿，再用不同模型家族进行 3–5 轮独立复核。
+服务器而不是模型决定是否发布：只有低风险、证据一致且无阻断项的内容会自动发布；法规、资格、材料、费用、
+日期、模型冲突及其它高风险内容进入后台人工队列。所有判断保留在审计记录中。
+
+服务器 `.env` 至少需要 `SUMMARIZER_BASE_URL` 与 `SUMMARIZER_API_KEY`。Key 只能放在服务器环境文件，不得进入
+仓库、App 或浏览器。缺少配置时 worker 会持续安全暂停，不会绕过审核发布。透明抓取身份由
+`CRAWLER_USER_AGENT` 和 `CRAWLER_CONTACT_URL` 分开配置，避免把网址塞进 User-Agent 后被官方站点拒绝。
+
 ## 内测 App 构建
 
 App 的 API/网页地址是**构建期注入**的，默认值是本地开发地址。给内测用户的包必须显式指定正式域名，
@@ -61,8 +71,8 @@ fvm flutter build apk --release `
   --dart-define=PILOT_AUTH=true
 ```
 
-当前 release APK 仍使用 debug 签名，且体积主要来自评估版 PDF SDK——只能用于**封闭内测**，
-不能上架，也不能公开分发。
+当前内测构建尚未完成正式签名、自研 PDF SDK 的 iOS/Android 真机语料矩阵和商店沙盒验证——只能用于
+**封闭内测**，不能上架，也不能公开分发。
 
 后台访问示例：`ssh -L 53102:127.0.0.1:53102 tencent-light`，然后在本机打开 `http://127.0.0.1:53102`。后台密钥只保留在当前浏览器会话内。
 

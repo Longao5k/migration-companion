@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { ChangeImportance, ReviewStatus } from '@prisma/client';
+import { ChangeImportance, EditorialReviewStatus, ReviewStatus } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { ContentService } from '../src/content/content.service';
 
 describe('ContentService publication guardrails', () => {
@@ -242,5 +243,127 @@ describe('ContentService tag vocabulary', () => {
 
   it('handles no tags at all', () => {
     expect(clean(undefined)).toEqual([]);
+  });
+});
+
+describe('ContentService automated editorial policy', () => {
+  const current = {
+    id: 'news-1',
+    sourceId: 'source-1',
+    sourceTitle: 'Community citizenship ceremony celebrates new Australians',
+    sourceExcerpt: 'The ceremony welcomed 120 new Australian citizens in Adelaide.',
+    sourceUrl: 'https://minister.homeaffairs.gov.au/news/ceremony',
+    tags: ['社区活动'],
+    publishedAt: new Date(),
+    isPublished: false,
+    source: {
+      name: 'Minister for Home Affairs media releases',
+      enabled: true,
+      sourceType: 'official',
+      jurisdiction: 'AU-FED',
+    },
+  };
+
+  function dto(overrides: Record<string, unknown> = {}) {
+    return {
+      sourceDigest: createHash('sha256')
+        .update(`${current.sourceTitle}\n${current.sourceExcerpt}`)
+        .digest('hex'),
+      titleZh: '阿德莱德举行公民入籍庆祝活动',
+      summaryZh: '活动欢迎新加入澳大利亚的公民。',
+      titleEn: 'Adelaide hosts citizenship celebration',
+      summaryEn: 'The event welcomed new Australian citizens.',
+      draftModel: 'qwen-draft',
+      reviewModel: 'kimi-review',
+      reviewRuns: 3,
+      checks: ['数字与官方原文一致'],
+      findings: [],
+      blockingFindings: [],
+      ...overrides,
+    };
+  }
+
+  function createService(item = current) {
+    const tx = {
+      newsItem: {
+        update: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({ ...item, ...data }),
+        ),
+      },
+      auditEvent: { create: jest.fn().mockResolvedValue({}) },
+      notificationPreference: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const prisma = {
+      newsItem: { findUnique: jest.fn().mockResolvedValue(item) },
+      $transaction: jest.fn().mockImplementation((callback) => callback(tx)),
+    } as any;
+    return { service: new ContentService(prisma), tx };
+  }
+
+  it('auto-publishes low-risk official news after independent review', async () => {
+    const { service, tx } = createService();
+    const result = await service.applyAutomatedEditorialReview('news-1', dto());
+
+    expect(result.isPublished).toBe(true);
+    expect(result.draftAuthor).toBe('automation');
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.AUTO_APPROVED);
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'CONTENT_AUTO_PUBLISHED' }),
+      }),
+    );
+  });
+
+  it('routes high-impact subjects to humans without publishing', async () => {
+    const { service } = createService({ ...current, tags: ['费用'] });
+    const result = await service.applyAutomatedEditorialReview('news-1', dto());
+
+    expect(result.isPublished).toBe(false);
+    expect(result.draftAuthor).toBe('model');
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.HUMAN_REQUIRED);
+    expect(result.editorialRiskReasons).toContain('高影响主题：费用');
+  });
+
+  it('routes repeated model disagreements to humans', async () => {
+    const { service } = createService();
+    const result = await service.applyAutomatedEditorialReview(
+      'news-1',
+      dto({
+        findings: ['[2/3轮][低风险]措辞偏强'],
+        blockingFindings: ['[2/3轮][低风险]措辞偏强'],
+      }),
+    );
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.HUMAN_REQUIRED);
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('rejects blocking findings that are omitted from the audit trail', async () => {
+    const { service } = createService();
+    await expect(
+      service.applyAutomatedEditorialReview(
+        'news-1',
+        dto({ blockingFindings: ['[3/3轮][高风险]官方原文无法支持结论'] }),
+      ),
+    ).rejects.toThrow('阻断项必须同时保存在完整复核结果中');
+  });
+
+  it('rejects a result created from stale evidence', async () => {
+    const { service } = createService();
+    await expect(
+      service.applyAutomatedEditorialReview('news-1', dto({ sourceDigest: '0'.repeat(64) })),
+    ).rejects.toThrow('官方原文已在审核期间更新');
+  });
+
+  it('rejects numbers invented by either language draft', async () => {
+    const { service } = createService();
+    await expect(
+      service.applyAutomatedEditorialReview(
+        'news-1',
+        dto({
+          summaryZh: '活动欢迎 9,999 名新公民。',
+          summaryEn: 'The event welcomed 9,999 new citizens.',
+        }),
+      ),
+    ).rejects.toThrow('自动稿数字 9,999 在官方摘录中找不到');
   });
 });

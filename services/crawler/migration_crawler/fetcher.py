@@ -28,10 +28,22 @@ class ConditionalHeaders:
 
 
 class OfficialFetcher:
-    def __init__(self, user_agent: str, approved_hosts: set[str]) -> None:
-        if "example.invalid" in user_agent or "+http" not in user_agent:
-            raise FetchRejected("crawler user agent must contain a truthful contact URL")
+    def __init__(
+        self,
+        user_agent: str,
+        approved_hosts: set[str],
+        contact_url: str = "",
+    ) -> None:
+        # Some Australian Government WAF rules reject any User-Agent containing a URL,
+        # including their own public RSS endpoint. Keep a truthful product identifier in
+        # User-Agent and allow the contact URL in a separate Contact header. This is not
+        # browser impersonation; both identity and contact remain explicit.
+        embedded_contact = "+http" in user_agent and "example.invalid" not in user_agent
+        separate_contact = contact_url.startswith("https://") and "example.invalid" not in contact_url
+        if not embedded_contact and not separate_contact:
+            raise FetchRejected("crawler requires a truthful HTTPS contact URL")
         self.user_agent = user_agent
+        self.contact_url = contact_url
         self.approved_hosts = approved_hosts
         self.opener = build_opener()
         # 每个主机上一次请求的时间，用于遵守 Crawl-delay。
@@ -52,9 +64,11 @@ class OfficialFetcher:
 
         headers = {
             "User-Agent": self.user_agent,
-            "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml,application/pdf;q=0.8",
             "Accept-Encoding": "identity",
         }
+        if self.contact_url:
+            headers["Contact"] = self.contact_url
         if conditional.etag:
             headers["If-None-Match"] = conditional.etag
         if conditional.last_modified:
@@ -78,7 +92,14 @@ class OfficialFetcher:
         if len(body) > MAX_BODY_BYTES:
             raise FetchRejected("source response exceeds the evidence size limit")
         content_type = response.headers.get_content_type()
-        if content_type not in {"text/html", "application/xhtml+xml", "application/pdf"}:
+        if content_type not in {
+            "text/html",
+            "application/xhtml+xml",
+            "application/rss+xml",
+            "application/xml",
+            "text/xml",
+            "application/pdf",
+        }:
             raise FetchRejected(f"unsupported content type: {content_type}")
         return FetchResult(
             status=response.status,

@@ -11,10 +11,9 @@ import '../subscription/subscription_screen.dart';
 
 /// 订阅入口是否可见。
 ///
-/// 第一版会靠订阅出售 PDF / Word 的编辑能力，所以计费依赖留在构建里。
-/// 但在编辑真正接进来之前这个开关保持关闭：权益还不存在就卖，既违反商店计费政策，
-/// 也踩澳洲消费者法。编辑能力上线后用 --dart-define=SUBSCRIPTIONS=true 打开，
-/// 并把商店表单的「应用内购买」改成「是」。
+/// 第一版会靠订阅出售高级文档能力，所以计费依赖留在构建里。PDF 自研编辑器已经
+/// 接入，但真实购买仍要等 Apple/Google 商品、服务端收据核验和两端沙盒通过后，才用
+/// --dart-define=SUBSCRIPTIONS=true 打开；商店表单的「应用内购买」必须填「是」。
 const subscriptionsEnabled = bool.fromEnvironment('SUBSCRIPTIONS');
 
 class ProfileScreen extends ConsumerWidget {
@@ -130,14 +129,14 @@ class ProfileScreen extends ConsumerWidget {
             title: '政策通知与关注',
             subtitle: state.isSignedIn
                 ? state.policyNotificationsEnabled
-                      ? '已开启 · ${state.followedTags.isEmpty ? '全部南澳主题' : state.followedTags.join(' / ')}'
-                      : '已关闭；可按 190/491 关注'
+                      ? '已开启 · ${state.followedTags.isEmpty ? '全部澳洲移民主题' : state.followedTags.join(' / ')}'
+                      : '已关闭；可按地区、签证与主题关注'
                 : '登录后同步关注规则；本机材料提醒不受影响',
             onTap: state.isSignedIn
                 ? () => _showNotificationPreferences(context, ref)
                 : null,
           ),
-          // 权益（PDF / Word 编辑）尚未交付，入口按 subscriptionsEnabled 关闭。
+          // 购买入口仍由商店与服务端核验能力控制，不能只因 PDF 编辑器接入就开始收费。
           if (subscriptionsEnabled) ...[
             const SectionHeader(title: '订阅'),
             _SettingsTile(

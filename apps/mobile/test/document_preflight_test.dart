@@ -3,9 +3,9 @@ import 'package:migration_companion/core/documents/document_engine.dart';
 import 'package:migration_companion/core/documents/document_preflight.dart';
 
 void main() {
-  // 这一版没有编辑器。只要预检还会返回 editable，界面就会重新长出「创建副本并编辑」
-  // 这类按钮，商店审核和用户看到的都会是做不到的承诺。用一条断言把它钉死。
-  test('no file type ever reports editable while no editor ships', () {
+  // 元数据预检不能猜 capability。PDF 的 editable 只能由原生 document_sdk probe
+  // 返回，网页与 DOC/DOCX 仍不会仅凭扩展名承诺编辑。
+  test('metadata alone never promises editability', () {
     const names = [
       'evidence.PDF',
       'evidence.pdf',
@@ -23,13 +23,13 @@ void main() {
         expect(
           result.access,
           isNot(DocumentAccess.editable),
-          reason: '$name @ $size bytes 声称可编辑，但构建里没有编辑器',
+          reason: '$name @ $size bytes 仅凭元数据声称可编辑',
         );
       }
     }
   });
 
-  test('small PDF on a device path can be viewed', () {
+  test('small PDF on a device path proceeds to SDK compatibility check', () {
     final result = preflightByMetadata(
       fileName: 'evidence.PDF',
       byteSize: 1024,

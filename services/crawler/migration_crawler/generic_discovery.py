@@ -148,7 +148,14 @@ def discover_articles(
     listing = fetcher.fetch(
         replace(source, url=listing_url, discovery_url=None), ConditionalHeaders()
     )
-    links = extract_links(listing.body, listing_url, article_pattern)[:limit]
+    relevance = re.compile(source.relevance_pattern, re.I) if source.relevance_pattern else None
+    links = extract_links(listing.body, listing_url, article_pattern)
+    if relevance:
+        # Whole-of-government newsrooms can publish dozens of unrelated stories a day.
+        # Filter their descriptive URL slugs before fetching article bodies; otherwise
+        # the first N health/roads releases consume the entire polite request budget.
+        links = [link for link in links if relevance.search(link.replace("-", " "))]
+    links = links[:limit]
 
     items: list[DiscoveredNews] = []
     for link in links:
@@ -158,6 +165,8 @@ def discover_articles(
         title = extract_title(article.body)
         published_at = extract_published_at(article.body)
         if not title or not published_at:
+            continue
+        if relevance and not relevance.search(title):
             continue
         items.append(
             DiscoveredNews(

@@ -10,15 +10,18 @@
 
 import re
 
-# 与技术移民相关的签证类别。用纯数字代码——申请人本来就用数字交流
+# 澳洲常见签证类别。用纯数字代码——申请人本来就用数字交流
 # （「我走 190」「491 偏远」），加中文名反而不认。
 #
-# 417/500 是实测数据里真实出现的：联邦法规里有「Subclass 417 工作假期安排」和
-# 「500 学生签证英语豁免」。不收配偶签证（第一阶段不做，给标签会造出错误预期）
-# 和已废止的 132/489（只出现在历史条目里，用「法规」标即可）。
+# 第一阶段的信息范围已经扩为全澳洲、全部移民类型，因此不能再把配偶、父母、
+# 访客、学生、人道等签证从标签层排除。已废止的类别仍不进入订阅词表。
 VISA_SUBCLASSES = (
     "189", "190", "491", "494", "186", "482", "485",
-    "417", "462", "500", "188", "888", "858",
+    "417", "462", "500", "590", "600", "601", "651",
+    "820", "801", "309", "100", "300", "101", "102", "802",
+    "103", "143", "173", "804", "864", "884", "870",
+    "188", "888", "858", "400", "403", "407", "408",
+    "449", "785", "790", "866",
 )
 
 # 必须有签证词邻接才认。
@@ -40,6 +43,8 @@ TOPICS = (
     "职业清单", "邀请轮次", "提名条件", "申请材料", "审理时间",
     "打分规则", "英语要求", "费用", "法规", "项目开关", "活动",
     "名额", "ROI", "DAMA", "薪资门槛", "雇主担保", "职业评估",
+    "学生签证", "家庭与配偶", "访客签证", "工作度假", "人道与保护",
+    "公民入籍", "移民代理", "边境与旅行", "工作权益", "永久移民计划",
 )
 
 # 标题关键词只作补充：主题的主要来源是 sources.json 里每个来源登记的 topics。
@@ -66,6 +71,16 @@ _TOPIC_HINTS = {
     "雇主担保": re.compile(r"employer sponsor|employer nomination|sponsorship", re.I),
     "职业评估": re.compile(r"assessing authorit|skills assessment", re.I),
     "活动": re.compile(r"roadshow|workshop|webinar|welcome to|career compass|event:", re.I),
+    "学生签证": re.compile(r"student visa|overseas student|international education|CRICOS|ESOS", re.I),
+    "家庭与配偶": re.compile(r"partner visa|parent visa|child visa|family visa|prospective marriage", re.I),
+    "访客签证": re.compile(r"visitor visa|electronic travel authority|eVisitor", re.I),
+    "工作度假": re.compile(r"working holiday|work and holiday|backpacker", re.I),
+    "人道与保护": re.compile(r"humanitarian visa|refugee|protection visa|asylum", re.I),
+    "公民入籍": re.compile(r"citizenship|citizen ceremony", re.I),
+    "移民代理": re.compile(r"migration agent|immigration assistance|MARA\b", re.I),
+    "边境与旅行": re.compile(r"arrival control|travel declaration|passenger card|travel restriction", re.I),
+    "工作权益": re.compile(r"migrant worker|worker protection|sponsor compliance|workplace justice", re.I),
+    "永久移民计划": re.compile(r"permanent migration program|migration program.*(?:places|planning)", re.I),
 }
 
 

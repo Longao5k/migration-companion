@@ -25,6 +25,16 @@ class CrawlDelayTests(unittest.TestCase):
     def setUp(self):
         self.fetcher = OfficialFetcher(UA, {"example.org"})
 
+    def test_接受单独的透明联系地址(self):
+        fetcher = OfficialFetcher(
+            "WAYmark/0.1", {"example.org"}, "https://example.org/privacy"
+        )
+        self.assertEqual(fetcher.contact_url, "https://example.org/privacy")
+
+    def test_拒绝没有联系地址的模糊身份(self):
+        with self.assertRaises(Exception):
+            OfficialFetcher("WAYmark/0.1", {"example.org"})
+
     def test_首次请求不等待(self):
         with patch("migration_crawler.fetcher.time.sleep") as sleep:
             self.fetcher._respect_crawl_delay("example.org", _Robots(10))

@@ -1,15 +1,15 @@
 import 'document_engine.dart';
 
 // 打开文件时会先复制出一份 App 自有的工作副本，所以这里的上限约束的是「复制多大的
-// 文件到设备存储」，不是编辑器能力——这一版没有编辑器。
+// 文件到设备存储」。是否真的可编辑仍要由 document_sdk 对文件逐份 probe；只看
+// 扩展名和大小不能承诺编辑能力。
 const maxPdfBytes = 50 * 1024 * 1024;
 const maxDocxBytes = 10 * 1024 * 1024;
 
 /// 只凭文件名和大小做的预检。
 ///
-/// 这里永远不会返回 [DocumentAccess.editable]：编辑能力随评估版文档 SDK 一并移出
-/// 发布构建（ADR-011），界面不能宣称构建做不到的事。等自研或已购许可的编辑器接进来
-/// 之后，再让这里重新返回 editable。
+/// 这里不会仅凭元数据返回 [DocumentAccess.editable]。原生 PDF 引擎会在此之后调用
+/// 自研 SDK 的 `probe`，再按这一个文件的 capability 决定 editable/readOnly。
 DocumentPreflightResult preflightByMetadata({
   required String fileName,
   required int byteSize,
@@ -37,8 +37,8 @@ DocumentPreflightResult preflightByMetadata({
     return const DocumentPreflightResult(
       kind: DocumentKind.pdf,
       access: DocumentAccess.readOnly,
-      title: '可以查看',
-      message: '会先复制一份副本再打开，原件不动。这个版本还不能批注或签名。',
+      title: '等待兼容性检查',
+      message: '会先检查这份 PDF 支持哪些编辑能力，再复制副本打开；原件始终不动。',
     );
   }
   if (lower.endsWith('.docx')) {

@@ -27,8 +27,10 @@ abstract interface class PdfDocumentEngine {
     required int byteSize,
   });
 
-  /// Creates an application-owned working copy and opens that copy.
-  Future<String> openWorkingCopy({
+  /// Creates an application-owned working copy for the in-app editor.
+  ///
+  /// The source is never handed to the SDK and is never overwritten.
+  Future<String> createWorkingCopy({
     required String sourcePath,
     required String displayName,
   });

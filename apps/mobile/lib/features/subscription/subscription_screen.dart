@@ -214,12 +214,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               title: 'Premium 订阅',
               price: '暂未开放',
               description:
-                  account.purchasesDisabledReason ??
-                  '订阅购买暂未开放，开放后会在应用内提示。',
-              action: const FilledButton(
-                onPressed: null,
-                child: Text('暂未开放'),
-              ),
+                  account.purchasesDisabledReason ?? '订阅购买暂未开放，开放后会在应用内提示。',
+              action: const FilledButton(onPressed: null, child: Text('暂未开放')),
             ),
           ] else ...[
             const SizedBox(height: 12),

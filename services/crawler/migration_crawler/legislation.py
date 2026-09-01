@@ -1,4 +1,4 @@
-"""从联邦法规注册库拉取与技术移民相关的法规条目。
+"""从联邦法规注册库拉取与澳洲移民相关的法规条目。
 
 这是唯一能给出**联邦层面**政策记录的来源。内政部的说明页抓不到（边缘 403），
 但法规本身在这里，而且法规才是有法律效力的那一份。
@@ -8,10 +8,11 @@
 `contains(name,'Migration')` 报 2453 条，实际能翻到约 999 条（API 有分页上限）。
 但把 999 条法规标题倒进一个面向中文用户的 App，比现在少几十条更糟——用户看到的会是
 一屏 `Migration Amendment (Class of Persons) Instrument 2024/12` 这种看不懂的东西，
-而其中大部分与技术移民无关（拘留、太平洋签证、反犹法案都在里面）。
+而其中相当一部分是拘留设施、执法程序或其他不会帮助申请人理解签证变化的内容。
 
 所以按两层筛：**时间**（默认 2024 年起，更早的已经被后续修正案取代）和
-**相关性**（标题必须命中技术移民的词表）。宁可漏掉几条边缘的，不要把无关的法条塞给用户。
+**相关性**（标题必须命中签证、公民、家庭、工作、学习、人道或移民服务词表）。
+这不是只看 190/491 的筛选器；它覆盖第一阶段的全部澳洲移民类型。
 
 ## 摘录用元数据，不用法条原文
 
@@ -39,27 +40,33 @@ PAGE_SIZE = 100
 MAX_PAGES = 12
 
 FIELDS = "id,name,makingDate,collection,isPrincipal,isInForce,status"
+QUERY_TERMS = ("Migration", "Citizenship")
 
-# 技术移民相关的词表。命中任意一个才收。
+# 用户可理解的移民主题词表。命中任意一个才收。
 #
 # 这个表是「宁缺毋滥」的：漏掉一条边缘法规，用户还能在官网找到；
-# 收进来一条拘留或国籍法条，用户会以为它跟自己的 190/491 申请有关。
+# 收进来一条拘留设施内部规则，用户会以为它和签证申请有关。
 RELEVANCE = re.compile(
     r"\b("
     r"skill(?:ed)?|occupation|ANZSCO|nominat|sponsor|employer"
     # 复数要一起认：真实标题是「Language Tests, Test Scores」，
     # 写成 `language test` 加词边界反而匹配不上。
     r"|english|language tests?|test scores?|points test"
-    r"|subclass\s*(?:189|190|407|417|462|482|485|486|489|491|494|186|187|188|888)"
+    r"|subclass\s*\d{3}"
     r"|general skilled|regional|designated area|DAMA"
     r"|work(?:place)? (?:justice|visa)|temporary skill|skills in demand"
+    r"|student visa|visitor visa|working holiday|work and holiday"
+    r"|partner visa|parent visa|child visa|family visa|prospective marriage"
+    r"|humanitarian|refugee|protection visa|temporary protection|safe haven"
+    r"|citizenship|permanent migration program|migration agent|immigration assistance"
+    r"|arrival control|travel declaration|visa application charge"
     r")\b",
     re.I,
 )
 
 
-def _fetch_page(skip: int) -> list[dict]:
-    name_filter = quote("contains(name,'Migration')", safe="(),'")
+def _fetch_page(skip: int, term: str = "Migration") -> list[dict]:
+    name_filter = quote(f"contains(name,'{term}')", safe="(),'")
     url = (
         f"{API}?$filter={name_filter}"
         f"&$select={FIELDS}&$top={PAGE_SIZE}&$skip={skip}"
@@ -92,15 +99,19 @@ def fetch_titles() -> list[dict]:
     服务端的 `$orderby` 会 500、日期与布尔筛选会 400，所以全部在本地筛——
     与其猜它支持哪种 OData 写法，不如只依赖确定可用的 `$skip`/`$top`。
     """
-    rows: list[dict] = []
-    for page in range(MAX_PAGES):
-        if page:
-            time.sleep(CRAWL_DELAY_SECONDS)
-        batch = _fetch_page(page * PAGE_SIZE)
-        rows.extend(batch)
-        if len(batch) < PAGE_SIZE:
-            break
-    return rows
+    rows: dict[str, dict] = {}
+    request_index = 0
+    for term in QUERY_TERMS:
+        for page in range(MAX_PAGES):
+            if request_index:
+                time.sleep(CRAWL_DELAY_SECONDS)
+            request_index += 1
+            batch = _fetch_page(page * PAGE_SIZE, term)
+            for row in batch:
+                rows.setdefault(str(row.get("id")), row)
+            if len(batch) < PAGE_SIZE:
+                break
+    return list(rows.values())
 
 
 # 明确排除的主题。
@@ -111,7 +122,7 @@ def fetch_titles() -> list[dict]:
 EXCLUSIONS = re.compile(
     r"\b("
     r"regional processing|offshore|detention|detainee|prohibited things"
-    r"|removal|deportation|character test|citizenship|refugee|protection visa"
+    r"|removal|deportation|character test"
     r"|maintenance amount|unlawful non-citizen"
     r")\b",
     re.I,
@@ -119,7 +130,7 @@ EXCLUSIONS = re.compile(
 
 
 def is_relevant(row: dict, *, since: str) -> bool:
-    """只保留仍然有效、够新、且标题命中技术移民词表的条目。"""
+    """只保留仍然有效、够新、且标题命中移民主题词表的条目。"""
     making_date = (row.get("makingDate") or "")[:10]
     if not making_date or making_date < since:
         return False

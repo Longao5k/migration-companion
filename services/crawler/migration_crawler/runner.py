@@ -11,6 +11,8 @@ from .models import Source
 from .generic_discovery import discover_articles
 from .news_discovery import discover_sa_news, extract_article_excerpt
 from .normalizer import normalize_html
+from .rss_discovery import discover_rss_articles
+from .sitemap_discovery import discover_sitemap_articles
 from .storage import LocalEvidenceStore
 
 
@@ -20,7 +22,11 @@ def load_sources(path: Path) -> list[Source]:
 
 def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
     user_agent = os.environ.get("CRAWLER_USER_AGENT", "")
-    fetcher = OfficialFetcher(user_agent, {item.url.split('/')[2].lower() for item in sources})
+    fetcher = OfficialFetcher(
+        user_agent,
+        {item.url.split('/')[2].lower() for item in sources},
+        os.environ.get("CRAWLER_CONTACT_URL", ""),
+    )
     store = LocalEvidenceStore(state_dir)
     previous = store.load(source.id)
     api_url = os.environ.get("REVIEW_API_URL")
@@ -95,7 +101,11 @@ def _discover_news(
         return 0
 
     limit = max(1, min(int(os.environ.get("NEWS_DISCOVERY_LIMIT", "6")), 12))
-    if source.article_pattern:
+    if source.discovery_format == "rss":
+        discovered = discover_rss_articles(source, fetcher, limit=limit)
+    elif source.discovery_format == "sitemap":
+        discovered = discover_sitemap_articles(source, fetcher, limit=limit)
+    elif source.article_pattern:
         # 通用路径：列表页只用来发现链接，标题和日期到文章页里取。
         # 各州 DOM 各不相同，但 h1 和 JSON-LD 是通用的。
         discovered = discover_articles(

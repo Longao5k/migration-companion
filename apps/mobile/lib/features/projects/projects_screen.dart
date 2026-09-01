@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/backup/backup_codec.dart';
 import '../../core/documents/document_engines.dart';
+import '../../core/documents/pdf_editor_screen.dart';
 import '../../core/models/models.dart';
 import '../../core/state/app_store.dart';
 import '../../shared/widgets/common.dart';
@@ -873,7 +874,13 @@ Future<void> _showChecklistItem(
                         subtitle: Text(
                           '${formatBytes(attachment.byteSize)} · ${_attachmentStatusLabel(attachment.syncStatus)}',
                         ),
-                        onTap: () => _openAttachment(context, attachment),
+                        onTap: () => _openAttachment(
+                          context,
+                          ref,
+                          projectId,
+                          itemId,
+                          attachment,
+                        ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == 'upload') {
@@ -1179,6 +1186,9 @@ Future<void> _pickAttachment(
 
 Future<void> _openAttachment(
   BuildContext context,
+  WidgetRef ref,
+  String projectId,
+  String itemId,
   LocalAttachment attachment,
 ) async {
   final lower = attachment.name.toLowerCase();
@@ -1194,9 +1204,29 @@ Future<void> _openAttachment(
       if (!preflight.canOpen || attachment.localPath == null) {
         throw FormatException(preflight.message);
       }
-      await engine.openWorkingCopy(
+      final workingPath = await engine.createWorkingCopy(
         sourcePath: attachment.localPath!,
         displayName: attachment.name,
+      );
+      if (!context.mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PdfEditorScreen(
+            sourcePath: workingPath,
+            displayName: attachment.name,
+            onSaveCopy: (bytes, suggestedName) async {
+              await ref
+                  .read(appStoreProvider.notifier)
+                  .addAttachment(
+                    projectId: projectId,
+                    itemId: itemId,
+                    name: suggestedName,
+                    contentType: 'application/pdf',
+                    bytes: bytes,
+                  );
+            },
+          ),
+        ),
       );
       return;
     }

@@ -121,6 +121,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.15"
+  document_sdk:
+    dependency: "direct main"
+    description:
+      path: "bindings/flutter/document_sdk"
+      ref: "v0.1.0-alpha.4"
+      resolved-ref: bf237e7eae5169ca8917c5cb5f561be42e2d752b
+      url: "https://github.com/Longao5k/docu-sdk.git"
+    source: git
+    version: "0.1.0-alpha.4"
   fake_async:
     dependency: transitive
     description:
@@ -964,4 +973,4 @@ packages:
     version: "3.1.3"
 sdks:
   dart: ">=3.13.1 <4.0.0"
-  flutter: ">=3.44.0"
+  flutter: ">=3.47.1"

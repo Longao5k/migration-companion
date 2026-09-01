@@ -37,3 +37,6 @@ apps/mobile/android/key.properties
 summaries*.json
 *.env.local
 .env.summarizer
+
+# Local runtime fixtures and rendered PDF verification artefacts.
+tmp/

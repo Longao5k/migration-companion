@@ -81,7 +81,11 @@ def main() -> None:
     if not user_agent:
         raise SystemExit("回填需要 CRAWLER_USER_AGENT")
 
-    fetcher = OfficialFetcher(user_agent, approved_hosts(sources))
+    fetcher = OfficialFetcher(
+        user_agent,
+        approved_hosts(sources),
+        os.environ.get("CRAWLER_CONTACT_URL", ""),
+    )
     results = backfill_sa_news(
         source, fetcher, api_url, worker_key, dry_run=args.dry_run
     )
@@ -108,7 +112,11 @@ def _run_backfill_excerpts(source, args) -> None:
 
     entries = json.loads(args.backfill_excerpts.read_text(encoding="utf-8"))
     sources = load_sources(args.registry)
-    fetcher = OfficialFetcher(user_agent, approved_hosts(sources))
+    fetcher = OfficialFetcher(
+        user_agent,
+        approved_hosts(sources),
+        os.environ.get("CRAWLER_CONTACT_URL", ""),
+    )
     results = backfill_excerpts(
         source, fetcher, api_url, worker_key, entries, dry_run=args.dry_run
     )

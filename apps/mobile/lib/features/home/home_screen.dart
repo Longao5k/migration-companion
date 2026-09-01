@@ -28,6 +28,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedTopic = '全部';
   String? _selectedVisa;
+  String? _selectedContentTopic;
 
   @override
   Widget build(BuildContext context) {
@@ -37,16 +38,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? ['全部', ...state.taxonomy.jurisdictions.map((e) => e.display)]
         : topicsFor(state.news);
     final visaChips = state.taxonomy.visas.map((e) => e.code).toList();
+    final contentTopicChips = state.taxonomy.topics.map((e) => e.code).toList();
 
     // 数据变化后原先选中的值可能已经不存在了。
     final activeTopic = jurisdictionChips.contains(_selectedTopic)
         ? _selectedTopic
         : '全部';
     final activeVisa = visaChips.contains(_selectedVisa) ? _selectedVisa : null;
+    final activeContentTopic = contentTopicChips.contains(_selectedContentTopic)
+        ? _selectedContentTopic
+        : null;
 
     final visibleNews = state.news
         .where((item) => _matchesTopic(item, activeTopic))
         .where((item) => activeVisa == null || item.tags.contains(activeVisa))
+        .where(
+          (item) =>
+              activeContentTopic == null ||
+              item.tags.contains(activeContentTopic),
+        )
         .toList();
     final nextProject = state.projects
         .where((item) => item.status == ProjectStatus.active)
@@ -98,6 +108,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     selected: activeVisa,
                     onSelected: (visa) => setState(
                       () => _selectedVisa = _selectedVisa == visa ? null : visa,
+                    ),
+                  ),
+                ],
+                // 第三行是主题轴。全移民类型不能只靠州和签证代码：公民入籍、
+                // 移民代理、工作权益等资讯未必对应一个三位签证号。
+                if (contentTopicChips.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _VisaRail(
+                    visas: contentTopicChips,
+                    selected: activeContentTopic,
+                    onSelected: (topic) => setState(
+                      () => _selectedContentTopic =
+                          _selectedContentTopic == topic ? null : topic,
                     ),
                   ),
                 ],
@@ -234,7 +257,7 @@ class _EditorialHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'MIGRATION BRIEF · SOUTH AUSTRALIA',
+                'MIGRATION BRIEF · AUSTRALIA',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: scheme.primary,
                   fontWeight: FontWeight.w800,
@@ -998,7 +1021,7 @@ class _JourneyCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   project == null
-                      ? '从南澳 190 / 491 开始，逐步整理关键节点'
+                      ? '从南澳起步，也可建立其他签证的自定义路线'
                       : '${(completion * 100).round()}% 已准备 · 继续处理下一项',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.65),
@@ -1373,8 +1396,7 @@ Future<void> _showNotifications(
                       // 提醒一直点不开：服务端早就下发了 route 和 entityId，
                       // App 侧也解析进了模型，只是没有人接上去。收到「南澳
                       // 公布名额」却打不开那一条，提醒就只剩一个感叹号。
-                      onTap: () =>
-                          Navigator.of(sheetContext).pop(alert),
+                      onTap: () => Navigator.of(sheetContext).pop(alert),
                     );
                   },
                 ),
@@ -1660,7 +1682,7 @@ class _DiscussionUnavailable extends StatelessWidget {
   }
 }
 
-/// 签证类别筛选。值由服务端目录给出，只列实际有内容的类别。
+/// 次级筛选胶囊。签证类别与内容主题都由服务端目录提供，只列实际有内容的值。
 class _VisaRail extends StatelessWidget {
   const _VisaRail({
     required this.visas,

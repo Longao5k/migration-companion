@@ -290,5 +290,158 @@
     "topics": [
       "提名条件"
     ]
+  },
+  {
+    "id": "home-affairs-minister-media",
+    "name": "Minister for Home Affairs — Media releases",
+    "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=TonyBurke",
+    "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=TonyBurke",
+    "jurisdiction": "AU-FED",
+    "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
+    "enabled": true,
+    "discovery_format": "rss",
+    "article_pattern": "^/TonyBurke/Pages/[a-z0-9][a-z0-9\\-]+\\.aspx$",
+    "relevance_pattern": "\\b(migration|immigration|visa|citizenship|migrant|refugee|asylum|permanent migration program|overseas student|international student|arrival control|passenger card|travel declaration)\\b"
+  },
+  {
+    "id": "assistant-minister-citizenship-media",
+    "name": "Assistant Minister for Citizenship — Media releases",
+    "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=JulianHill",
+    "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=JulianHill",
+    "jurisdiction": "AU-FED",
+    "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
+    "enabled": true,
+    "discovery_format": "rss",
+    "article_pattern": "^/JulianHill/Pages/[a-z0-9][a-z0-9\\-]+\\.aspx$",
+    "relevance_pattern": "\\b(migration|immigration|visa|citizenship|migrant worker|migration agent|immigration assistance|overseas student|international education|CRICOS|refugee|humanitarian)\\b"
+  },
+  {
+    "id": "assistant-minister-immigration-media",
+    "name": "Assistant Minister for Immigration — Media releases",
+    "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=MattThistlethwaite",
+    "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=MattThistlethwaite",
+    "jurisdiction": "AU-FED",
+    "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
+    "enabled": true,
+    "discovery_format": "rss",
+    "article_pattern": "^/MattThistlethwaite/Pages/[a-z0-9][a-z0-9\\-]+\\.aspx$",
+    "relevance_pattern": "\\b(migration|immigration|visa|citizenship|migrant|refugee|humanitarian|asylum|permanent migration program)\\b"
+  },
+  {
+    "id": "jobs-skills-migration-news",
+    "name": "Jobs and Skills Australia — Migration news",
+    "url": "https://www.jobsandskills.gov.au/news",
+    "discovery_url": "https://www.jobsandskills.gov.au/news",
+    "jurisdiction": "AU-FED",
+    "license_note": "Australian Government source. Store evidence privately; publish a link and short original bilingual summary only.",
+    "enabled": true,
+    "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$",
+    "relevance_pattern": "\\b(migration|migrant|visa|occupation|CSOL|skills in demand)\\b",
+    "topics": [
+      "职业清单"
+    ]
+  },
+  {
+    "id": "international-student-framework",
+    "name": "Department of Education — Overseas student framework changes",
+    "url": "https://www.education.gov.au/esos-framework/changes-legislative-framework-overseas-students",
+    "jurisdiction": "AU-FED",
+    "license_note": "Australian Government source. Monitor the page as evidence and publish only short original summaries with attribution.",
+    "enabled": true,
+    "topics": [
+      "学生签证"
+    ]
+  },
+  {
+    "id": "act-migration-updates",
+    "name": "ACT Government — Migration updates",
+    "url": "https://www.act.gov.au/migration",
+    "jurisdiction": "AU-ACT",
+    "license_note": "DISABLED 2026-09-01: act.gov.au robots.txt does not permit this migration path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
+    "enabled": false,
+    "topics": [
+      "提名条件"
+    ]
+  },
+  {
+    "id": "act-minister-migration-media",
+    "name": "ACT Government — Migration-related minister media releases",
+    "url": "https://www.cmtedd.act.gov.au/open_government/functions/functionality/media_release_rss_feeds/latest_minister_media_releases_rss",
+    "discovery_url": "https://www.cmtedd.act.gov.au/open_government/functions/functionality/media_release_rss_feeds/latest_minister_media_releases_rss",
+    "jurisdiction": "AU-ACT",
+    "license_note": "DISABLED 2026-09-01: the official RSS endpoint is public but cmtedd.act.gov.au robots.txt does not permit this path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
+    "enabled": false,
+    "discovery_format": "rss",
+    "article_pattern": "^/open_government/inform/act_government_media_releases/[a-z0-9_\\-/]+$",
+    "relevance_pattern": "\\b(migration|migrant|visa|citizenship|refugee|humanitarian|international student|overseas worker|skilled nomination|Canberra Matrix|DAMA)\\b"
+  },
+  {
+    "id": "act-invitation-round",
+    "name": "ACT Government — Canberra Matrix invitation rounds",
+    "url": "https://www.act.gov.au/migration/resources/canberra-matrix-invitation-round",
+    "jurisdiction": "AU-ACT",
+    "license_note": "DISABLED 2026-09-01: act.gov.au robots.txt does not permit this migration path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
+    "enabled": false,
+    "topics": [
+      "邀请轮次",
+      "名额"
+    ]
+  },
+  {
+    "id": "act-occupation-list",
+    "name": "ACT Government — Nominated Migration Program Occupation List",
+    "url": "https://www.act.gov.au/migration/skilled-migrants/act-nominated-migration-program-occupation-list",
+    "jurisdiction": "AU-ACT",
+    "license_note": "DISABLED 2026-09-01: act.gov.au robots.txt does not permit this migration path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
+    "enabled": false,
+    "topics": [
+      "职业清单"
+    ]
+  },
+  {
+    "id": "vic-migration-news-unavailable",
+    "name": "Victoria — Live in Melbourne news",
+    "url": "https://liveinmelbourne.vic.gov.au/news-events/news",
+    "jurisdiction": "AU-VIC",
+    "license_note": "DISABLED 2026-09-01: the official site returns HTTP 403 to the transparent crawler identity. Do not bypass with browser impersonation; retain this source so the coverage gap is visible.",
+    "enabled": false
+  },
+  {
+    "id": "vic-premier-migration-sitemap",
+    "name": "Victorian Government — Migration-related media releases",
+    "url": "https://www.premier.vic.gov.au/sitemap.xml",
+    "discovery_url": "https://www.premier.vic.gov.au/sitemap.xml",
+    "jurisdiction": "AU-VIC",
+    "license_note": "Victorian Government sitemap and media releases. The migration-specific site blocks the crawler, so this allowed official alternative covers relevant government announcements without bypassing access controls.",
+    "enabled": true,
+    "discovery_format": "sitemap",
+    "relevance_pattern": "\\b(migration|migrant|visa|citizenship|refugee|humanitarian|international student|overseas worker|DAMA)\\b"
+  },
+  {
+    "id": "tas-migration-news-unavailable",
+    "name": "Migration Tasmania — News",
+    "url": "https://www.migration.tas.gov.au/news",
+    "jurisdiction": "AU-TAS",
+    "license_note": "DISABLED 2026-09-01: the official site returns HTTP 403 to the transparent crawler identity. Do not bypass with browser impersonation; retain this source so the coverage gap is visible.",
+    "enabled": false
+  },
+  {
+    "id": "tas-premier-migration-releases",
+    "name": "Tasmanian Government — Migration-related media releases",
+    "url": "https://www.premier.tas.gov.au/latest-news",
+    "discovery_url": "https://www.premier.tas.gov.au/latest-news",
+    "jurisdiction": "AU-TAS",
+    "license_note": "DISABLED 2026-09-01: premier.tas.gov.au robots.txt does not permit this path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
+    "enabled": false,
+    "article_pattern": "^/latest-news/20[0-9]{2}/[a-z]+/[a-z0-9][a-z0-9\\-]+$",
+    "relevance_pattern": "\\b(migration|migrant|visa|citizenship|refugee|humanitarian|international student|overseas worker|DAMA)\\b"
+  },
+  {
+    "id": "nt-migration-updates-unavailable",
+    "name": "Northern Territory Government — Migration updates",
+    "url": "https://australiasnorthernterritory.com.au/move/migrate-to-work/nt-government-visa-nomination/eligibility?language=en",
+    "jurisdiction": "AU-NT",
+    "license_note": "DISABLED 2026-09-01: the official site returns HTTP 403 to the transparent crawler identity. Do not bypass with browser impersonation; retain this source so the coverage gap is visible.",
+    "enabled": false
   }
 ]

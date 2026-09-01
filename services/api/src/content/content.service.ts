@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ChangeImportance, Prisma, ReviewStatus } from '@prisma/client';
+import {
+  ChangeImportance,
+  EditorialReviewStatus,
+  Prisma,
+  ReviewStatus,
+} from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { assertExcerptQuota } from './excerpt-quota';
 import { JURISDICTIONS, isKnownTag, TOPICS, VISA_SUBCLASSES } from './taxonomy';
@@ -9,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import {
   CreateNewsDto,
   CreateSourceDto,
+  AutomatedEditorialReviewDto,
   IngestChangeDto,
   IngestNewsDto,
   ReviewChangeDto,
@@ -16,6 +22,28 @@ import {
   UpdateNewsDto,
   UpdateSourceDto,
 } from './content.dto';
+
+const AUTOMATION_HIGH_RISK_TAGS = new Set([
+  '法规',
+  '提名条件',
+  '申请材料',
+  '职业清单',
+  '打分规则',
+  '英语要求',
+  '费用',
+  '项目开关',
+  '名额',
+  'ROI',
+  'DAMA',
+  '薪资门槛',
+  '职业评估',
+]);
+
+const ACTION_CHANGING_COPY =
+  /(?:eligib|requirements?|must\b|deadline|applications?\s+(?:close|open)|program\s+(?:close|open)|allocation|quota|fees?|threshold|exemption|nomination criteria|visa conditions?|有资格|资格|必须|截止|申请.{0,8}(?:关闭|开放)|项目.{0,8}(?:关闭|开放)|名额|费用|门槛|豁免|提名条件)/i;
+const ADVICE_COPY =
+  /(?:you should|we recommend|you may be eligible|you may qualify|你应该|建议你|建议申请|可能有资格|我们建议)/i;
+const MATERIAL_NUMBER = /\d{1,3}(?:,\d{3})+|\d{4,}/g;
 
 @Injectable()
 export class ContentService {
@@ -192,6 +220,110 @@ export class ContentService {
     });
   }
 
+  /** Private queue consumed by the editorial worker, never by the public App. */
+  editorialQueue() {
+    return this.prisma.newsItem.findMany({
+      where: {
+        isPublished: false,
+        editorialReviewStatus: EditorialReviewStatus.PENDING,
+        sourceExcerpt: { not: null },
+      },
+      include: { source: true },
+      orderBy: { publishedAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  /**
+   * Persist an independently reviewed model draft and publish it only when the
+   * server's own policy classifies it as low-risk.
+   */
+  async applyAutomatedEditorialReview(id: string, dto: AutomatedEditorialReviewDto) {
+    const current = await this.prisma.newsItem.findUnique({
+      where: { id },
+      include: { source: true },
+    });
+    if (!current) throw new NotFoundException('未找到新闻');
+    if (!current.source.enabled || current.source.sourceType !== 'official') {
+      throw new BadRequestException('自动审核只接受已启用的官方来源');
+    }
+    if (!current.sourceExcerpt?.trim()) {
+      throw new BadRequestException('没有官方原文摘录，不能自动审核');
+    }
+    const currentDigest = createHash('sha256')
+      .update(`${current.sourceTitle}\n${current.sourceExcerpt}`)
+      .digest('hex');
+    if (dto.sourceDigest !== currentDigest) {
+      throw new BadRequestException('官方原文已在审核期间更新，请重新起草和复核');
+    }
+    if (dto.draftModel.trim() === dto.reviewModel.trim()) {
+      throw new BadRequestException('起草和独立复核必须使用不同模型');
+    }
+    if (dto.blockingFindings.some((finding) => !dto.findings.includes(finding))) {
+      throw new BadRequestException('阻断项必须同时保存在完整复核结果中');
+    }
+
+    this.assertChineseEditorialCopy(dto.titleZh, dto.summaryZh);
+    this.assertAutomatedCopy(current.sourceTitle, current.sourceExcerpt, dto);
+
+    const riskReasons = this.automationRiskReasons(current, dto);
+    const needsHuman = dto.blockingFindings.length > 0 || riskReasons.length > 0;
+    const reviewStatus = needsHuman
+      ? EditorialReviewStatus.HUMAN_REQUIRED
+      : EditorialReviewStatus.AUTO_APPROVED;
+    const reviewedAt = new Date();
+    const checks = [
+      ...dto.checks,
+      ...dto.findings.map((finding) => `⚠ 自动复核：${finding}`),
+      ...(riskReasons.length > 0
+        ? riskReasons.map((reason) => `⚠ 人工队列：${reason}`)
+        : [`自动复核通过：${dto.reviewRuns} 轮独立核对未发现阻断项`]),
+    ].filter((value, index, all) => all.indexOf(value) === index);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.newsItem.update({
+        where: { id },
+        data: {
+          titleZh: dto.titleZh.trim(),
+          summaryZh: dto.summaryZh.trim(),
+          titleEn: dto.titleEn.trim(),
+          summaryEn: dto.summaryEn.trim(),
+          draftAuthor: needsHuman ? 'model' : 'automation',
+          draftModel: dto.draftModel,
+          draftedAt: reviewedAt,
+          draftChecks: checks,
+          editorialReviewStatus: reviewStatus,
+          editorialReviewModel: dto.reviewModel,
+          editorialReviewedAt: reviewedAt,
+          editorialReviewRuns: dto.reviewRuns,
+          editorialFindings: dto.findings,
+          editorialRiskReasons: riskReasons,
+          isPublished: !needsHuman,
+        },
+        include: { source: true },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          action: needsHuman ? 'CONTENT_HUMAN_REVIEW_REQUIRED' : 'CONTENT_AUTO_PUBLISHED',
+          targetType: 'NewsItem',
+          targetId: id,
+          safeMetadata: {
+            reviewModel: dto.reviewModel,
+            reviewRuns: dto.reviewRuns,
+            findingCount: dto.findings.length,
+            blockingFindingCount: dto.blockingFindings.length,
+            riskReasons,
+          },
+        },
+      });
+      if (!needsHuman && !current.isPublished) {
+        await this.fanOutNewsPublished(tx, updated);
+      }
+      return updated;
+    });
+  }
+
   async createNews(dto: CreateNewsDto) {
     const source = await this.requireSource(dto.sourceId);
     this.assertSourceUrl(source.url, dto.sourceUrl);
@@ -209,6 +341,8 @@ export class ContentService {
           publishedAt: new Date(dto.publishedAt),
           isPublished: dto.isPublished ?? false,
           draftAuthor: 'editor',
+          editorialReviewStatus: EditorialReviewStatus.HUMAN_APPROVED,
+          editorialReviewedAt: new Date(),
         },
         include: { source: true },
       });
@@ -260,6 +394,9 @@ export class ContentService {
       this.assertHumanReviewed(
         dto.draftAuthor ?? current.draftAuthor,
         current.sourceExcerpt,
+        dto.draftAuthor === 'editor'
+          ? EditorialReviewStatus.HUMAN_APPROVED
+          : current.editorialReviewStatus,
       );
     }
     return this.prisma.$transaction(async (tx) => {
@@ -274,6 +411,12 @@ export class ContentService {
           ...(dto.publishedAt !== undefined ? { publishedAt: new Date(dto.publishedAt) } : {}),
           ...(dto.isPublished !== undefined ? { isPublished: dto.isPublished } : {}),
           ...(dto.draftAuthor !== undefined ? { draftAuthor: dto.draftAuthor } : {}),
+          ...(dto.draftAuthor === 'editor'
+            ? {
+                editorialReviewStatus: EditorialReviewStatus.HUMAN_APPROVED,
+                editorialReviewedAt: new Date(),
+              }
+            : {}),
           ...(dto.draftModel !== undefined ? { draftModel: dto.draftModel } : {}),
           ...(dto.draftedAt !== undefined ? { draftedAt: new Date(dto.draftedAt) } : {}),
           ...(dto.draftChecks !== undefined ? { draftChecks: dto.draftChecks } : {}),
@@ -395,6 +538,13 @@ export class ContentService {
       throw new BadRequestException('新闻发现任务只能使用已启用的来源注册表');
     }
     this.assertSourceUrl(source.url, dto.sourceUrl);
+    const sourceExcerpt = dto.sourceExcerpt.trim();
+    const existing = await this.prisma.newsItem.findUnique({
+      where: { sourceUrl: dto.sourceUrl },
+      select: { sourceExcerpt: true },
+    });
+    const evidenceChanged =
+      existing !== null && (existing.sourceExcerpt ?? '').trim() !== sourceExcerpt;
     return this.prisma.newsItem.upsert({
       where: { sourceUrl: dto.sourceUrl },
       create: {
@@ -404,7 +554,7 @@ export class ContentService {
         titleZh: '',
         summaryZh: '',
         sourceTitle: dto.sourceTitle.trim(),
-        sourceExcerpt: dto.sourceExcerpt.trim(),
+        sourceExcerpt,
         sourceUrl: dto.sourceUrl,
         tags: this.cleanTags(dto.tags),
         publishedAt: new Date(dto.publishedAt),
@@ -415,7 +565,24 @@ export class ContentService {
         // 官方原文可能被修订过，跟着更新；但绝不碰 titleZh/summaryZh——
         // 那是人写的编辑稿，采集器无权覆盖。
         sourceTitle: dto.sourceTitle.trim(),
-        sourceExcerpt: dto.sourceExcerpt.trim(),
+        sourceExcerpt,
+        ...(evidenceChanged
+          ? {
+              // 公开原文发生变化后，之前的自动或人工结论都不再对应当前证据。
+              // 先撤下并重新进入流水线，不能让过期摘要继续挂在资讯流里。
+              isPublished: false,
+              editorialReviewStatus: EditorialReviewStatus.PENDING,
+              editorialReviewModel: null,
+              editorialReviewedAt: null,
+              editorialReviewRuns: null,
+              editorialFindings: Prisma.JsonNull,
+              editorialRiskReasons: [],
+              draftAuthor: null,
+              draftModel: null,
+              draftedAt: null,
+              draftChecks: [],
+            }
+          : {}),
       },
       include: { source: true },
     });
@@ -596,16 +763,14 @@ export class ContentService {
   }
 
   /**
-   * 模型稿不能直接发布。
+   * 未经有效自动复核的模型稿不能直接发布。
    *
    * 「人工核实后发布」是签核过的规则，但闸门此前只检查「有没有汉字」——
    * 而中英两份都是摘要工具一次跑出来的，全都有汉字。后台的「全选可发布」
    * 因此圈中了 73 条从没有人看过的模型稿，一次点击就能推给所有订阅者。
    * 这个模型编造过数字，也写出过带建议口吻的句子。
    *
-   * 判据用 `!== 'model'` 而不是 `=== 'editor'`：null 是种子内容和这个字段
-   * 存在之前的老条目，那些是人写的，不该被误伤。要挡的是明确标记为机器起草、
-   * 且此后没有人保存过的那些——编辑在后台按一次保存，标记就变成 editor。
+   * 自动发布必须带 AUTO_APPROVED；高风险内容仍由编辑保存，标记成 editor。
    *
    * 同时挡住没有原文摘录的：审核靠原文与译稿左右对照，没有原文就没有
    * 可核对的基准，「审过了」无从谈起。
@@ -613,11 +778,18 @@ export class ContentService {
   private assertHumanReviewed(
     draftAuthor: string | null,
     sourceExcerpt: string | null,
+    reviewStatus: EditorialReviewStatus = EditorialReviewStatus.PENDING,
   ) {
     if (draftAuthor === 'model') {
       throw new BadRequestException(
         '这条还是模型起草的稿子。请在后台逐字对照官方原文核对并保存后再发布。',
       );
+    }
+    if (
+      draftAuthor === 'automation' &&
+      reviewStatus !== EditorialReviewStatus.AUTO_APPROVED
+    ) {
+      throw new BadRequestException('自动稿没有有效的低风险审核记录，不能发布。');
     }
     // 没有原文摘录的，要求编辑明确保存过一次。
     //
@@ -630,6 +802,65 @@ export class ContentService {
         '这条没有留存官方原文摘录。请在后台打开官方页面逐项核对并保存后再发布。',
       );
     }
+  }
+
+  private assertAutomatedCopy(
+    sourceTitle: string,
+    sourceExcerpt: string,
+    dto: AutomatedEditorialReviewDto,
+  ) {
+    const copy = `${dto.titleZh}\n${dto.summaryZh}\n${dto.titleEn}\n${dto.summaryEn}`;
+    if (ADVICE_COPY.test(copy)) {
+      throw new BadRequestException('自动稿含建议或个人资格判断');
+    }
+    const evidence = `${sourceTitle}\n${sourceExcerpt}`.replaceAll(',', '');
+    const numbers = copy.match(MATERIAL_NUMBER) ?? [];
+    for (const number of numbers) {
+      if (!evidence.includes(number.replaceAll(',', ''))) {
+        throw new BadRequestException(`自动稿数字 ${number} 在官方摘录中找不到`);
+      }
+    }
+    const zhNumbers = new Set(
+      `${dto.titleZh}\n${dto.summaryZh}`.match(MATERIAL_NUMBER)?.map((n) => n.replaceAll(',', '')) ?? [],
+    );
+    const enNumbers = new Set(
+      `${dto.titleEn}\n${dto.summaryEn}`.match(MATERIAL_NUMBER)?.map((n) => n.replaceAll(',', '')) ?? [],
+    );
+    if (
+      zhNumbers.size !== enNumbers.size ||
+      [...zhNumbers].some((number) => !enNumbers.has(number))
+    ) {
+      throw new BadRequestException('中英文稿的关键数字不一致');
+    }
+  }
+
+  private automationRiskReasons(
+    current: {
+      tags: string[];
+      publishedAt: Date;
+      sourceTitle: string;
+      sourceUrl: string;
+      source: { name: string };
+    },
+    dto: AutomatedEditorialReviewDto,
+  ) {
+    const reasons: string[] = [];
+    const riskyTags = current.tags.filter((tag) => AUTOMATION_HIGH_RISK_TAGS.has(tag));
+    if (riskyTags.length > 0) reasons.push(`高影响主题：${riskyTags.join('、')}`);
+    if (
+      current.sourceUrl.includes('legislation.gov.au') ||
+      /\b(?:act|regulation|instrument|determination)\b/i.test(current.source.name)
+    ) {
+      reasons.push('法规解释必须人工确认');
+    }
+    if (ACTION_CHANGING_COPY.test(`${current.sourceTitle}\n${dto.titleZh}\n${dto.summaryZh}`)) {
+      reasons.push('内容可能改变申请资格、期限、费用或项目开放状态');
+    }
+    const oldestAutomaticDate = new Date(Date.now() - 450 * 24 * 60 * 60 * 1000);
+    if (current.publishedAt < oldestAutomaticDate) {
+      reasons.push('历史内容超过 15 个月，不自动推入当前资讯流');
+    }
+    return [...new Set(reasons)];
   }
 
   private assertChineseEditorialCopy(title: string, summary: string) {
