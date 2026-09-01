@@ -270,6 +270,7 @@ button:disabled { opacity: .55; cursor: wait; }
 /* 「未核对」= 机器写完了、没人看过。绿色留给真正核对过的，
    否则界面在鼓励人去发它们——之前它就是绿的，叫「待发布」。 */
 .state-pill.machine-drafted { background: #f0dcda; color: #a2544f; }
+.state-pill.reference { background: #e7e9e5; color: #526058; }
 .state-pill.needs-english { background: #e3e0f0; color: #4a4270; }
 .state-pill.ready { background: #d5e8de; color: #0a3f34; }
 .state-pill.published { background: #147b66; color: #fff; }

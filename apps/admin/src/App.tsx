@@ -9,6 +9,7 @@ type EditorialReviewStatus =
   | 'AUTO_APPROVED'
   | 'HUMAN_REQUIRED'
   | 'HUMAN_APPROVED'
+  | 'REFERENCE_ONLY'
   | 'FAILED'
 type View = 'review' | 'published' | 'sources' | 'corrections' | 'health'
 
@@ -65,6 +66,7 @@ type NewsItem = {
   editorialReviewRuns?: number | null
   editorialFindings?: string[] | null
   editorialRiskReasons?: string[]
+  editorialRevisionCount?: number
   sourceUrl: string
   tags: string[]
   publishedAt: string
@@ -78,6 +80,7 @@ type DraftState =
   | 'needs-chinese'
   | 'needs-english'
   | 'machine-drafted'
+  | 'reference'
   | 'ready'
   | 'published'
 
@@ -112,6 +115,7 @@ const CJK = /[㐀-鿿]/
 
 function draftState(item: NewsItem): DraftState {
   if (item.isPublished) return 'published'
+  if (item.editorialReviewStatus === 'REFERENCE_ONLY') return 'reference'
   // 没有官方原文摘录 = 没有可核对的基准，这条在后台审不了。
   // 排在最前面：它比「缺中文」更严重，因为缺中文一眼看得出来，
   // 没有原文却是**看起来完全正常**的——列表上和其它条目长得一模一样。
@@ -140,6 +144,7 @@ const DRAFT_STATE_LABEL: Record<DraftState, string> = {
   'needs-chinese': '待写中文',
   'needs-english': '待写英文',
   'machine-drafted': '需人工复核',
+  reference: '历史/参考',
   ready: '已核对',
   published: '已发布',
 }
@@ -762,6 +767,7 @@ function App() {
                 {([
                   'all',
                   'machine-drafted',
+                  'reference',
                   'ready',
                   'no-source',
                   'needs-chinese',
@@ -870,11 +876,14 @@ function App() {
                         disabled={
                           loading ||
                           state === 'machine-drafted' ||
+                          state === 'reference' ||
                           (state === 'no-source' && item.draftAuthor !== 'editor')
                         }
                         title={
                           state === 'machine-drafted'
                             ? '这条还没人核对过。请先点「核对」逐字对照原文并保存。'
+                            : state === 'reference'
+                              ? '这是历史或法规参考资料，不进入当前资讯流。编辑并保存后可人工提升。'
                             : state === 'no-source' && item.draftAuthor !== 'editor'
                               ? '这条没有官方原文摘录。请先点「核对」，打开官方页面逐项核对并保存。'
                               : undefined
@@ -924,17 +933,21 @@ function App() {
                   而那几段英文确实没有人看过。 */}
               {(selectedNews.draftAuthor === 'model' ||
                 selectedNews.draftAuthor === 'automation' ||
+                selectedNews.editorialReviewStatus === 'REFERENCE_ONLY' ||
                 selectedNews.draftChecks.length > 0) && (
                 <div className="model-warning">
                   <p>
-                    {selectedNews.editorialReviewStatus === 'HUMAN_REQUIRED'
+                    {selectedNews.editorialReviewStatus === 'REFERENCE_ONLY'
+                      ? '这条属于历史资料或法规原始记录，系统已保留证据但不会把它加入当前资讯流或人工待办。'
+                      : selectedNews.editorialReviewStatus === 'HUMAN_REQUIRED'
                       ? '自动流程已完成起草和独立复核，但服务器判定为高风险或存在冲突。'
                       : selectedNews.editorialReviewStatus === 'AUTO_APPROVED'
                         ? '这条已通过低风险自动审核并发布；以下保留完整机器审计记录。'
                         : selectedNews.draftAuthor === 'model'
                           ? '这是旧版模型草稿，尚未完成新的独立自动复核。'
                           : '这条含机器生成内容，请结合审计记录核对。'}
-                    {selectedNews.editorialReviewStatus !== 'AUTO_APPROVED' && (
+                    {selectedNews.editorialReviewStatus !== 'AUTO_APPROVED' &&
+                      selectedNews.editorialReviewStatus !== 'REFERENCE_ONLY' && (
                       <><strong>保存即代表你已人工核对</strong>，保存之后才允许发布。</>
                     )}
                   </p>

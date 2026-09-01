@@ -224,10 +224,19 @@ export class ContentService {
   editorialQueue() {
     return this.prisma.newsItem.findMany({
       where: {
-        // 旧版种子内容中有少量条目已经发布，但从未经过新的独立复核。
-        // 状态才是审核事实；不能因为它们恰好在线就永久绕过安全闸门。
-        editorialReviewStatus: EditorialReviewStatus.PENDING,
         sourceExcerpt: { not: null },
+        OR: [
+          // 旧版种子内容中有少量条目已经发布，但从未经过新的独立复核。
+          // 状态才是审核事实；不能因为它们恰好在线就永久绕过安全闸门。
+          { editorialReviewStatus: EditorialReviewStatus.PENDING },
+          {
+            // 没有命中政策风险、只因模型分歧进入人工队列的稿子，带着上一轮
+            // findings 自动重写一次。次数持久化，避免定时任务无限烧额度。
+            editorialReviewStatus: EditorialReviewStatus.HUMAN_REQUIRED,
+            editorialRiskReasons: { isEmpty: true },
+            editorialRevisionCount: { lt: 1 },
+          },
+        ],
       },
       include: { source: true },
       orderBy: { publishedAt: 'desc' },
@@ -272,16 +281,27 @@ export class ContentService {
       dto,
     );
 
-    const riskReasons = this.automationRiskReasons(current, dto);
-    const needsHuman = dto.blockingFindings.length > 0 || riskReasons.length > 0;
-    const reviewStatus = needsHuman
-      ? EditorialReviewStatus.HUMAN_REQUIRED
-      : EditorialReviewStatus.AUTO_APPROVED;
+    const referenceReasons = this.referenceOnlyReasons(current);
+    const referenceOnly = referenceReasons.length > 0;
+    const riskReasons = referenceOnly ? [] : this.automationRiskReasons(current, dto);
+    const needsHuman = !referenceOnly &&
+      (dto.blockingFindings.length > 0 || riskReasons.length > 0);
+    const reviewStatus = referenceOnly
+      ? EditorialReviewStatus.REFERENCE_ONLY
+      : needsHuman
+        ? EditorialReviewStatus.HUMAN_REQUIRED
+        : EditorialReviewStatus.AUTO_APPROVED;
+    const isAutomaticRevision =
+      current.editorialReviewStatus === EditorialReviewStatus.HUMAN_REQUIRED &&
+      current.editorialRiskReasons.length === 0 &&
+      current.editorialRevisionCount < 1;
     const reviewedAt = new Date();
     const checks = [
       ...dto.checks,
       ...dto.findings.map((finding) => `⚠ 自动复核：${finding}`),
-      ...(riskReasons.length > 0
+      ...(referenceOnly
+        ? referenceReasons.map((reason) => `参考资料：${reason}`)
+        : riskReasons.length > 0
         ? riskReasons.map((reason) => `⚠ 人工队列：${reason}`)
         : [`自动复核通过：${dto.reviewRuns} 轮独立核对未发现阻断项`]),
     ].filter((value, index, all) => all.indexOf(value) === index);
@@ -303,15 +323,22 @@ export class ContentService {
           editorialReviewedAt: reviewedAt,
           editorialReviewRuns: dto.reviewRuns,
           editorialFindings: dto.findings,
-          editorialRiskReasons: riskReasons,
-          isPublished: !needsHuman,
+          editorialRiskReasons: referenceOnly ? referenceReasons : riskReasons,
+          editorialRevisionCount: isAutomaticRevision
+            ? current.editorialRevisionCount + 1
+            : current.editorialRevisionCount,
+          isPublished: reviewStatus === EditorialReviewStatus.AUTO_APPROVED,
         },
         include: { source: true },
       });
 
       await tx.auditEvent.create({
         data: {
-          action: needsHuman ? 'CONTENT_HUMAN_REVIEW_REQUIRED' : 'CONTENT_AUTO_PUBLISHED',
+          action: referenceOnly
+            ? 'CONTENT_REFERENCE_ONLY'
+            : needsHuman
+              ? 'CONTENT_HUMAN_REVIEW_REQUIRED'
+              : 'CONTENT_AUTO_PUBLISHED',
           targetType: 'NewsItem',
           targetId: id,
           safeMetadata: {
@@ -319,11 +346,12 @@ export class ContentService {
             reviewRuns: dto.reviewRuns,
             findingCount: dto.findings.length,
             blockingFindingCount: dto.blockingFindings.length,
-            riskReasons,
+            riskReasons: referenceOnly ? referenceReasons : riskReasons,
+            automaticRevision: isAutomaticRevision,
           },
         },
       });
-      if (!needsHuman && !current.isPublished) {
+      if (reviewStatus === EditorialReviewStatus.AUTO_APPROVED && !current.isPublished) {
         await this.fanOutNewsPublished(tx, updated);
       }
       return updated;
@@ -545,9 +573,11 @@ export class ContentService {
     }
     this.assertSourceUrl(source.url, dto.sourceUrl);
     const sourceExcerpt = dto.sourceExcerpt.trim();
+    const publishedAt = new Date(dto.publishedAt);
+    const referenceReasons = this.referenceOnlyReasons({ publishedAt, source });
     const existing = await this.prisma.newsItem.findUnique({
       where: { sourceUrl: dto.sourceUrl },
-      select: { sourceExcerpt: true },
+      select: { sourceExcerpt: true, editorialReviewStatus: true },
     });
     const evidenceChanged =
       existing !== null && (existing.sourceExcerpt ?? '').trim() !== sourceExcerpt;
@@ -563,16 +593,40 @@ export class ContentService {
         sourceExcerpt,
         sourceUrl: dto.sourceUrl,
         tags: this.cleanTags(dto.tags),
-        publishedAt: new Date(dto.publishedAt),
+        publishedAt,
         isPublished: false,
+        editorialReviewStatus: referenceReasons.length > 0
+          ? EditorialReviewStatus.REFERENCE_ONLY
+          : EditorialReviewStatus.PENDING,
+        editorialRiskReasons: referenceReasons,
       },
       update: {
-        publishedAt: new Date(dto.publishedAt),
+        publishedAt,
         // 官方原文可能被修订过，跟着更新；但绝不碰 titleZh/summaryZh——
         // 那是人写的编辑稿，采集器无权覆盖。
         sourceTitle: dto.sourceTitle.trim(),
         sourceExcerpt,
-        ...(evidenceChanged
+        ...(referenceReasons.length > 0 &&
+        (existing?.editorialReviewStatus !== EditorialReviewStatus.HUMAN_APPROVED || evidenceChanged)
+          ? {
+              isPublished: false,
+              editorialReviewStatus: EditorialReviewStatus.REFERENCE_ONLY,
+              editorialRiskReasons: referenceReasons,
+              ...(evidenceChanged
+                ? {
+                    editorialReviewModel: null,
+                    editorialReviewedAt: null,
+                    editorialReviewRuns: null,
+                    editorialFindings: Prisma.JsonNull,
+                    editorialRevisionCount: 0,
+                    draftAuthor: null,
+                    draftModel: null,
+                    draftedAt: null,
+                    draftChecks: [],
+                  }
+                : {}),
+            }
+          : evidenceChanged
           ? {
               // 公开原文发生变化后，之前的自动或人工结论都不再对应当前证据。
               // 先撤下并重新进入流水线，不能让过期摘要继续挂在资讯流里。
@@ -583,6 +637,7 @@ export class ContentService {
               editorialReviewRuns: null,
               editorialFindings: Prisma.JsonNull,
               editorialRiskReasons: [],
+              editorialRevisionCount: 0,
               draftAuthor: null,
               draftModel: null,
               draftedAt: null,
@@ -872,11 +927,29 @@ export class ContentService {
     if (ACTION_CHANGING_COPY.test(`${current.sourceTitle}\n${dto.titleZh}\n${dto.summaryZh}`)) {
       reasons.push('内容可能改变申请资格、期限、费用或项目开放状态');
     }
-    const oldestAutomaticDate = new Date(Date.now() - 450 * 24 * 60 * 60 * 1000);
-    if (current.publishedAt < oldestAutomaticDate) {
-      reasons.push('历史内容超过 15 个月，不自动推入当前资讯流');
-    }
     return [...new Set(reasons)];
+  }
+
+  /**
+   * 法规原始记录和旧闻仍保留为可检索证据，但不冒充当前新闻，也不占用人工待办。
+   * 人工明确核对并保存后仍可把某条参考资料提升为 HUMAN_APPROVED 再发布。
+   */
+  private referenceOnlyReasons(current: {
+    publishedAt: Date;
+    source: { name: string; url: string };
+  }) {
+    if (
+      current.source.url.includes('legislation.gov.au') ||
+      /\b(?:act|regulation|instrument|determination)\b/i.test(current.source.name)
+    ) {
+      return ['法规原始记录：保留用于法规监控，不作为新闻逐条审核'];
+    }
+    const cutoff = new Date();
+    cutoff.setUTCMonth(cutoff.getUTCMonth() - 15);
+    if (current.publishedAt < cutoff) {
+      return ['历史资料：发布时间超过 15 个月，不进入当前资讯流'];
+    }
+    return [];
   }
 
   private assertChineseEditorialCopy(title: string, summary: string) {

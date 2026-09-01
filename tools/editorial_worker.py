@@ -78,6 +78,12 @@ def create_draft(item: dict, pool: sd.ModelPool) -> tuple[dict, str]:
         "summaryEn": (item.get("summaryEn") or "").strip(),
     }
     excerpt = item["sourceExcerpt"].strip()
+    is_automatic_revision = (
+        item.get("editorialReviewStatus") == "HUMAN_REQUIRED"
+        and int(item.get("editorialRevisionCount") or 0) < 1
+        and not (item.get("editorialRiskReasons") or [])
+        and bool(item.get("editorialFindings"))
+    )
     if item.get("draftAuthor") == "model" and all(existing.values()):
         problems = sd.validate(
             existing,
@@ -89,7 +95,8 @@ def create_draft(item: dict, pool: sd.ModelPool) -> tuple[dict, str]:
         # Reusing one would either make the reviewer check its own family or leave
         # the item permanently pending. Re-draft those with the active draft family.
         if (
-            not problems
+            not is_automatic_revision
+            and not problems
             and item.get("draftModel")
             and model_family(item["draftModel"]) == model_family(pool.current)
         ):
@@ -97,7 +104,15 @@ def create_draft(item: dict, pool: sd.ModelPool) -> tuple[dict, str]:
 
     while True:
         try:
-            result = sd.summarise(item["sourceTitle"], excerpt, pool.current)
+            result = sd.summarise(
+                item["sourceTitle"],
+                excerpt,
+                pool.current,
+                previous_draft=existing if is_automatic_revision else None,
+                review_findings=(item.get("editorialFindings") or [])
+                if is_automatic_revision
+                else None,
+            )
             problems = sd.validate(
                 result,
                 excerpt,
@@ -189,6 +204,8 @@ def process_batch(limit: int, review_runs: int) -> tuple[int, int]:
                 if not line.startswith("以下未经机器核对")
             ]
             checks.append(f"独立模型完成 {review_runs} 轮事实与中英文一致性复核")
+            if item.get("editorialReviewStatus") == "HUMAN_REQUIRED":
+                checks.append("已根据上一轮独立复核意见自动重写并再次复核")
             # Hash the exact stored evidence, not the trimmed prompt copy. This is an
             # optimistic lock: even whitespace changes force a fresh review.
             digest = hashlib.sha256(

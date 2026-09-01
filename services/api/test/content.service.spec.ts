@@ -256,8 +256,12 @@ describe('ContentService automated editorial policy', () => {
     tags: ['社区活动'],
     publishedAt: new Date(),
     isPublished: false,
+    editorialReviewStatus: EditorialReviewStatus.PENDING,
+    editorialRiskReasons: [],
+    editorialRevisionCount: 0,
     source: {
       name: 'Minister for Home Affairs media releases',
+      url: 'https://minister.homeaffairs.gov.au/news',
       enabled: true,
       sourceType: 'official',
       jurisdiction: 'AU-FED',
@@ -283,7 +287,7 @@ describe('ContentService automated editorial policy', () => {
     };
   }
 
-  function createService(item = current) {
+  function createService(item: any = current) {
     const tx = {
       newsItem: {
         update: jest.fn().mockImplementation(({ data }) =>
@@ -309,8 +313,15 @@ describe('ContentService automated editorial policy', () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          editorialReviewStatus: EditorialReviewStatus.PENDING,
           sourceExcerpt: { not: null },
+          OR: [
+            { editorialReviewStatus: EditorialReviewStatus.PENDING },
+            {
+              editorialReviewStatus: EditorialReviewStatus.HUMAN_REQUIRED,
+              editorialRiskReasons: { isEmpty: true },
+              editorialRevisionCount: { lt: 1 },
+            },
+          ],
         },
       }),
     );
@@ -350,6 +361,53 @@ describe('ContentService automated editorial policy', () => {
       }),
     );
     expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.HUMAN_REQUIRED);
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('auto-approves a corrected second draft and records the single revision', async () => {
+    const item = {
+      ...current,
+      editorialReviewStatus: EditorialReviewStatus.HUMAN_REQUIRED,
+      editorialRiskReasons: [],
+      editorialRevisionCount: 0,
+    };
+    const { service } = createService(item);
+    const result = await service.applyAutomatedEditorialReview('news-1', dto());
+
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.AUTO_APPROVED);
+    expect(result.editorialRevisionCount).toBe(1);
+    expect(result.isPublished).toBe(true);
+  });
+
+  it('keeps stale news as reference material instead of adding human work', async () => {
+    const item = { ...current, publishedAt: new Date('2024-01-01T00:00:00.000Z') };
+    const { service } = createService(item);
+    const result = await service.applyAutomatedEditorialReview('news-1', dto());
+
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.REFERENCE_ONLY);
+    expect(result.editorialRiskReasons).toContain(
+      '历史资料：发布时间超过 15 个月，不进入当前资讯流',
+    );
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('keeps raw legislation as reference material regardless of age', async () => {
+    const item = {
+      ...current,
+      sourceUrl: 'https://www.legislation.gov.au/F2026L00001',
+      source: {
+        ...current.source,
+        name: 'Migration Regulations 1994',
+        url: 'https://www.legislation.gov.au/F1996B03551/latest/text',
+      },
+    };
+    const { service } = createService(item);
+    const result = await service.applyAutomatedEditorialReview('news-1', dto());
+
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.REFERENCE_ONLY);
+    expect(result.editorialRiskReasons).toContain(
+      '法规原始记录：保留用于法规监控，不作为新闻逐条审核',
+    );
     expect(result.isPublished).toBe(false);
   });
 
@@ -417,5 +475,69 @@ describe('ContentService automated editorial policy', () => {
         }),
       ),
     ).rejects.toThrow('中英文稿的关键数字不一致');
+  });
+});
+
+describe('ContentService reference-only ingestion', () => {
+  function serviceFor(source: Record<string, unknown>) {
+    const upsert = jest.fn().mockImplementation(({ create }) => Promise.resolve(create));
+    const prisma = {
+      source: { findUnique: jest.fn().mockResolvedValue(source) },
+      newsItem: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert,
+      },
+    } as any;
+    return { service: new ContentService(prisma), upsert };
+  }
+
+  it('stores discovered legislation as reference material immediately', async () => {
+    const source = {
+      id: 'legislation-source',
+      name: 'Migration Regulations 1994',
+      url: 'https://www.legislation.gov.au/F1996B03551/latest/text',
+      enabled: true,
+    };
+    const { service, upsert } = serviceFor(source);
+    await service.ingestNews({
+      sourceRegistryUrl: source.url,
+      sourceUrl: 'https://www.legislation.gov.au/F2026L00001',
+      sourceTitle: 'Migration instrument 2026',
+      sourceExcerpt: 'Official register metadata.',
+      tags: ['法规'],
+      publishedAt: '2026-08-20T00:00:00.000Z',
+    });
+
+    expect(upsert.mock.calls[0][0].create).toEqual(
+      expect.objectContaining({
+        editorialReviewStatus: EditorialReviewStatus.REFERENCE_ONLY,
+        isPublished: false,
+      }),
+    );
+  });
+
+  it('stores old discovered news as history instead of pending review', async () => {
+    const source = {
+      id: 'news-source',
+      name: 'Official migration news',
+      url: 'https://example.gov.au/migration/news',
+      enabled: true,
+    };
+    const { service, upsert } = serviceFor(source);
+    await service.ingestNews({
+      sourceRegistryUrl: source.url,
+      sourceUrl: 'https://example.gov.au/migration/news/old-event',
+      sourceTitle: 'Old official event',
+      sourceExcerpt: 'Official event record.',
+      tags: ['社区活动'],
+      publishedAt: '2024-01-01T00:00:00.000Z',
+    });
+
+    expect(upsert.mock.calls[0][0].create).toEqual(
+      expect.objectContaining({
+        editorialReviewStatus: EditorialReviewStatus.REFERENCE_ONLY,
+        editorialRiskReasons: ['历史资料：发布时间超过 15 个月，不进入当前资讯流'],
+      }),
+    );
   });
 });

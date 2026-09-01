@@ -236,14 +236,32 @@ def admin_request(path: str, *, method: str = "GET", body: dict | None = None):
     return parsed
 
 
-def summarise(source_title: str, excerpt: str, model: str) -> dict:
+def summarise(
+    source_title: str,
+    excerpt: str,
+    model: str,
+    *,
+    previous_draft: dict | None = None,
+    review_findings: list[str] | None = None,
+) -> dict:
+    user_content = f"官方标题：{source_title}\n\n官方正文摘录：\n{excerpt}"
+    if previous_draft and review_findings:
+        # 第一次独立复核发现冲突时，不把同一份稿子原样送审第二遍。
+        # findings 只用于指出要修的地方；事实来源仍然只能是上面的官方摘录。
+        user_content += (
+            "\n\n上一版稿件未通过独立复核。请重新从官方摘录起草，不要仅做措辞润色，"
+            "并删除所有无法由原文直接支持的细节。\n"
+            f"上一版 JSON：{json.dumps(previous_draft, ensure_ascii=False)}\n"
+            "复核发现：\n- "
+            + "\n- ".join(str(item)[:300] for item in review_findings[:12])
+        )
     body = {
         "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": f"官方标题：{source_title}\n\n官方正文摘录：\n{excerpt}",
+                "content": user_content,
             },
         ],
         # 低温度：这是事实转述，不是创作。同一段原文两次跑出不同数字是不能接受的。

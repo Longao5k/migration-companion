@@ -40,6 +40,8 @@ enum EditorialReviewStatus {
   HUMAN_REQUIRED
   HUMAN_APPROVED
   FAILED
+  /// 历史资讯或法规原始记录，仅供检索和监控，不进入实时资讯流或人工待办。
+  REFERENCE_ONLY
 }
 
 enum ChangeImportance {
@@ -366,6 +368,8 @@ model NewsItem {
   editorialReviewRuns   Int?
   editorialFindings     Json?
   editorialRiskReasons  String[]              @default([])
+  /// 复核冲突允许自动带反馈重写一次。持久化次数可防止定时 worker 无限烧额度。
+  editorialRevisionCount Int                  @default(0)
   sourceUrl   String   @unique
   tags        String[]
   isPublished Boolean  @default(false)
