@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 # 设置或替换 infra/server/.env 中的一个变量，并清理空行/残留行。
 # 用法：bash infra/server/set-env-var.sh <KEY> <VALUE>
+# 敏感值可从标准输入读取，避免出现在进程参数里：
+#   printf '%s' "$SECRET" | bash infra/server/set-env-var.sh <KEY> --stdin
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 env_file="$here/.env"
 key="${1:-}"
-value="${2:-}"
+value_arg="${2:-}"
 
 if [ ! -f "$env_file" ]; then
   echo "找不到 $env_file。" >&2
   exit 1
 fi
 if [ -z "$key" ]; then
-  echo "用法：set-env-var.sh <KEY> <VALUE>" >&2
+  echo "用法：set-env-var.sh <KEY> <VALUE|--stdin>" >&2
   exit 1
+fi
+if [ "$value_arg" = "--stdin" ]; then
+  value="$(cat)"
+else
+  value="$value_arg"
 fi
 
 python3 - "$env_file" "$key" "$value" <<'PY'
