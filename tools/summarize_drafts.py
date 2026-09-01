@@ -50,6 +50,19 @@ DEFAULT_MODEL = ",".join([
     "qwen3.8-flash",
 ])
 
+# 这些混合思考模型允许显式关闭思考。编辑任务要求短、可验证的结构化转述，
+# 不需要长思维链；关闭后还能显著减少免费额度消耗和单条延迟。
+_NON_THINKING_MODELS = (
+    "qwen3.8-",
+    "qwen3.7-max",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+)
+
+
+def supports_non_thinking(model: str) -> bool:
+    return model.lower().startswith(_NON_THINKING_MODELS)
+
 # 产品规则的硬约束，写进提示词。这些不是风格偏好：
 # 「不构成移民建议」是签核过的边界，越过它是 Migration Act s.276 的问题，不是文案问题。
 SYSTEM_PROMPT = """你在为一个面向中国申请人的澳洲移民资讯工具撰写编辑稿。内容可能涉及技术移民、家庭、学生、工作、访客、人道、公民入籍或其他移民相关主题。
@@ -233,17 +246,10 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
         ],
         # 低温度：这是事实转述，不是创作。同一段原文两次跑出不同数字是不能接受的。
         "temperature": 0.1,
-        # 不设 max_tokens。
-        #
-        # 原先是 600，而 deepseek、kimi、glm 以及带思考的 qwen3.x 会先产出一段
-        # `reasoning_content`，它同样计入这个额度——deepseek 实测思考 10048 字符，
-        # 600 甚至 3000 都会在思考阶段就被截断，`content` 返回空字符串，
-        # 解析报「Expecting value: line 1 column 1」，看上去像模型不听话。
-        #
-        # 长度本来就不该靠 token 上限来控制：validate() 卡的是成品长度
-        # （标题 40 字、中文摘要 300 字、英文 700 字符），超了就打回。
-        # token 上限只会把好答案截断成坏答案。
+        # 长度由 validate() 检查，不用 token 上限截断 JSON。
     }
+    if supports_non_thinking(model):
+        body["enable_thinking"] = False
     request = Request(
         f"{require('SUMMARIZER_BASE_URL').rstrip('/')}/chat/completions",
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
@@ -261,9 +267,8 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
     last: Exception | None = None
     for attempt in range(3):
         try:
-            # 300 秒不是保守，是实测：去掉 max_tokens 之后推理模型会先写
-            # 一万字符的思考再出正文，qwen3.8-max 在 180 秒下三条超时一条，
-            # 而每次超时要赔上三轮重试共九分钟。
+            # 网络拥塞或服务端限流仍可能造成长尾，因此保留较宽的网络超时；
+            # 默认模型已显式关闭思考，不应再用数分钟生成不可见思维链。
             with urlopen(request, timeout=300) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             break

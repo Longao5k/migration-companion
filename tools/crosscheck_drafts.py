@@ -129,6 +129,8 @@ def _raw(model: str, system: str, user: str, attempts_left: int = 2) -> dict:
             {"role": "user", "content": user},
         ],
     }
+    if sd.supports_non_thinking(model):
+        body["enable_thinking"] = False
     if model not in _NO_TEMPERATURE:
         body["temperature"] = 0.1
     request = sd.Request(
