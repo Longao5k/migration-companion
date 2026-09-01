@@ -108,7 +108,7 @@ summaryEn：2 到 4 句，不超过 400 字符。"""
 #
 # 收窄到第二人称与推测形态，是让这道闸对准真正的危险，不是放松它。
 BANNED_EN = [
-    "you should", "we recommend", "recommended", "advisable",
+    "you should", "we recommend", "it is recommended", "applicants are recommended", "advisable",
     "you are eligible", "you may be eligible", "you may qualify", "you qualify",
     "likely to", "expected to be approved", "we advise",
 ]
@@ -246,6 +246,10 @@ def summarise(source_title: str, excerpt: str, model: str) -> dict:
         ],
         # 低温度：这是事实转述，不是创作。同一段原文两次跑出不同数字是不能接受的。
         "temperature": 0.1,
+        # 阿里云兼容接口的 JSON Object 模式保证响应本身是合法 JSON。
+        # 提示词已经明确包含 JSON，且当前 Qwen 起草模型均关闭思考模式，
+        # 符合服务端约束；否则偶发的半截 JSON 会让同一条每 15 分钟反复重跑。
+        "response_format": {"type": "json_object"},
         # 长度由 validate() 检查，不用 token 上限截断 JSON。
     }
     if supports_non_thinking(model):
@@ -439,6 +443,8 @@ def validate(
     # 惯用写法不同（中文「2023-24 年度」对英文「the 2024 program」），
     # 强求两边年份集合相同只会制造假警报。名额、金额、门槛这些实质数字仍然严格。
     known_years = set(re.findall(r"(?:19|20)\d{2}", corpus))
+    if known_year:
+        known_years.add(known_year)
     zh_numbers -= known_years
     en_numbers -= known_years
     if zh_numbers != en_numbers:

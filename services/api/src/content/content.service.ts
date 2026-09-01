@@ -264,7 +264,12 @@ export class ContentService {
     }
 
     this.assertChineseEditorialCopy(dto.titleZh, dto.summaryZh);
-    this.assertAutomatedCopy(current.sourceTitle, current.sourceExcerpt, dto);
+    this.assertAutomatedCopy(
+      current.sourceTitle,
+      current.sourceExcerpt,
+      current.publishedAt,
+      dto,
+    );
 
     const riskReasons = this.automationRiskReasons(current, dto);
     const needsHuman = dto.blockingFindings.length > 0 || riskReasons.length > 0;
@@ -807,13 +812,18 @@ export class ContentService {
   private assertAutomatedCopy(
     sourceTitle: string,
     sourceExcerpt: string,
+    publishedAt: Date,
     dto: AutomatedEditorialReviewDto,
   ) {
     const copy = `${dto.titleZh}\n${dto.summaryZh}\n${dto.titleEn}\n${dto.summaryEn}`;
     if (ADVICE_COPY.test(copy)) {
       throw new BadRequestException('自动稿含建议或个人资格判断');
     }
-    const evidence = `${sourceTitle}\n${sourceExcerpt}`.replaceAll(',', '');
+    // 官方页面常只写月日，完整年份来自采集到的发布日期；它是可信元数据，
+    // 因此可以出现在任一语言稿里。年份在中文和英文中的惯用写法也可能不同，
+    // 不应与名额、费用、门槛等实质数字使用同一套逐字对称规则。
+    const publishedYear = publishedAt.getUTCFullYear().toString();
+    const evidence = `${sourceTitle}\n${sourceExcerpt}\n${publishedYear}`.replaceAll(',', '');
     const numbers = copy.match(MATERIAL_NUMBER) ?? [];
     for (const number of numbers) {
       if (!evidence.includes(number.replaceAll(',', ''))) {
@@ -826,6 +836,11 @@ export class ContentService {
     const enNumbers = new Set(
       `${dto.titleEn}\n${dto.summaryEn}`.match(MATERIAL_NUMBER)?.map((n) => n.replaceAll(',', '')) ?? [],
     );
+    const knownYears = new Set(evidence.match(/(?:19|20)\d{2}/g) ?? []);
+    for (const year of knownYears) {
+      zhNumbers.delete(year);
+      enNumbers.delete(year);
+    }
     if (
       zhNumbers.size !== enNumbers.size ||
       [...zhNumbers].some((number) => !enNumbers.has(number))

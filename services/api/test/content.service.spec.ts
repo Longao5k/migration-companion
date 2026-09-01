@@ -366,4 +366,40 @@ describe('ContentService automated editorial policy', () => {
       ),
     ).rejects.toThrow('自动稿数字 9,999 在官方摘录中找不到');
   });
+
+  it('allows a trusted publication year to appear in only one language', async () => {
+    const publishedAt = new Date('2026-08-20T00:00:00.000Z');
+    const { service } = createService({ ...current, publishedAt });
+    const result = await service.applyAutomatedEditorialReview(
+      'news-1',
+      dto({
+        titleZh: '2026 年昆士兰举行移民欢迎活动',
+        summaryZh: '活动欢迎来自东南亚的商业移民。',
+        titleEn: 'Queensland welcomes business migrants',
+        summaryEn: 'The event welcomed business migrants from Southeast Asia.',
+      }),
+    );
+
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.AUTO_APPROVED);
+  });
+
+  it('still rejects non-year numbers missing from either language', async () => {
+    const item = {
+      ...current,
+      sourceExcerpt: 'The ceremony welcomed 1,550 new Australian citizens in Adelaide.',
+    };
+    const { service } = createService(item);
+    await expect(
+      service.applyAutomatedEditorialReview(
+        'news-1',
+        dto({
+          sourceDigest: createHash('sha256')
+            .update(`${item.sourceTitle}\n${item.sourceExcerpt}`)
+            .digest('hex'),
+          summaryZh: '活动欢迎 1,550 名新公民。',
+          summaryEn: 'The event welcomed new citizens.',
+        }),
+      ),
+    ).rejects.toThrow('中英文稿的关键数字不一致');
+  });
 });
