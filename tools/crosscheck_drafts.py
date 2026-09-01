@@ -15,7 +15,7 @@
    先给稿子会让它附和——那就查不出任何东西了。
 2. **对照**：把盲测结果和我们的稿子放在一起，找分歧。
 
-用与起草不同的模型家族（稿子出自 deepseek / qwen，复核用 kimi / glm）。
+用与起草不同的模型家族（默认由 Qwen 起草，DeepSeek 复核）。
 同一个模型的失效方式是相关的，用它查自己等于没查。
 
 用法：
@@ -41,8 +41,12 @@ _spec = importlib.util.spec_from_file_location(
 sd = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sd)
 
-# 与起草不同的家族。稿子是 deepseek-v4-pro / qwen3.8-27b 写的。
-DEFAULT_MODEL = ",".join(["kimi-k3", "glm-5.2", "deepseek-v4-flash-0731"])
+# 与默认起草链不同的家族，并优先使用新加坡区的新用户免费额度。
+DEFAULT_MODEL = ",".join([
+    "deepseek-v4-pro-0813",
+    "deepseek-v4-flash-0731",
+    "deepseek-v4-flash",
+])
 
 EXTRACT_PROMPT = """你在核对一份澳洲移民官方公告。
 

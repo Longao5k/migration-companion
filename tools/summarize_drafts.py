@@ -41,15 +41,12 @@ from urllib.request import Request, urlopen
 #
 # 免费额度是**按模型**计的。原先写死一个 qwen3.8-27b，它耗尽的那天
 # 73 条里有 23 条直接失败——而同一个 key 下当时还有二十多个模型有额度。
-# 顺序按实测排：deepseek 两条两条过、稳定出正文；qwen3.8-max 质量相当但
-# 三条超时一条。后面几个是备胎，前面的额度用完才轮到。
+# 自动编辑默认让起草与复核使用不同模型家族：这里仅使用新加坡区有新用户
+# 免费额度的 Qwen。DeepSeek 留给独立复核；Kimi/GLM 当前没有免费额度，
+# 需要付费兜底时再通过环境变量显式加入。
 DEFAULT_MODEL = ",".join([
-    "deepseek-v4-pro-0813",
     "qwen3.8-max",
     "qwen3.7-max-2026-06-08",
-    "kimi-k3",
-    "glm-5.2",
-    "qwen3.7-plus",
     "qwen3.8-flash",
 ])
 
