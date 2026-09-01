@@ -333,8 +333,8 @@
     "url": "https://www.jobsandskills.gov.au/news",
     "discovery_url": "https://www.jobsandskills.gov.au/news",
     "jurisdiction": "AU-FED",
-    "license_note": "Australian Government source. Store evidence privately; publish a link and short original bilingual summary only.",
-    "enabled": true,
+    "license_note": "DISABLED 2026-09-01: jobsandskills.gov.au robots.txt does not permit this news path for the transparent crawler identity. Do not bypass; retain the source so the federal occupation-data coverage gap is visible.",
+    "enabled": false,
     "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$",
     "relevance_pattern": "\\b(migration|migrant|visa|occupation|CSOL|skills in demand)\\b",
     "topics": [
@@ -346,8 +346,8 @@
     "name": "Department of Education — Overseas student framework changes",
     "url": "https://www.education.gov.au/esos-framework/changes-legislative-framework-overseas-students",
     "jurisdiction": "AU-FED",
-    "license_note": "Australian Government source. Monitor the page as evidence and publish only short original summaries with attribution.",
-    "enabled": true,
+    "license_note": "DISABLED 2026-09-01: education.gov.au robots.txt does not permit this page for the transparent crawler identity. Do not bypass; retain the source so the overseas-student policy coverage gap is visible.",
+    "enabled": false,
     "topics": [
       "学生签证"
     ]
