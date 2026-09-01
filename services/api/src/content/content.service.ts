@@ -224,7 +224,8 @@ export class ContentService {
   editorialQueue() {
     return this.prisma.newsItem.findMany({
       where: {
-        isPublished: false,
+        // 旧版种子内容中有少量条目已经发布，但从未经过新的独立复核。
+        // 状态才是审核事实；不能因为它们恰好在线就永久绕过安全闸门。
         editorialReviewStatus: EditorialReviewStatus.PENDING,
         sourceExcerpt: { not: null },
       },

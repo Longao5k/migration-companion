@@ -300,6 +300,22 @@ describe('ContentService automated editorial policy', () => {
     return { service: new ContentService(prisma), tx };
   }
 
+  it('queues published legacy items whose editorial review is still pending', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new ContentService({ newsItem: { findMany } } as any);
+
+    await service.editorialQueue();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          editorialReviewStatus: EditorialReviewStatus.PENDING,
+          sourceExcerpt: { not: null },
+        },
+      }),
+    );
+  });
+
   it('auto-publishes low-risk official news after independent review', async () => {
     const { service, tx } = createService();
     const result = await service.applyAutomatedEditorialReview('news-1', dto());
