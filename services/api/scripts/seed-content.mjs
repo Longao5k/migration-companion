@@ -2,10 +2,9 @@
 //
 // 两处「看起来像漏了」的地方是有意的，改之前请先读这里：
 //
-// 1. update 分支不写 `enabled`。来源的启停由后台控制（管理员在来源卡片上点
-//    「停用」），重跑播种不能把这个决定盖回去——比如某个来源开始对 robots.txt
-//    返回 403、我们据此停用了它，重跑一次 seed 就会把它重新打开并继续抓。
-//    registry 决定来源存在与否，后台决定它开不开。
+// 1. registry 的 `enabled: false` 是代码审查过的安全停用（robots、403 或许可边界），
+//    每次部署都必须同步到数据库；否则采集器虽会跳过，后台却仍把来源显示为启用。
+//    `enabled: true` 不反向写回，避免部署把管理员临时停用的来源重新打开。
 //
 // 2. reviewed-news 只负责首次创建。已经入库的条目绝不在每次容器启动时覆盖：
 //    官方原文变化后采集器会撤下旧摘要并重新审核；如果 seed 又把它改回已发布，
@@ -38,6 +37,7 @@ try {
         jurisdiction: record.jurisdiction,
         sourceType: 'official',
         licenseNote: record.license_note,
+        ...(record.enabled === false ? { enabled: false } : {}),
       },
     })
   }
