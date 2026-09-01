@@ -18,7 +18,10 @@ def main() -> None:
     # 法规库每天查一次就够：立法文书不是每小时都有。用轮次计数而不是单独起一个
     # 线程——少一个并发路径，也避免两个循环同时打同一个站点。
     legislation_every = max(1, int(os.environ.get("LEGISLATION_EVERY_N_ROUNDS", "4")))
-    legislation_since = os.environ.get("LEGISLATION_SINCE", "2019-01-01")
+    # A current-information product should not turn every old instrument into a
+    # fresh news card. Older law remains reachable from the official register;
+    # the live feed starts at 2024 unless operations deliberately widens it.
+    legislation_since = os.environ.get("LEGISLATION_SINCE", "2024-01-01")
     round_index = 0
 
     while not stopping.is_set():
