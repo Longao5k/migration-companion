@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 
@@ -149,6 +149,27 @@ const DRAFT_STATE_LABEL: Record<DraftState, string> = {
   published: '已发布',
 }
 
+/** 去掉模型内部的轮次前缀，把真正要判断的事实直接露给审核人。 */
+function readableFinding(value: string) {
+  return value.replace(/^\[\d+\/\d+轮]\[(?:高风险|低风险)]\s*/, '').trim()
+}
+
+function reviewReasonPreview(item: NewsItem) {
+  const finding = item.editorialFindings?.find((value) => value.trim())
+  if (finding) return readableFinding(finding)
+
+  const riskReason = item.editorialRiskReasons?.find((value) => value.trim())
+  if (riskReason) return riskReason
+
+  if (item.editorialReviewStatus === 'FAILED') {
+    return '自动复核没有成功完成，需要直接对照官方原文。'
+  }
+  if (!item.sourceExcerpt?.trim()) {
+    return '没有留存官方原文摘录，需要打开官方页面逐项确认。'
+  }
+  return '旧版机器草稿没有独立复核记录，需要确认事实与中英文一致。'
+}
+
 type SourceHealth = Source & {
   snapshots: Array<{
     contentHash: string
@@ -219,6 +240,8 @@ function App() {
   const [newsFilter, setNewsFilter] = useState<'all' | DraftState>('all')
   const [onlyModelDrafts, setOnlyModelDrafts] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // 打开独立复核页前记住列表位置，返回时不让审核人重新寻找刚才那一条。
+  const newsListScrollY = useRef(0)
 
   const selected = useMemo(
     () => [...queue, ...changes].find((item) => item.id === selectedId),
@@ -398,8 +421,13 @@ function App() {
   }
 
   function openView(next: View) {
+    if (selectedNews && hasUnsavedEdits()) {
+      const ok = window.confirm('当前复核内容有未保存的修改。切换页面会丢掉这些修改，要继续吗？')
+      if (!ok) return
+    }
     setView(next)
     setSelectedId('')
+    setSelectedNewsId('')
     setSummary('')
     setCorrectionNote('')
     if (token) void load(next)
@@ -526,21 +554,28 @@ function App() {
       )
       if (!ok) return
     }
+    if (!selectedNews) newsListScrollY.current = window.scrollY
     setSelectedNewsId(item.id)
-    // 点「编辑」之后要让表单出现在眼前。
-    // 原先什么都不做：在第 30 条的位置点编辑，表单在两千像素以外的页顶，
-    // 屏幕上毫无变化，看起来像没反应。
+    // 复核现在是完整的次级页面，打开时从标题开始读。
     requestAnimationFrame(() => {
-      const form = document.querySelector('.editor-form')
-      form?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      const first = form?.querySelector('input') as HTMLInputElement | null
-      first?.focus()
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     })
     setNewsTitle(item.titleZh)
     setNewsSummary(item.summaryZh)
     setNewsTitleEn(item.titleEn || '')
     setNewsSummaryEn(item.summaryEn || '')
     setNewsTags(item.tags.join(', '))
+  }
+
+  function returnToNewsList(checkForEdits = true) {
+    if (checkForEdits && hasUnsavedEdits()) {
+      const ok = window.confirm('这条资讯有未保存的修改。返回列表会丢掉这些修改，要继续吗？')
+      if (!ok) return
+    }
+    setSelectedNewsId('')
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: newsListScrollY.current, behavior: 'auto' })
+    })
   }
 
   /** 批量发布。逐条走服务端闸门，失败的留在列表里并说明原因。 */
@@ -628,7 +663,7 @@ function App() {
         editNews(next)
         setNotice(`已核对，进入下一条（${nextUnchecked(next.id) ? '后面还有' : '这是最后一条'}）`)
       } else if (advance) {
-        setSelectedNewsId('')
+        returnToNewsList(false)
         setNotice('这一批已经核对完了。勾选「已核对」的条目即可批量发布。')
       } else {
         setNotice('已保存并标记为已核对；确认原文链接后即可发布。')
@@ -652,6 +687,18 @@ function App() {
   ).length
   const enabledCount = sources.filter((item) => item.enabled).length
   const healthyCount = health.filter((item) => item.lastSuccessAt && !item.lastFailureCode).length
+  const humanReviewQueue = news.filter(
+    (item) => !item.isPublished && draftState(item) === 'machine-drafted',
+  )
+  const selectedFindings = selectedNews?.editorialFindings?.filter((value) => value.trim()) ?? []
+  const selectedRiskReasons = selectedNews?.editorialRiskReasons?.filter((value) => value.trim()) ?? []
+  const selectedNeedsHumanReview = selectedNews
+    ? draftState(selectedNews) === 'machine-drafted'
+    : false
+  const selectedReviewPosition = selectedNews
+    ? humanReviewQueue.findIndex((item) => item.id === selectedNews.id) + 1
+    : 0
+  const isReviewingNews = view === 'published' && Boolean(selectedNews)
 
   // 未登录时只给登录页，不给控制台外壳。
   // 原先把登录框塞在仪表盘头部，未登录的人会看到一整套侧栏和四个显示 0 的指标卡，
@@ -725,7 +772,7 @@ function App() {
 
       <main>
         <header>
-          <div><h1>{nav.find((item) => item.id === view)?.label}</h1></div>
+          <div><h1>{isReviewingNews ? '人工复核' : nav.find((item) => item.id === view)?.label}</h1></div>
           <div className="key-box">
             <span className="signed-in">{signedInAs}</span>
             <button onClick={() => load()} disabled={loading}>
@@ -735,14 +782,14 @@ function App() {
           </div>
         </header>
 
-        <section className="metrics" aria-label="运营概览">
+        {!isReviewingNews && <section className="metrics" aria-label="运营概览">
           {/* 第一格原先显示的是变更队列（今天是 0），而实际待核对的资讯有 73 条。
               登录第一屏写着「待审核 0」、实际待审 73，是这个后台最误导人的一处。 */}
           <article><span>人工审核队列</span><strong>{uncheckedCount}</strong><small>仅高风险或复核冲突</small></article>
           <article><span>已发布新闻</span><strong>{news.filter((item) => item.isPublished).length}</strong><small>其中自动审核 {autoPublishedCount} 条</small></article>
           <article><span>启用来源</span><strong>{enabledCount}</strong><small>新增来源默认停用</small></article>
           <article><span>健康来源</span><strong>{health.length ? `${healthyCount}/${health.length}` : '—'}</strong><small>故障不会生成政策结论</small></article>
-        </section>
+        </section>}
         <p className="notice" role="status">{notice}</p>
 
         {view === 'review' && (
@@ -750,7 +797,7 @@ function App() {
         )}
 
         {view === 'published' && (
-          <section className="management-grid">
+          <section className={selectedNews ? 'management-grid review-mode' : 'management-grid'}>
             <div className="management-list">
               <div className="panel-heading">
                 <div>
@@ -846,15 +893,23 @@ function App() {
                         />
                       )}
                       <span className={`state-pill ${state}`}>{DRAFT_STATE_LABEL[state]}</span>
-                      {draftState(item) === 'machine-drafted' && (
-                        <span className="state-pill model" title="自动流程判定需要人工复核">
-                          人工队列
-                        </span>
-                      )}
                       <strong>{item.titleZh || item.sourceTitle}</strong>
                       <small>
                         {item.source.name} · {formatTime(item.publishedAt)}
                       </small>
+                      {state === 'machine-drafted' && (
+                        <div className="review-reason-preview">
+                          <span>需要你确认</span>
+                          <p>{reviewReasonPreview(item)}</p>
+                          {((item.editorialFindings?.length ?? 0) +
+                            (item.editorialRiskReasons?.length ?? 0)) > 1 && (
+                            <small>
+                              还有 {(item.editorialFindings?.length ?? 0) +
+                                (item.editorialRiskReasons?.length ?? 0) - 1} 项原因
+                            </small>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <span className="card-actions">
                       <button onClick={() => editNews(item)} disabled={loading}>
@@ -897,100 +952,168 @@ function App() {
               })}
             </div>
             {selectedNews ? <form
-              className="editor-form"
-              onSubmit={(event) => saveNewsDraft(event, true)}
+              className="editor-form review-detail-form"
+              onSubmit={(event) => saveNewsDraft(event, selectedNeedsHumanReview)}
               // 连审时手不必离开键盘。73 条逐条填表，每次 4 次鼠标往返，
               // 光是往返就足以让人中途放弃。
               onKeyDown={(event) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                   event.preventDefault()
-                  void saveNewsDraft(event as unknown as FormEvent<HTMLFormElement>, true)
+                  void saveNewsDraft(
+                    event as unknown as FormEvent<HTMLFormElement>,
+                    selectedNeedsHumanReview,
+                  )
                 }
               }}
             >
-              <h2>编辑新闻草稿</h2>
-
-              {/* 原文和译稿必须同屏。原先原文被中文摘要覆盖掉了，审核只能开外部
-                  浏览器对照——而我们的规则是「人工核实后才发布」，核实工具里
-                  却没有被核实的那个东西。变更审核页早就是左右对照，这里照抄。 */}
-              <div className="source-pane">
-                <span className="pane-label">官方原文</span>
-                <strong>{selectedNews.sourceTitle}</strong>
-                <p className="source-excerpt">
-                  {selectedNews.sourceExcerpt ||
-                    '这条没有留存官方原文摘录。它的中英摘要是由上一版摘要转写的，' +
-                      '其中的数字从未与官方页面比对过——必须打开官方页面逐个核对。' +
-                      '核对完保存，这一下就是你对此负责的记号；未保存前服务端不允许发布。'}
-                </p>
-                <a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">
-                  打开官方页面 ↗
-                </a>
+              <div className="review-page-heading">
+                <button
+                  type="button"
+                  className="review-back"
+                  onClick={() => returnToNewsList()}
+                  disabled={loading}
+                >
+                  ← 返回资讯审核
+                </button>
+                <div className="review-title-copy">
+                  <span className="eyebrow">
+                    {selectedNeedsHumanReview && selectedReviewPosition > 0
+                      ? `人工队列 ${selectedReviewPosition} / ${humanReviewQueue.length}`
+                      : DRAFT_STATE_LABEL[draftState(selectedNews)]}
+                  </span>
+                  <h2>{selectedNews.titleZh || selectedNews.sourceTitle}</h2>
+                  <p>{selectedNews.source.name} · 官方发布 {formatTime(selectedNews.publishedAt)}</p>
+                </div>
+                <span className={`state-pill ${draftState(selectedNews)}`}>
+                  {DRAFT_STATE_LABEL[draftState(selectedNews)]}
+                </span>
               </div>
 
-              {/* 有机器痕迹就显示，不只看 draftAuthor。
-                  已发布的 5 条种子内容中文是人写的、英文是模型补的，
-                  draftAuthor 是 null——按老条件它们什么提示都没有，
-                  而那几段英文确实没有人看过。 */}
+              <section className={`review-brief ${selectedNeedsHumanReview ? 'needs-review' : ''}`}>
+                <div className="review-brief-main">
+                  <span className="review-section-label">
+                    {selectedNeedsHumanReview ? '为什么需要你人工复核' : '当前审核状态'}
+                  </span>
+                  <h3>
+                    {selectedFindings.length > 0
+                      ? `模型发现 ${selectedFindings.length} 项事实或中英文冲突`
+                      : selectedRiskReasons.length > 0
+                        ? '未发现明确冲突，但内容会影响重要申请决定'
+                        : selectedNeedsHumanReview
+                          ? '自动复核没有给出可以直接发布的结论'
+                          : '这条不在当前人工复核队列中'}
+                  </h3>
+                  {selectedFindings.length > 0 && (
+                    <div className="review-issue-group">
+                      <h4>需要判断的具体问题</h4>
+                      <ol className="review-issues">
+                        {selectedFindings.map((finding) => (
+                          <li
+                            className={finding.includes('[高风险]') ? 'high' : ''}
+                            key={finding}
+                          >
+                            <span>{finding.includes('[高风险]') ? '高风险冲突' : '复核分歧'}</span>
+                            <p>{readableFinding(finding)}</p>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {selectedRiskReasons.length > 0 && (
+                    <div className="review-issue-group">
+                      <h4>系统为什么不自动发布</h4>
+                      <div className="risk-reasons">
+                        {selectedRiskReasons.map((reason) => <span key={reason}>{reason}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {selectedNeedsHumanReview &&
+                    selectedFindings.length === 0 &&
+                    selectedRiskReasons.length > 0 && (
+                      <p className="no-conflict-note">
+                        独立模型没有发现事实错误。它进入人工队列，是因为资格、期限、费用、
+                        职业清单或项目开放状态一旦写错会直接影响用户决定。
+                      </p>
+                    )}
+                  {selectedNeedsHumanReview &&
+                    selectedFindings.length === 0 &&
+                    selectedRiskReasons.length === 0 && (
+                      <p className="no-conflict-note">{reviewReasonPreview(selectedNews)}</p>
+                    )}
+                </div>
+                {selectedNeedsHumanReview && (
+                  <aside className="review-task-list">
+                    <span className="review-section-label">你只需要做这三件事</span>
+                    <ol>
+                      <li><b>对原文</b><span>先核对上面标出的冲突、数字、日期与适用范围。</span></li>
+                      <li><b>改草稿</b><span>删除原文没有的结论，并让中英文表达同一组事实。</span></li>
+                      <li><b>留记录</b><span>确认无误后保存；保存只完成核对，不会直接发布。</span></li>
+                    </ol>
+                  </aside>
+                )}
+              </section>
+
+              {/* 独立详情页把官方原文与草稿放进完整宽度的阅读区。 */}
+              <div className="review-reading-grid">
+                <div className="source-column">
+                  <div className="source-pane">
+                    <span className="pane-label">官方原文摘录</span>
+                    <strong>{selectedNews.sourceTitle}</strong>
+                    <p className="source-excerpt">
+                      {selectedNews.sourceExcerpt ||
+                        '这条没有留存官方原文摘录。它的中英摘要是由上一版摘要转写的，' +
+                          '其中的数字从未与官方页面比对过——必须打开官方页面逐个核对。' +
+                          '核对完保存，这一下就是你对此负责的记号；未保存前服务端不允许发布。'}
+                    </p>
+                    <a href={selectedNews.sourceUrl} target="_blank" rel="noreferrer">
+                      打开完整官方页面 ↗
+                    </a>
+                  </div>
+                </div>
+
+                <div className="draft-editor-column">
+                  <section className="language-card">
+                    <div className="language-card-heading">
+                      <span>中文稿</span>
+                      <small>核对事实、数字、日期、适用人群与限制条件</small>
+                    </div>
+                    <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>
+                    <label>中文原创摘要<textarea required maxLength={2000} value={newsSummary} onChange={(event) => setNewsSummary(event.target.value)} /></label>
+                  </section>
+
+                  {/* 英文稿会随发布一起上线，必须和中文稿在同一次复核里检查。 */}
+                  <section className="language-card">
+                    <div className="language-card-heading">
+                      <span>英文稿</span>
+                      <small>必须与中文稿陈述同一组事实和数字</small>
+                    </div>
+                    <label>英文标题<input maxLength={240} value={newsTitleEn} onChange={(event) => setNewsTitleEn(event.target.value)} placeholder="留空则 App 内不显示英文" /></label>
+                    <label>英文摘要<textarea maxLength={2000} value={newsSummaryEn} onChange={(event) => setNewsSummaryEn(event.target.value)} placeholder="与中文陈述同一组事实，数字必须一致" /></label>
+                  </section>
+
+                  <label className="tags-field">标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
+                </div>
+              </div>
+
               {(selectedNews.draftAuthor === 'model' ||
                 selectedNews.draftAuthor === 'automation' ||
                 selectedNews.editorialReviewStatus === 'REFERENCE_ONLY' ||
                 selectedNews.draftChecks.length > 0) && (
-                <div className="model-warning">
+                <details className="machine-audit">
+                  <summary>查看机器已完成的检查与模型记录</summary>
                   <p>
-                    {selectedNews.editorialReviewStatus === 'REFERENCE_ONLY'
-                      ? '这条属于历史资料或法规原始记录，系统已保留证据但不会把它加入当前资讯流或人工待办。'
-                      : selectedNews.editorialReviewStatus === 'HUMAN_REQUIRED'
-                      ? '自动流程已完成起草和独立复核，但服务器判定为高风险或存在冲突。'
-                      : selectedNews.editorialReviewStatus === 'AUTO_APPROVED'
-                        ? '这条已通过低风险自动审核并发布；以下保留完整机器审计记录。'
-                        : selectedNews.draftAuthor === 'model'
-                          ? '这是旧版模型草稿，尚未完成新的独立自动复核。'
-                          : '这条含机器生成内容，请结合审计记录核对。'}
-                    {selectedNews.editorialReviewStatus !== 'AUTO_APPROVED' &&
-                      selectedNews.editorialReviewStatus !== 'REFERENCE_ONLY' && (
-                      <><strong>保存即代表你已人工核对</strong>，保存之后才允许发布。</>
-                    )}
+                    这些是审计记录，不是需要你逐项处理的任务；真正需要判断的问题已经列在页面顶部。
                   </p>
-                  {(selectedNews.editorialRiskReasons ?? []).length > 0 && (
-                    <ul className="draft-checks">
-                      {(selectedNews.editorialRiskReasons ?? []).map((reason) => (
-                        <li className="check-alert high" key={reason}>人工审核原因：{reason}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {/* 机器验过什么、没验什么，直接摊开。
-                      这份信息此前只打在起草工具的 console 日志里，一个字都没进到
-                      这个界面——于是每条都得当成完全没核过来审，白花力气。 */}
                   {selectedNews.draftChecks.length > 0 && (
                     <ul className="draft-checks">
-                      {selectedNews.draftChecks.map((line) => (
-                        <li
-                          key={line}
-                          // ⚠ 开头的是另一个模型独立复核后提出的分歧，
-                          // 不是「已核过」。两者混在一个样式里，最该看的那几行
-                          // 会淹没在「已核过」的列表中间。
-                          className={
-                            line.startsWith('⚠')
-                              ? line.includes('【重要】')
-                                ? 'check-alert high'
-                                : 'check-alert'
-                              : undefined
-                          }
-                        >
-                          {line}
-                        </li>
-                      ))}
+                      {selectedNews.draftChecks.map((line) => <li key={line}>{line}</li>)}
                     </ul>
                   )}
                   <small className="draft-origin">
                     {selectedNews.draftModel
                       ? `起草模型 ${selectedNews.draftModel}`
                       : '起草模型未记录'}
-                    {selectedNews.draftedAt
-                      ? ` · ${formatTime(selectedNews.draftedAt)}`
-                      : ''}
-                    {selectedNews.draftedAt &&
-                      ' · 官方页面在这之后改过的话，这份稿子就是过期的'}
+                    {selectedNews.draftedAt ? ` · ${formatTime(selectedNews.draftedAt)}` : ''}
                     {selectedNews.editorialReviewModel
                       ? ` · 复核模型 ${selectedNews.editorialReviewModel}`
                       : ''}
@@ -998,24 +1121,14 @@ function App() {
                       ? ` · ${selectedNews.editorialReviewRuns} 轮`
                       : ''}
                   </small>
-                </div>
+                </details>
               )}
-
-              <label>中文标题<input required maxLength={240} value={newsTitle} onChange={(event) => setNewsTitle(event.target.value)} /></label>
-              <label>中文原创摘要<textarea required maxLength={2000} value={newsSummary} onChange={(event) => setNewsSummary(event.target.value)} /></label>
-
-              {/* 英文稿必须在同一个表单里。它会随发布一起上线，给申请人转述给雇主、
-                  律师和职业评估机构用——之前它在库里、在 App 里，唯独不在这个
-                  审核界面上，等于绕过了「人工核实后发布」这道闸。 */}
-              <label>英文标题<input maxLength={240} value={newsTitleEn} onChange={(event) => setNewsTitleEn(event.target.value)} placeholder="留空则 App 内不显示英文" /></label>
-              <label>英文摘要<textarea maxLength={2000} value={newsSummaryEn} onChange={(event) => setNewsSummaryEn(event.target.value)} placeholder="与中文陈述同一组事实，数字必须一致" /></label>
-
-              <label>标签（逗号分隔）<input value={newsTags} onChange={(event) => setNewsTags(event.target.value)} /></label>
               <div className="editor-actions">
                 <button className="approve" disabled={loading}>
-                  核对无误，保存并下一条 <kbd>Ctrl+Enter</kbd>
+                  {selectedNeedsHumanReview ? '核对无误，保存并下一条' : '保存修改'}
+                  {' '}<kbd>Ctrl+Enter</kbd>
                 </button>
-                <button
+                {selectedNeedsHumanReview && <button
                   type="button"
                   onClick={(event) =>
                     saveNewsDraft(event as unknown as FormEvent<HTMLFormElement>, false)
@@ -1023,9 +1136,9 @@ function App() {
                   disabled={loading}
                 >
                   只保存
-                </button>
-                <button type="button" onClick={() => setSelectedNewsId('')} disabled={loading}>
-                  取消
+                </button>}
+                <button type="button" onClick={() => returnToNewsList()} disabled={loading}>
+                  返回列表
                 </button>
               </div>
             </form> : <form className="editor-form" onSubmit={createNews}>

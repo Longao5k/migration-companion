@@ -85,7 +85,7 @@ button:disabled { opacity: .55; cursor: wait; }
 
 .management-grid { display: grid; grid-template-columns: minmax(460px, 1.2fr) minmax(340px, .8fr); gap: 16px; align-items: start; }
 .management-list, .editor-form, .table-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: 0 12px 34px #163b3012; }
-.management-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+.management-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
 .management-card:last-child { border-bottom: 0; }
 .management-card > div { min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 9px; align-items: center; }
 .management-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -119,6 +119,27 @@ button:disabled { opacity: .55; cursor: wait; }
 .editor-actions kbd { margin-left: 6px; padding: 1px 5px; border-radius: 4px; background: #ffffff30; font-size: 10px; font-weight: 700; }
 /* 「发布」是不可撤的——推送发出去就收不回来了。不能和「编辑」长成一对灰按钮。 */
 .management-card .publish { background: #147b66; color: #fff; }
+.review-reason-preview {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  padding: 10px 12px;
+  border-left: 3px solid #bd5c4f;
+  border-radius: 8px;
+  background: #fbf0ee;
+}
+.review-reason-preview span { display: block; color: #8f3f36; font-size: 10px; font-weight: 900; letter-spacing: .04em; }
+.review-reason-preview p {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #5d302b;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.review-reason-preview small { display: block; margin-top: 4px; color: #9a5b53; font-size: 10px; }
 .guard-copy { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .full-width { grid-column: 1 / -1; }
 .wide-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 14px 18px; text-align: left; color: var(--ink); }
@@ -305,4 +326,169 @@ button:disabled { opacity: .55; cursor: wait; }
   font-size: 12.5px;
   line-height: 1.6;
   color: #8a3f3a;
+}
+
+/* 资讯复核是独立次级页面。列表和新增表单在复核时全部退出视野，
+   不再把关键原文与四个编辑框挤进三百多像素宽的右栏。 */
+.management-grid.review-mode { display: block; }
+.management-grid.review-mode > .management-list { display: none; }
+.review-detail-form {
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  padding: 0;
+  gap: 0;
+  position: static;
+  top: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.review-page-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 24px 26px;
+  border-bottom: 1px solid var(--line);
+}
+.review-back {
+  background: #e8eee9;
+  color: #23483f;
+  white-space: nowrap;
+}
+.review-title-copy { min-width: 0; }
+.review-title-copy h2 { margin: 2px 0 5px; font-size: 24px; line-height: 1.3; }
+.review-title-copy p { margin: 0; color: var(--muted); font-size: 12px; }
+.review-page-heading > .state-pill { margin-top: 2px; padding: 6px 10px; font-size: 11px; }
+
+.review-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(270px, .7fr);
+  gap: 18px;
+  margin: 24px 26px 0;
+  padding: 22px;
+  border: 1px solid #dfe5df;
+  border-radius: 16px;
+  background: #f6f8f5;
+}
+.review-brief.needs-review { border-color: #e6c6c0; background: #fff8f6; }
+.review-section-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #69746e;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.review-brief-main h3 { margin: 0; color: #3e2926; font-size: 20px; line-height: 1.35; }
+.review-issue-group { margin-top: 18px; }
+.review-issue-group h4 { margin: 0 0 8px; color: #6c4b45; font-size: 12px; }
+.review-issues { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.review-issues li {
+  padding: 11px 12px;
+  border-left: 4px solid #d09b42;
+  border-radius: 9px;
+  background: #fff7e7;
+}
+.review-issues li.high { border-left-color: #bb4a3d; background: #fbe8e4; }
+.review-issues span { color: #80571b; font-size: 10px; font-weight: 900; }
+.review-issues li.high span { color: #9a382f; }
+.review-issues p { margin: 4px 0 0; color: #4a3a35; font-size: 13px; font-weight: 620; line-height: 1.6; }
+.risk-reasons { display: flex; flex-wrap: wrap; gap: 7px; }
+.risk-reasons span { padding: 6px 9px; border-radius: 999px; background: #f0ded8; color: #793f37; font-size: 11px; font-weight: 800; }
+.no-conflict-note { margin: 14px 0 0; color: #76564f; font-size: 12.5px; line-height: 1.65; }
+
+.review-task-list {
+  align-self: start;
+  padding: 17px;
+  border-radius: 13px;
+  background: #183d35;
+  color: #fff;
+}
+.review-task-list .review-section-label { color: #a9c4bb; }
+.review-task-list ol { display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; counter-reset: tasks; }
+.review-task-list li { display: grid; grid-template-columns: 24px 1fr; column-gap: 9px; counter-increment: tasks; }
+.review-task-list li::before {
+  content: counter(tasks);
+  grid-row: 1 / 3;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #b9f0e3;
+  color: #173e35;
+  font-size: 10px;
+  font-weight: 900;
+}
+.review-task-list b { font-size: 12px; }
+.review-task-list span { margin-top: 3px; color: #c8d9d3; font-size: 11px; line-height: 1.5; }
+
+.review-reading-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, .85fr) minmax(460px, 1.35fr);
+  gap: 20px;
+  align-items: start;
+  padding: 24px 26px;
+}
+.review-reading-grid .source-pane { position: sticky; top: 16px; padding: 20px; }
+.review-reading-grid .source-pane strong { font-size: 16px; line-height: 1.45; }
+.review-reading-grid .source-excerpt { max-height: 62vh; font-size: 14px; line-height: 1.78; }
+.review-reading-grid .source-pane a { color: var(--green); font-size: 12px; font-weight: 800; text-decoration: none; }
+.draft-editor-column { display: grid; gap: 14px; }
+.language-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.language-card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.language-card-heading span { font-size: 15px; font-weight: 900; }
+.language-card-heading small { color: var(--muted); font-size: 10px; }
+.review-detail-form .language-card textarea { min-height: 180px; font-size: 14px; line-height: 1.65; }
+.review-detail-form .language-card input { font-size: 14px; }
+.tags-field { padding: 0 2px; }
+
+.machine-audit {
+  margin: 0 26px 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6f6f2;
+  color: #58645e;
+  font-size: 12px;
+}
+.machine-audit summary { cursor: pointer; color: #40514b; font-weight: 850; }
+.machine-audit > p { margin: 10px 0 0; line-height: 1.55; }
+.machine-audit .draft-checks { gap: 5px; }
+.machine-audit .draft-checks li { font-size: 11px; font-weight: 550; }
+.review-detail-form > .editor-actions {
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  margin: 0 18px 18px;
+  padding: 13px;
+  border: 1px solid #cfd8d2;
+  border-radius: 13px;
+  background: #fffefaeF;
+  box-shadow: 0 12px 32px #153a3026;
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 1100px) {
+  .review-brief, .review-reading-grid { grid-template-columns: 1fr; }
+  .review-reading-grid .source-pane { position: static; }
+  .review-reading-grid .source-excerpt { max-height: 420px; }
+}
+
+@media (max-width: 720px) {
+  .review-page-heading { grid-template-columns: 1fr; padding: 18px; }
+  .review-page-heading > .state-pill { justify-self: start; }
+  .review-brief { margin: 18px 18px 0; padding: 16px; }
+  .review-reading-grid { padding: 18px; }
+  .language-card-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .review-detail-form > .editor-actions { position: static; margin: 0 18px 18px; }
 }
