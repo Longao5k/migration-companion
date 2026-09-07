@@ -4,7 +4,66 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 from .models import DiscoveredNews
-from .normalizer import normalize_html
+
+
+class _ArticleTextParser(HTMLParser):
+    """Extract visible text while retaining table row and column boundaries."""
+
+    skipped_tags = {"script", "style", "svg", "noscript", "nav", "footer"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._table_depth = 0
+        self._cell_depth = 0
+        self._cell: list[str] = []
+        self._row: list[str] = []
+        self.lines: list[str] = []
+
+    def handle_starttag(self, tag: str, _attrs) -> None:
+        tag = tag.lower()
+        if tag in self.skipped_tags:
+            self._skip_depth += 1
+            return
+        if self._skip_depth:
+            return
+        if tag == "table":
+            self._table_depth += 1
+        elif self._table_depth and tag in {"td", "th"}:
+            self._cell_depth += 1
+            self._cell = []
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in self.skipped_tags and self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if self._skip_depth:
+            return
+        if self._table_depth and tag in {"td", "th"} and self._cell_depth:
+            value = re.sub(r"\s+", " ", " ".join(self._cell)).strip()
+            self._row.append(value)
+            self._cell_depth -= 1
+            self._cell = []
+        elif self._table_depth and tag == "tr":
+            if any(self._row):
+                self.lines.append(" | ".join(self._row))
+            self._row = []
+        elif tag == "table" and self._table_depth:
+            self._table_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        value = re.sub(r"\s+", " ", html.unescape(data)).strip()
+        if not value:
+            return
+        if self._table_depth:
+            if self._cell_depth:
+                self._cell.append(value)
+            return
+        if value not in self.lines[-3:]:
+            self.lines.append(value)
 
 
 class _NewsListingParser(HTMLParser):
@@ -85,8 +144,14 @@ def discover_sa_news(raw: bytes, limit: int = 6) -> list[DiscoveredNews]:
     return list(deduped.values())[: max(0, limit)]
 
 
-def extract_article_excerpt(raw: bytes, title: str, limit: int = 1200) -> str:
-    lines = normalize_html(raw).splitlines()
+def extract_article_excerpt(raw: bytes, title: str, limit: int = 2000) -> str:
+    # `normalize_html` intentionally flattens all visible text. That is fine for
+    # prose diffs, but it turns a seven-column invitation table into an ambiguous
+    # number stream. Keep `|` between cells here so a reviewer can distinguish
+    # this round from year-to-date totals.
+    parser = _ArticleTextParser()
+    parser.feed(raw.decode("utf-8", errors="replace"))
+    lines = parser.lines
     try:
         start = next(index for index, line in enumerate(lines) if line.strip() == title.strip()) + 1
     except StopIteration:

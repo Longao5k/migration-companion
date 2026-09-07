@@ -327,6 +327,24 @@ describe('ContentService automated editorial policy', () => {
     );
   });
 
+  it('exposes pending and human-required items to a user-directed Agent review', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new ContentService({ newsItem: { findMany } } as any);
+
+    await service.agentReviewQueue();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          sourceExcerpt: { not: null },
+          editorialReviewStatus: {
+            in: [EditorialReviewStatus.PENDING, EditorialReviewStatus.HUMAN_REQUIRED],
+          },
+        },
+      }),
+    );
+  });
+
   it('auto-publishes low-risk official news after independent review', async () => {
     const { service, tx } = createService();
     const result = await service.applyAutomatedEditorialReview('news-1', dto());
@@ -349,6 +367,99 @@ describe('ContentService automated editorial policy', () => {
     expect(result.draftAuthor).toBe('model');
     expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.HUMAN_REQUIRED);
     expect(result.editorialRiskReasons).toContain('高影响主题：费用');
+  });
+
+  it('publishes a high-impact item after a clean user-directed Agent final review', async () => {
+    const { service, tx } = createService({
+      ...current,
+      tags: ['费用'],
+      editorialReviewStatus: EditorialReviewStatus.HUMAN_REQUIRED,
+    });
+    const result = await service.applyAutomatedEditorialReview(
+      'news-1',
+      dto({ finalAgentReview: true }),
+    );
+
+    expect(result.isPublished).toBe(true);
+    expect(result.draftAuthor).toBe('automation');
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.AUTO_APPROVED);
+    expect(result.draftChecks).toContain('用户授权 Agent 完成最终原文复核');
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'CONTENT_AGENT_APPROVED' }),
+      }),
+    );
+  });
+
+  it('publishes freshly changed pending evidence after a clean Agent final review', async () => {
+    const { service } = createService({
+      ...current,
+      tags: ['费用'],
+      editorialReviewStatus: EditorialReviewStatus.PENDING,
+    });
+    const result = await service.applyAutomatedEditorialReview(
+      'news-1',
+      dto({ finalAgentReview: true }),
+    );
+
+    expect(result.isPublished).toBe(true);
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.AUTO_APPROVED);
+  });
+
+  it('archives an official mirror as reference-only with an Agent audit reason', async () => {
+    const { service, tx } = createService({
+      ...current,
+      editorialReviewStatus: EditorialReviewStatus.PENDING,
+    });
+    const result = await service.applyAutomatedEditorialReview(
+      'news-1',
+      dto({
+        finalAgentReview: true,
+        finalAgentDisposition: 'reference_only',
+        finalAgentReason: '与另一位部长网站上的联合新闻稿重复',
+      }),
+    );
+
+    expect(result.isPublished).toBe(false);
+    expect(result.editorialReviewStatus).toBe(EditorialReviewStatus.REFERENCE_ONLY);
+    expect(result.editorialRiskReasons).toContain(
+      'Agent 最终归档：与另一位部长网站上的联合新闻稿重复',
+    );
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'CONTENT_AGENT_REFERENCE_ONLY' }),
+      }),
+    );
+  });
+
+  it('rejects Agent reference-only disposition without a reason', async () => {
+    const { service } = createService({
+      ...current,
+      editorialReviewStatus: EditorialReviewStatus.PENDING,
+    });
+    await expect(
+      service.applyAutomatedEditorialReview(
+        'news-1',
+        dto({ finalAgentReview: true, finalAgentDisposition: 'reference_only' }),
+      ),
+    ).rejects.toThrow('必须说明原因');
+  });
+
+  it('refuses Agent final approval while any model finding remains', async () => {
+    const { service } = createService({
+      ...current,
+      tags: ['费用'],
+      editorialReviewStatus: EditorialReviewStatus.HUMAN_REQUIRED,
+    });
+    await expect(
+      service.applyAutomatedEditorialReview(
+        'news-1',
+        dto({
+          finalAgentReview: true,
+          findings: ['[1/3轮][低风险]仍需判断'],
+        }),
+      ),
+    ).rejects.toThrow('Agent 最终复核仍有分歧，不能发布');
   });
 
   it('routes repeated model disagreements to humans', async () => {

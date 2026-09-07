@@ -128,6 +128,12 @@ export class ContentController {
     return this.content.editorialQueue();
   }
 
+  @Get('worker/agent-review-queue')
+  @UseGuards(WorkerApiKeyGuard)
+  agentReviewQueue() {
+    return this.content.agentReviewQueue();
+  }
+
   @Patch('worker/news/:id/editorial-review')
   @UseGuards(WorkerApiKeyGuard)
   applyAutomatedEditorialReview(

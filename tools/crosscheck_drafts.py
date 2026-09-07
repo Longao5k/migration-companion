@@ -62,23 +62,28 @@ EXTRACT_PROMPT = """你在核对一份澳洲移民官方公告。
   "status": "这份公告在说什么事（开放/关闭/调整/延长/公布数据/其他）"
 }"""
 
-COMPARE_PROMPT = """你在做事实核对。下面有两样东西：
+COMPARE_PROMPT = """你在做事实核对。下面有三样东西：
 
-A. 从官方原文里独立提取出来的事实清单
-B. 我们写的中文摘要和英文摘要
+A. 官方原文摘录（这是最终事实依据）
+B. 从官方原文里独立提取出来的事实清单（这是索引，不保证没有遗漏）
+C. 我们写的中文摘要和英文摘要
 
-找出 B 相对 A 的问题。只报你有把握的，不确定就不要报——误报会让人失去对
+找出 C 相对 A 的问题。B 只帮助你定位事实；如果某个说法没有出现在 B，必须回到
+A 逐字查找后才能判定「原文无依据」。只报你有把握的，不确定就不要报——误报会让人失去对
 这份核对的信任，比漏报更糟。
 
 要找五类：
-- unsupported：B 里有某个说法，A 里找不到依据
-- omission：A 里有**关键限制条件或适用范围**，B 完全没提。
+- unsupported：C 里有某个说法，A 里找不到依据
+- omission：A 里有**关键限制条件或适用范围**，C 完全没提。
   这一类最重要：漏写不会被任何自动校验发现，而它会让读者以为自己适用。
 - date：日期对不上，或把某个日期的含义搞错了（例如把截止日说成生效日）
 - number：数量、金额、门槛对不上
 - zh_en_mismatch：**中文和英文陈述的事实不一致**——一边写了某个适用前提、
   限制条件或数字，另一边没有。这不是措辞差异，是两个版本说了不同的话。
   申请人常拿英文版转述给雇主和律师，两版不一致会让他们据以行动的信息出错。
+
+标题也是摘要的一部分，必须逐字核对。遇到表格时，不能因为某个数字在原文某处出现过
+就判定正确；必须核对它属于哪一行、哪一列，以及它表示本轮、累计还是总计。
 
 输出严格的 JSON，不要 markdown 代码块：
 {
@@ -184,35 +189,35 @@ def _raw(model: str, system: str, user: str, attempts_left: int = 2) -> dict:
         raise RuntimeError(f"返回不是合法 JSON：{content[:150]}") from exc
 
 
-def crosscheck(item: dict, model: str, today: str) -> list[dict]:
-    """返回这一条的分歧列表。
-
-    `today` 必须传进来：模型不知道今天几号，会把「原文写将来时、摘要写过去时」
-    一律报成日期不符——而那个日期可能早就过去了，摘要才是对的。
-    实测第一轮三条里就有一条是这么误报的。
-    """
+def extract_facts(item: dict, model: str) -> dict:
+    """盲提取官方事实；不让草稿锚定第一次判断。"""
     excerpt = (item.get("sourceExcerpt") or "").strip()
-
-    # 第一步必须是盲测。先给稿子，模型只会附和，什么都查不出来。
-    # 来源必须一起给。复核模型只看正文时不知道这条出自哪个官方站点，
-    # 于是把「原文正文没写 South Australia，摘要却标了南澳」报成无依据——
-    # 而它来自 migration.sa.gov.au，归属是对的。实测第一轮就误报了一条。
     origin = (
         f"官方来源：{item['source']['name']}"
         f"（辖区 {item['source']['jurisdiction']}，{item['sourceUrl']}）"
     )
-    facts = _raw(
+    return _raw(
         model,
         EXTRACT_PROMPT,
         origin + f"\n官方标题：{item['sourceTitle']}\n\n官方原文：\n{excerpt}",
     )
 
+
+def compare_draft(item: dict, facts: dict, model: str, today: str) -> list[dict]:
+    """以完整原文为准，事实清单只作索引，避免提取遗漏造成误报。"""
+    excerpt = (item.get("sourceExcerpt") or "").strip()
+    origin = (
+        f"官方来源：{item['source']['name']}"
+        f"（辖区 {item['source']['jurisdiction']}，{item['sourceUrl']}）"
+    )
     compared = _raw(
         model,
         COMPARE_PROMPT.replace("{today}", today),
-        origin + "\n\nA. 从官方原文提取的事实：\n"
+        origin
+        + f"\n\nA. 官方原文摘录：\n{excerpt}"
+        + "\n\nB. 从官方原文独立提取的事实索引：\n"
         + json.dumps(facts, ensure_ascii=False, indent=2)
-        + "\n\nB. 我们写的摘要：\n"
+        + "\n\nC. 我们写的摘要：\n"
         + f"中文标题：{item['titleZh']}\n"
         + f"中文摘要：{item['summaryZh']}\n"
         + f"英文标题：{item.get('titleEn') or ''}\n"
@@ -220,6 +225,21 @@ def crosscheck(item: dict, model: str, today: str) -> list[dict]:
     )
     findings = compared.get("findings") or []
     return [f for f in findings if isinstance(f, dict) and f.get("detail")]
+
+
+def crosscheck(item: dict, model: str, today: str) -> list[dict]:
+    """返回这一条的分歧列表。
+
+    `today` 必须传进来：模型不知道今天几号，会把「原文写将来时、摘要写过去时」
+    一律报成日期不符——而那个日期可能早就过去了，摘要才是对的。
+    实测第一轮三条里就有一条是这么误报的。
+    """
+    # 第一步必须是盲测。先给稿子，模型只会附和，什么都查不出来。
+    # 来源必须一起给。复核模型只看正文时不知道这条出自哪个官方站点，
+    # 于是把「原文正文没写 South Australia，摘要却标了南澳」报成无依据——
+    # 而它来自 migration.sa.gov.au，归属是对的。实测第一轮就误报了一条。
+    facts = extract_facts(item, model)
+    return compare_draft(item, facts, model, today)
 
 
 def _normalise(text: str) -> str:
@@ -282,14 +302,26 @@ def crosscheck_repeated(item: dict, model: str, today: str, runs: int) -> list[d
     if runs <= 1:
         return crosscheck(item, model, today)
 
+    # 事实只盲提取一次；重复的是最终对照判断。这样既保持独立提取，
+    # 也避免同一篇原文每轮都重新压缩、增加遗漏和 API 消耗。
+    facts = extract_facts(item, model)
     merged: list[dict] = []
     for _ in range(runs):
-        for finding in crosscheck(item, model, today):
+        touched: set[int] = set()
+        for finding in compare_draft(item, facts, model, today):
             existing = _same_finding(merged, finding)
+            # 一轮里模型可能同时报两个措辞相似、但表格行不同的问题。旧实现会
+            # 把它们都并进同一条，出现荒谬的 [9/3 轮]。同一轮对一个聚合项
+            # 最多只能投一票；第二个相似发现保留为独立项。
+            if existing is not None and id(existing) in touched:
+                existing = None
             if existing is None:
-                merged.append({**finding, "votes": 1})
+                entry = {**finding, "votes": 1}
+                merged.append(entry)
+                touched.add(id(entry))
                 continue
             existing["votes"] += 1
+            touched.add(id(existing))
             # 任一轮判为 high 就按 high 记：漏掉一个真问题比多看一眼贵。
             if finding.get("severity") == "high":
                 existing["severity"] = "high"

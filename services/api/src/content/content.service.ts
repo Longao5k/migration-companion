@@ -245,8 +245,29 @@ export class ContentService {
   }
 
   /**
-   * Persist an independently reviewed model draft and publish it only when the
-   * server's own policy classifies it as low-risk.
+   * Private queue for a user-directed Agent final review. Unlike the
+   * background queue, this includes high-impact subjects and freshly changed
+   * pending evidence, but it remains private behind the worker credential and
+   * never changes data by itself.
+   */
+  agentReviewQueue() {
+    return this.prisma.newsItem.findMany({
+      where: {
+        sourceExcerpt: { not: null },
+        editorialReviewStatus: {
+          in: [EditorialReviewStatus.PENDING, EditorialReviewStatus.HUMAN_REQUIRED],
+        },
+      },
+      include: { source: true },
+      orderBy: { publishedAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  /**
+   * Persist an independently reviewed model draft. Ordinary automation only
+   * publishes low-risk items; an explicitly user-directed Agent review can
+   * resolve a queued item or archive an official mirror as reference-only.
    */
   async applyAutomatedEditorialReview(id: string, dto: AutomatedEditorialReviewDto) {
     const current = await this.prisma.newsItem.findUnique({
@@ -272,6 +293,24 @@ export class ContentService {
     if (dto.blockingFindings.some((finding) => !dto.findings.includes(finding))) {
       throw new BadRequestException('阻断项必须同时保存在完整复核结果中');
     }
+    if (dto.finalAgentReview && dto.findings.length > 0) {
+      throw new BadRequestException('Agent 最终复核仍有分歧，不能发布');
+    }
+    if (!dto.finalAgentReview && (dto.finalAgentDisposition || dto.finalAgentReason)) {
+      throw new BadRequestException('Agent 最终处置只能与最终复核同时提交');
+    }
+    const agentReferenceOnly =
+      Boolean(dto.finalAgentReview) && dto.finalAgentDisposition === 'reference_only';
+    if (agentReferenceOnly && !dto.finalAgentReason?.trim()) {
+      throw new BadRequestException('Agent 归档为参考资料时必须说明原因');
+    }
+    if (
+      dto.finalAgentReview &&
+      current.editorialReviewStatus !== EditorialReviewStatus.PENDING &&
+      current.editorialReviewStatus !== EditorialReviewStatus.HUMAN_REQUIRED
+    ) {
+      throw new BadRequestException('只有当前待复核内容可以接受 Agent 最终复核');
+    }
 
     this.assertChineseEditorialCopy(dto.titleZh, dto.summaryZh);
     this.assertAutomatedCopy(
@@ -281,10 +320,13 @@ export class ContentService {
       dto,
     );
 
-    const referenceReasons = this.referenceOnlyReasons(current);
+    const referenceReasons = agentReferenceOnly
+      ? [`Agent 最终归档：${dto.finalAgentReason!.trim()}`]
+      : this.referenceOnlyReasons(current);
     const referenceOnly = referenceReasons.length > 0;
     const riskReasons = referenceOnly ? [] : this.automationRiskReasons(current, dto);
-    const needsHuman = !referenceOnly &&
+    const finalAgentApproved = Boolean(dto.finalAgentReview) && !referenceOnly;
+    const needsHuman = !referenceOnly && !finalAgentApproved &&
       (dto.blockingFindings.length > 0 || riskReasons.length > 0);
     const reviewStatus = referenceOnly
       ? EditorialReviewStatus.REFERENCE_ONLY
@@ -299,6 +341,7 @@ export class ContentService {
     const checks = [
       ...dto.checks,
       ...dto.findings.map((finding) => `⚠ 自动复核：${finding}`),
+      ...(finalAgentApproved ? ['用户授权 Agent 完成最终原文复核'] : []),
       ...(referenceOnly
         ? referenceReasons.map((reason) => `参考资料：${reason}`)
         : riskReasons.length > 0
@@ -334,11 +377,15 @@ export class ContentService {
 
       await tx.auditEvent.create({
         data: {
-          action: referenceOnly
+          action: agentReferenceOnly
+            ? 'CONTENT_AGENT_REFERENCE_ONLY'
+            : referenceOnly
             ? 'CONTENT_REFERENCE_ONLY'
-            : needsHuman
-              ? 'CONTENT_HUMAN_REVIEW_REQUIRED'
-              : 'CONTENT_AUTO_PUBLISHED',
+            : finalAgentApproved
+              ? 'CONTENT_AGENT_APPROVED'
+              : needsHuman
+                ? 'CONTENT_HUMAN_REVIEW_REQUIRED'
+                : 'CONTENT_AUTO_PUBLISHED',
           targetType: 'NewsItem',
           targetId: id,
           safeMetadata: {
@@ -348,6 +395,12 @@ export class ContentService {
             blockingFindingCount: dto.blockingFindings.length,
             riskReasons: referenceOnly ? referenceReasons : riskReasons,
             automaticRevision: isAutomaticRevision,
+            finalAgentReview: Boolean(dto.finalAgentReview),
+            finalAgentDisposition: dto.finalAgentReview
+              ? agentReferenceOnly
+                ? 'reference_only'
+                : 'publish'
+              : null,
           },
         },
       });

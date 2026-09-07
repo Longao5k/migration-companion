@@ -256,6 +256,25 @@ export class AutomatedEditorialReviewDto {
   @IsString({ each: true })
   @Length(1, 300, { each: true })
   blockingFindings!: string[];
+
+  /**
+   * A user-directed Agent review may clear policy-risk routing only after a
+   * fresh source-bound draft receives no findings. Ordinary background worker
+   * runs never set this flag.
+   */
+  @IsOptional()
+  @IsBoolean()
+  finalAgentReview?: boolean;
+
+  /** A final Agent review may archive an official mirror instead of publishing it. */
+  @IsOptional()
+  @IsIn(['publish', 'reference_only'])
+  finalAgentDisposition?: 'publish' | 'reference_only';
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 300)
+  finalAgentReason?: string;
 }
 
 export class IngestChangeDto {

@@ -57,6 +57,10 @@ _NON_THINKING_MODELS = (
     "qwen3.7-max",
     "deepseek-v4-pro",
     "deepseek-v4-flash",
+    # DashScope's GLM 5 chat endpoints also expose the OpenAI-compatible
+    # enable_thinking switch. Final editorial review needs bounded JSON, not a
+    # multi-minute reasoning trace.
+    "glm-5.",
 )
 
 
