@@ -62,9 +62,11 @@ abstract final class SeedData {
       pageTitle: 'Documents required',
       sourceUrl: 'https://migration.sa.gov.au/how-to-apply/documents-required',
       discoveredAt: DateTime(2026, 8, 26, 14, 10),
-      summary: '监控器发现清单页有文本变化，当前仍待人工复核，因此不会发送影响性通知。',
-      beforeText: 'Previous captured paragraph fingerprint',
-      afterText: 'Updated captured paragraph fingerprint',
+      summary: '这条示例记录尚未通过内容核对，因此不会出现在面向用户的政策变更中。',
+      beforeText:
+          'The previous official wording was not captured with enough context.',
+      afterText:
+          'The updated wording is awaiting a complete, contextual comparison.',
       severity: ChangeSeverity.general,
       verification: VerificationStatus.pendingReview,
       tags: const ['SA', '190', '491', '材料'],

@@ -125,11 +125,11 @@ packages:
     dependency: "direct main"
     description:
       path: "bindings/flutter/document_sdk"
-      ref: "v0.1.0-alpha.4"
-      resolved-ref: bf237e7eae5169ca8917c5cb5f561be42e2d752b
+      ref: "v0.1.0-alpha.5"
+      resolved-ref: bc290fc6c28c75c2cb181f9406f93eb4eb7bf708
       url: "https://github.com/Longao5k/docu-sdk.git"
     source: git
-    version: "0.1.0-alpha.4"
+    version: "0.1.0-alpha.5"
   fake_async:
     dependency: transitive
     description:

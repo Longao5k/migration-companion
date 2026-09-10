@@ -439,10 +439,10 @@ class MonitoringStatus {
     final full = fullyDown.map((entry) => entry.label).toList();
     final partial = partlyDown.map((entry) => entry.label).toList();
     final parts = [
-      if (full.isNotEmpty) '${full.join('、')}的页面现在监控不到',
-      if (partial.isNotEmpty) '${partial.join('、')}有部分页面监控不到',
+      if (full.isNotEmpty) '${full.join('、')}的官方更新暂时无法自动同步',
+      if (partial.isNotEmpty) '${partial.join('、')}的部分官方更新可能延迟',
     ];
-    if (parts.isEmpty) return '有一部分官方页面现在监控不到';
+    if (parts.isEmpty) return '部分官方更新可能延迟，请以来源页面为准';
     return parts.join('，');
   }
 

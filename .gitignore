@@ -40,3 +40,5 @@ summaries*.json
 
 # Local runtime fixtures and rendered PDF verification artefacts.
 tmp/
+artifacts/
+releases/

@@ -106,7 +106,7 @@ void main() {
     MonitoringStatus parse(Map<String, dynamic> json) =>
         MonitoringStatus.fromJson(json);
 
-    test('部分页面取不到的辖区，措辞是「部分」而不是整个辖区都监控不到', () {
+    test('部分来源暂时无法同步时使用面向用户的延迟提示', () {
       final status = parse({
         'monitoredCount': 5,
         'unavailableCount': 3,
@@ -122,11 +122,10 @@ void main() {
       expect(status.hasGap, isTrue);
       expect(status.fullyDown, isEmpty);
       expect(status.partlyDown.single.jurisdiction, 'AU-FED');
-      // 「联邦的页面现在监控不到」会被读成「联邦法规变了我们也看不见」，正好说反。
-      expect(status.gapSentence, '联邦有部分页面监控不到');
+      expect(status.gapSentence, '联邦的部分官方更新可能延迟');
     });
 
-    test('整个辖区都取不到时才说「现在监控不到」', () {
+    test('整个辖区暂时不可用时说明自动同步受限', () {
       final status = parse({
         'monitoredCount': 0,
         'unavailableCount': 2,
@@ -134,7 +133,7 @@ void main() {
           {'jurisdiction': 'AU-SA', 'monitoredCount': 0, 'unavailableCount': 2},
         ],
       });
-      expect(status.gapSentence, '南澳的页面现在监控不到');
+      expect(status.gapSentence, '南澳的官方更新暂时无法自动同步');
     });
 
     test('没有缺口时不产生任何提示', () {
@@ -163,7 +162,7 @@ void main() {
       final status = parse({'monitoredCount': 3, 'unavailableCount': 1});
       expect(status.hasGap, isTrue);
       // 分不出辖区不等于没有缺口。返回 null 会让界面落到「没有变化」。
-      expect(status.gapSentence, '有一部分官方页面现在监控不到');
+      expect(status.gapSentence, '部分官方更新可能延迟，请以来源页面为准');
       expect(status.pendingReviewCount, 0);
     });
   });

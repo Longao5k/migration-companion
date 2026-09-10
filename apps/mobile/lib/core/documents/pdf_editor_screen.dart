@@ -6,6 +6,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../i18n/app_language.dart';
+
 typedef PdfSaveCopy = Future<void> Function(
   Uint8List bytes,
   String suggestedName,
@@ -48,6 +50,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   var _noteMode = false;
   var _signMode = false;
   var _allowPop = false;
+  var _copySaved = false;
+  var _editWarningShown = false;
+  Uint8List? _latinReplacementFont;
+  Uint8List? _wideReplacementFont;
   final List<List<DisplayPoint>> _strokes = <List<DisplayPoint>>[];
   int? _strokePage;
 
@@ -73,7 +79,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Widget build(BuildContext context) {
     final controller = _controller;
     return PopScope(
-      canPop: _allowPop || controller?.isDirty != true,
+      canPop: _allowPop || controller?.isDirty != true || _copySaved,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         if (await _confirmDiscard()) {
@@ -88,30 +94,39 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(widget.displayName, overflow: TextOverflow.ellipsis),
-              const Text(
-                '编辑副本 · 原件不动',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
+              Text(
+                tr(
+                  context,
+                  '编辑副本 · 原件保持不变',
+                  'Editing a copy · original stays unchanged',
+                ),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                ),
               ),
             ],
           ),
           actions: [
             IconButton(
-              tooltip: '搜索文字',
+              tooltip: tr(context, '搜索文字', 'Search text'),
               onPressed: controller == null ? null : _search,
               icon: const Icon(Icons.search),
             ),
             IconButton(
-              tooltip: '撤销',
+              tooltip: tr(context, '撤销', 'Undo'),
               onPressed: controller?.canUndo == true ? _undo : null,
               icon: const Icon(Icons.undo),
             ),
             IconButton(
-              tooltip: '重做',
+              tooltip: tr(context, '重做', 'Redo'),
               onPressed: controller?.canRedo == true ? _redo : null,
               icon: const Icon(Icons.redo),
             ),
             IconButton(
-              tooltip: widget.onSaveCopy == null ? '另存到设备' : '另存到项目',
+              tooltip: widget.onSaveCopy == null
+                  ? tr(context, '另存到设备', 'Save to device')
+                  : tr(context, '另存到文件库', 'Save to files'),
               onPressed:
                   controller != null && !controller.isBusy && _can('save_copy')
                   ? _saveCopy
@@ -119,44 +134,50 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               icon: const Icon(Icons.save_outlined),
             ),
             PopupMenuButton<_PdfMenuAction>(
-              tooltip: '更多工具',
+              tooltip: tr(context, '更多工具', 'More tools'),
               onSelected: _runMenuAction,
-              itemBuilder: (_) => const [
+              itemBuilder: (_) => [
                 PopupMenuItem(
                   value: _PdfMenuAction.forms,
-                  child: Text('填写当前页表单'),
+                  child: Text(
+                    tr(context, '填写当前页表单', 'Fill fields on this page'),
+                  ),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.annotations,
-                  child: Text('管理当前页批注'),
+                  child: Text(
+                    tr(context, '管理当前页批注', 'Manage page annotations'),
+                  ),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.moveUp,
-                  child: Text('当前页向前移动'),
+                  child: Text(tr(context, '当前页向前移动', 'Move page earlier')),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.moveDown,
-                  child: Text('当前页向后移动'),
+                  child: Text(tr(context, '当前页向后移动', 'Move page later')),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.extract,
-                  child: Text('导出当前页'),
+                  child: Text(tr(context, '导出当前页', 'Export this page')),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.merge,
-                  child: Text('合并另一份 PDF'),
+                  child: Text(tr(context, '合并另一份 PDF', 'Merge another PDF')),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.flatten,
-                  child: Text('扁平化批注与表单'),
+                  child: Text(
+                    tr(context, '固定批注与表单内容', 'Flatten annotations and forms'),
+                  ),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.exportDevice,
-                  child: Text('导出副本到设备'),
+                  child: Text(tr(context, '导出副本到设备', 'Export copy to device')),
                 ),
                 PopupMenuItem(
                   value: _PdfMenuAction.compatibility,
-                  child: Text('兼容性说明'),
+                  child: Text(tr(context, '文件兼容性', 'File compatibility')),
                 ),
               ],
             ),
@@ -165,7 +186,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         body: _buildBody(controller),
         bottomNavigationBar: controller == null
             ? null
-            : _StatusBar(dirty: controller.isDirty, status: _status),
+            : _StatusBar(
+                dirty: controller.isDirty && !_copySaved,
+                saved: _copySaved,
+                status: _status,
+              ),
       ),
     );
   }
@@ -185,7 +210,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('返回'),
+                child: Text(tr(context, '返回', 'Back')),
               ),
             ],
           ),
@@ -209,11 +234,38 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               report: controller.preflight,
               onTap: _showCompatibility,
             ),
+            if (_can('pdf_edit_text'))
+              Container(
+                width: double.infinity,
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.touch_app_outlined, size: 19),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        tr(
+                          context,
+                          '点击任意一行文字，然后选择“替换文字”或“删除文字”。',
+                          'Tap any line, then choose Replace text or Delete text.',
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             _buildToolbar(controller),
             if (controller.selection case final selection?)
               _SelectionStrip(
                 selection: selection,
                 onCopy: _copySelection,
+                onReplace: _can('pdf_edit_text') ? _replaceSelection : null,
+                onDelete: _can('pdf_edit_text') ? _deleteSelection : null,
                 onMarkup: _markSelection,
                 onClear: controller.clearSelection,
               ),
@@ -227,6 +279,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 onPageTap: _noteMode ? _addNoteAt : null,
                 onPageStroke: _signMode ? _collectStroke : null,
                 showCompatibilityBanners: true,
+                selectTextBlockOnTap:
+                    !_noteMode && !_signMode && _can('pdf_edit_text'),
               ),
             ),
           ],
@@ -245,7 +299,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         child: Row(
           children: [
             IconButton(
-              tooltip: '上一页',
+              tooltip: tr(context, '上一页', 'Previous page'),
               onPressed: _page > 0 ? () => _goToPage(_page - 1) : null,
               icon: const Icon(Icons.keyboard_arrow_up),
             ),
@@ -253,7 +307,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               '${controller.pageCount == 0 ? 0 : _page + 1}/${controller.pageCount}',
             ),
             IconButton(
-              tooltip: '下一页',
+              tooltip: tr(context, '下一页', 'Next page'),
               onPressed: _page + 1 < controller.pageCount
                   ? () => _goToPage(_page + 1)
                   : null,
@@ -261,7 +315,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             ),
             const SizedBox(width: 4),
             IconButton(
-              tooltip: '缩小',
+              tooltip: tr(context, '缩小', 'Zoom out'),
               onPressed: _zoom > 0.3
                   ? () => setState(() => _zoom = (_zoom / 1.25).clamp(0.25, 6))
                   : null,
@@ -269,7 +323,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             ),
             Text('${(_zoom * 100).round()}%'),
             IconButton(
-              tooltip: '放大',
+              tooltip: tr(context, '放大', 'Zoom in'),
               onPressed: _zoom < 6
                   ? () => setState(() => _zoom = (_zoom * 1.25).clamp(0.25, 6))
                   : null,
@@ -277,12 +331,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             ),
             const SizedBox(width: 4),
             IconButton.filledTonal(
-              tooltip: '旋转当前页',
+              tooltip: tr(context, '旋转当前页', 'Rotate this page'),
               onPressed: canEdit && _can('pdf_rotate_pages') ? _rotate : null,
               icon: const Icon(Icons.rotate_right),
             ),
             IconButton(
-              tooltip: '删除当前页',
+              tooltip: tr(context, '删除当前页', 'Delete this page'),
               onPressed:
                   canEdit &&
                       controller.pageCount > 1 &&
@@ -292,7 +346,9 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               icon: const Icon(Icons.delete_outline),
             ),
             IconButton(
-              tooltip: _noteMode ? '点按页面放置便签' : '添加便签',
+              tooltip: _noteMode
+                  ? tr(context, '点按页面放置便签', 'Tap the page to place a note')
+                  : tr(context, '添加便签', 'Add note'),
               isSelected: _noteMode,
               onPressed: canEdit && _can('pdf_annotate_text')
                   ? _toggleNote
@@ -301,7 +357,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
               selectedIcon: const Icon(Icons.add_comment),
             ),
             IconButton(
-              tooltip: _signMode ? '正在手写；完成后点勾' : '手写签名或批注',
+              tooltip: _signMode
+                  ? tr(
+                      context,
+                      '正在手写；完成后点勾',
+                      'Drawing · tap the tick when finished',
+                    )
+                  : tr(context, '手写签名或批注', 'Draw or sign'),
               isSelected: _signMode,
               onPressed: canEdit && _can('pdf_annotate_ink')
                   ? _toggleSigning
@@ -311,13 +373,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
             ),
             if (_signMode)
               IconButton.filled(
-                tooltip: _strokes.isEmpty ? '请先在页面上书写' : '写入 PDF',
+                tooltip: _strokes.isEmpty
+                    ? tr(context, '请先在页面上书写', 'Draw on the page first')
+                    : tr(context, '写入 PDF', 'Apply to PDF'),
                 onPressed: _strokes.isEmpty ? null : _finishSigning,
                 icon: const Icon(Icons.check),
               ),
             if (controller.searchResults?.hits.isNotEmpty == true) ...[
               IconButton(
-                tooltip: '上一个搜索结果',
+                tooltip: tr(context, '上一个搜索结果', 'Previous search result'),
                 onPressed: () => _stepSearch(next: false),
                 icon: const Icon(Icons.navigate_before),
               ),
@@ -325,7 +389,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
                 '${controller.activeHitIndex + 1}/${controller.searchResults!.hits.length}',
               ),
               IconButton(
-                tooltip: '下一个搜索结果',
+                tooltip: tr(context, '下一个搜索结果', 'Next search result'),
                 onPressed: () => _stepSearch(next: true),
                 icon: const Icon(Icons.navigate_next),
               ),
@@ -353,7 +417,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       if (mounted) {
         setState(() {
           _opening = false;
-          _error = '读取工作副本失败：$error';
+          _error = tr(
+            context,
+            '读取工作副本失败：$error',
+            'Could not read the working copy: $error',
+          );
         });
       }
       return;
@@ -380,8 +448,16 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           _controller = controller;
           _opening = false;
           _status = password == null
-              ? '拖选文字可复制或标记；每项能力按当前文件开放。'
-              : '已用密码打开；若 SDK 判为只读，将不会允许保存修改。';
+              ? tr(
+                  context,
+                  '点按文字可替换，拖选文字可复制或标记。',
+                  'Tap text to replace it, or drag to copy and mark text.',
+                )
+              : tr(
+                  context,
+                  '已用密码打开；受保护的内容可能只读。',
+                  'Opened with a password; protected content may be read-only.',
+                );
         });
         return;
       } on DocumentSdkException catch (error) {
@@ -401,7 +477,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           if (mounted) {
             setState(() {
               _opening = false;
-              _error = '这份 PDF 需要密码才能打开。';
+              _error = tr(
+                context,
+                '这份 PDF 需要密码才能打开。',
+                'This PDF needs a password to open.',
+              );
             });
           }
           return;
@@ -432,11 +512,25 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   Future<void> _rotate() => _execute(
     PdfRotatePagesCommand(pages: [_page], clockwiseDegrees: 90),
     '已旋转第 ${_page + 1} 页',
+    'Page ${_page + 1} rotated',
   );
 
   Future<void> _deletePage() async {
-    if (!await _confirm('删除当前页？', '只会从编辑副本中删除，原始 PDF 不受影响。')) return;
-    await _execute(PdfDeletePagesCommand(pages: [_page]), '已删除一页');
+    if (!await _confirm(
+      tr(context, '删除当前页？', 'Delete this page?'),
+      tr(
+        context,
+        '只会从编辑副本中删除，原始 PDF 不受影响。',
+        'Only the editing copy will change. The original PDF is unaffected.',
+      ),
+    )) {
+      return;
+    }
+    await _execute(
+      PdfDeletePagesCommand(pages: [_page]),
+      '已删除一页',
+      'Page deleted',
+    );
     final count = _controller?.pageCount ?? 0;
     if (mounted) {
       setState(() => _page = count == 0 ? 0 : _page.clamp(0, count - 1));
@@ -448,24 +542,43 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     if (controller == null || !_can('pdf_reorder_pages')) return;
     final target = (_page + delta).clamp(0, controller.pageCount - 1);
     if (target == _page) {
-      setState(() => _status = delta < 0 ? '已经是第一页' : '已经是最后一页');
+      setState(
+        () => _status = delta < 0
+            ? tr(context, '已经是第一页', 'This is already the first page')
+            : tr(context, '已经是最后一页', 'This is already the last page'),
+      );
       return;
     }
     final order = List<int>.generate(controller.pageCount, (index) => index);
     final moving = order.removeAt(_page);
     order.insert(target, moving);
-    await _execute(PdfReorderPagesCommand(order: order), '已移动当前页');
+    await _execute(
+      PdfReorderPagesCommand(order: order),
+      '已移动当前页',
+      'Page moved',
+    );
     await _goToPage(target);
   }
 
-  Future<void> _execute(DocumentCommand command, String success) async {
+  Future<void> _execute(
+    DocumentCommand command,
+    String successZh,
+    String successEn,
+  ) async {
     final controller = _controller;
     if (controller == null) return;
     try {
       final receipt = await controller.execute(command);
+      if (receipt.changed) _copySaved = false;
       if (!mounted) return;
       setState(() {
-        _status = receipt.changed ? '$success；另存副本后才会保留。' : '没有内容发生变化。';
+        _status = receipt.changed
+            ? tr(
+                context,
+                '$successZh；另存副本后才会保留。',
+                '$successEn. Save a copy to keep it.',
+              )
+            : tr(context, '没有内容发生变化。', 'Nothing changed.');
       });
     } on Object catch (error) {
       _setErrorStatus(error);
@@ -474,8 +587,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _undo() async {
     try {
-      await _controller?.undo();
-      if (mounted) setState(() => _status = '已撤销上一步');
+      final changed = await _controller?.undo() ?? false;
+      if (changed) _copySaved = false;
+      if (mounted) {
+        setState(() => _status = tr(context, '已撤销上一步', 'Last change undone'));
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -483,8 +599,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _redo() async {
     try {
-      await _controller?.redo();
-      if (mounted) setState(() => _status = '已重做');
+      final changed = await _controller?.redo() ?? false;
+      if (changed) _copySaved = false;
+      if (mounted) {
+        setState(() => _status = tr(context, '已重做', 'Change restored'));
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -495,21 +614,21 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     final query = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('搜索这份 PDF'),
+        title: Text(tr(context, '搜索这份 PDF', 'Search this PDF')),
         content: TextField(
           autofocus: true,
-          decoration: const InputDecoration(labelText: '关键词'),
+          decoration: InputDecoration(labelText: tr(context, '关键词', 'Keyword')),
           onChanged: (value) => queryValue = value,
           onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
+            child: Text(tr(context, '取消', 'Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(queryValue.trim()),
-            child: const Text('搜索'),
+            child: Text(tr(context, '搜索', 'Search')),
           ),
         ],
       ),
@@ -518,12 +637,26 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final results = await _controller?.search(query);
       final hit = _controller?.activeHit;
-      if (hit != null) await _goToPage(hit.pageIndex);
+      if (hit != null) {
+        await _goToPage(hit.pageIndex);
+        final bounds = _textBounds(hit.quads);
+        if (bounds != null) {
+          await _controller?.selectRect(hit.pageIndex, bounds);
+        }
+      }
       if (!mounted || results == null) return;
       setState(() {
         _status = results.hits.isEmpty
-            ? '没有找到。扫描件或不可映射文字可能无法搜索。'
-            : '找到 ${results.hits.length} 处';
+            ? tr(
+                context,
+                '没有找到。扫描件或不可映射文字可能无法搜索。',
+                'No results. Scanned or unmapped text may not be searchable.',
+              )
+            : tr(
+                context,
+                '找到 ${results.hits.length} 处',
+                '${results.hits.length} results found',
+              );
       });
     } on Object catch (error) {
       _setErrorStatus(error);
@@ -542,9 +675,164 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     if (!mounted) return;
     setState(() {
       _status = selection.isComplete
-          ? '已复制 ${selection.text.runes.length} 个字符'
-          : '已复制，但当前页有无法可靠映射的文字，内容可能不完整。';
+          ? tr(
+              context,
+              '已复制 ${selection.text.runes.length} 个字符',
+              '${selection.text.runes.length} characters copied',
+            )
+          : tr(
+              context,
+              '已复制，但当前页有无法可靠映射的文字，内容可能不完整。',
+              'Copied, but some text on this page could not be mapped reliably.',
+            );
     });
+  }
+
+  Future<void> _replaceSelection() async {
+    final controller = _controller;
+    final selection = controller?.selection;
+    if (controller == null || selection == null || selection.text.isEmpty) {
+      return;
+    }
+    if (!await _explainOverlayEditing()) return;
+    if (!mounted) return;
+
+    final replacement = await _promptText(
+      title: tr(context, '替换所选文字', 'Replace selected text'),
+      label: tr(context, '新文字', 'New text'),
+      initial: selection.text,
+      maxLines: 3,
+    );
+    if (replacement == null || replacement == selection.text) return;
+
+    try {
+      final font = await _fontFor(replacement);
+      if (_needsEmbeddedFont(replacement) && font == null) return;
+      final receipt = await controller.replaceSelectionText(
+        replacement,
+        font: font,
+      );
+      if (receipt.changed) _copySaved = false;
+      if (!mounted) return;
+      controller.clearSelection();
+      setState(() {
+        _status = receipt.changed
+            ? tr(
+                context,
+                '文字已替换，保存副本后生效。',
+                'Text replaced. Save a copy to keep the change.',
+              )
+            : tr(context, '文字没有变化。', 'Text was not changed.');
+      });
+    } on Object catch (error) {
+      _setErrorStatus(error);
+    }
+  }
+
+  Future<void> _deleteSelection() async {
+    final controller = _controller;
+    final selection = controller?.selection;
+    if (controller == null || selection == null || selection.text.isEmpty) {
+      return;
+    }
+    if (!await _explainOverlayEditing()) return;
+    if (!mounted) return;
+    if (!await _confirm(
+      tr(context, '删除所选文字？', 'Delete selected text?'),
+      tr(
+        context,
+        '文字会从页面上移除；原始文件保持不变。',
+        'The text will be removed from the page. The original file stays unchanged.',
+      ),
+    )) {
+      return;
+    }
+    try {
+      final receipt = await controller.deleteSelectionText();
+      if (receipt.changed) _copySaved = false;
+      if (!mounted) return;
+      controller.clearSelection();
+      setState(() {
+        _status = receipt.changed
+            ? tr(
+                context,
+                '文字已删除，保存副本后生效。',
+                'Text deleted. Save a copy to keep the change.',
+              )
+            : tr(context, '文字没有变化。', 'Text was not changed.');
+      });
+    } on Object catch (error) {
+      _setErrorStatus(error);
+    }
+  }
+
+  Future<bool> _explainOverlayEditing() async {
+    if (_editWarningShown) return true;
+    final accepted = await _confirm(
+      tr(context, '关于文字编辑', 'About text editing'),
+      tr(
+        context,
+        '这个版本会在原文字位置写入新的可见内容，保存和打印结果会保留修改。'
+            '由于不会改写 PDF 内部原始文字指令，其他阅读器搜索或复制时仍可能找到被替换的旧文字。',
+        'This version writes new visible content over the original position, and the saved or printed result keeps the change. '
+            'Because the original PDF text instructions are preserved, other readers may still find the old text when searching or copying.',
+      ),
+    );
+    if (accepted) _editWarningShown = true;
+    return accepted;
+  }
+
+  bool _needsEmbeddedFont(String value) =>
+      value.runes.any((rune) => rune < 0x20 || rune > 0x7e);
+
+  Future<Uint8List?> _fontFor(String replacement) async {
+    final needsWideFont = _needsEmbeddedFont(replacement);
+    final cached = needsWideFont ? _wideReplacementFont : _latinReplacementFont;
+    if (cached != null) return cached;
+
+    if (Platform.isAndroid) {
+      final candidates = needsWideFont
+          ? const [
+              '/system/fonts/NotoSansCJK-Regular.ttc',
+              '/system/fonts/NotoSansSC-Regular.ttf',
+            ]
+          : const [
+              '/system/fonts/Roboto-Regular.ttf',
+              '/system/fonts/NotoSans-Regular.ttf',
+            ];
+      for (final path in candidates) {
+        final file = File(path);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          if (needsWideFont) {
+            _wideReplacementFont = bytes;
+          } else {
+            _latinReplacementFont = bytes;
+          }
+          return bytes;
+        }
+      }
+    }
+
+    if (!needsWideFont) return null;
+
+    if (!mounted) return null;
+    final choose = await _confirm(
+      tr(context, '需要字体文件', 'A font file is needed'),
+      tr(
+        context,
+        '这段文字包含非英文字符。请选择一个 TTF 或 TTC 字体，字体会被精简并嵌入保存的 PDF。',
+        'This text contains non-English characters. Choose a TTF or TTC font; the SDK will subset and embed it in the saved PDF.',
+      ),
+    );
+    if (!choose) return null;
+    final picked = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: const ['ttf', 'ttc'],
+    );
+    if (picked == null) return null;
+    _wideReplacementFont = await picked.readAsBytes();
+    return _wideReplacementFont;
   }
 
   Future<void> _markSelection(String markup) async {
@@ -557,8 +845,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         opacity: 0.5,
         author: 'Waymark user',
       );
+      if (receipt != null) _copySaved = false;
       if (!mounted) return;
-      setState(() => _status = receipt == null ? '请先拖选文字' : '已添加文字标记');
+      setState(
+        () => _status = receipt == null
+            ? tr(context, '请先选择文字', 'Select text first')
+            : tr(context, '已添加文字标记', 'Text markup added'),
+      );
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -569,13 +862,21 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       _noteMode = !_noteMode;
       if (_noteMode) {
         _cancelSigning();
-        _status = '点按页面上的位置以添加便签';
+        _status = tr(
+          context,
+          '点按页面上的位置以添加便签',
+          'Tap a position on the page to add a note',
+        );
       }
     });
   }
 
   Future<void> _addNoteAt(int pageIndex, DisplayPoint point) async {
-    final text = await _promptText(title: '添加便签', label: '便签内容', maxLines: 4);
+    final text = await _promptText(
+      title: tr(context, '添加便签', 'Add note'),
+      label: tr(context, '便签内容', 'Note'),
+      maxLines: 4,
+    );
     if (text == null || text.trim().isEmpty) return;
     try {
       await _controller?.addStickyNote(
@@ -586,10 +887,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         contents: text.trim(),
         author: 'Waymark user',
       );
+      _copySaved = false;
       if (mounted) {
         setState(() {
           _noteMode = false;
-          _status = '已在第 ${pageIndex + 1} 页添加便签';
+          _status = tr(
+            context,
+            '已在第 ${pageIndex + 1} 页添加便签',
+            'Note added to page ${pageIndex + 1}',
+          );
         });
       }
     } on Object catch (error) {
@@ -602,10 +908,14 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       _signMode = !_signMode;
       if (_signMode) {
         _noteMode = false;
-        _status = '在同一页手写，完成后点工具栏中的勾';
+        _status = tr(
+          context,
+          '在同一页手写，完成后点工具栏中的勾',
+          'Draw on one page, then tap the tick',
+        );
       } else {
         _cancelSigning();
-        _status = '已取消本次手写';
+        _status = tr(context, '已取消本次手写', 'Drawing cancelled');
       }
     });
   }
@@ -623,7 +933,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         _strokePage = pageIndex;
       }
       _strokes.add(stroke);
-      _status = '已记录 ${_strokes.length} 笔，点勾写入 PDF';
+      _status = tr(
+        context,
+        '已记录 ${_strokes.length} 笔，点勾写入 PDF',
+        '${_strokes.length} strokes ready · tap the tick to apply',
+      );
     });
   }
 
@@ -639,10 +953,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         contents: 'handwritten mark',
         author: 'Waymark user',
       );
+      _copySaved = false;
       if (mounted) {
         setState(() {
           _cancelSigning();
-          _status = '手写内容已加入第 ${page + 1} 页';
+          _status = tr(
+            context,
+            '手写内容已加入第 ${page + 1} 页',
+            'Drawing added to page ${page + 1}',
+          );
         });
       }
     } on Object catch (error) {
@@ -652,7 +971,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _showForms() async {
     if (!_can('pdf_fill_forms')) {
-      setState(() => _status = '这份 PDF 没有开放可填写表单能力');
+      setState(
+        () => _status = tr(
+          context,
+          '这份 PDF 没有可填写的表单字段',
+          'This PDF has no fillable form fields',
+        ),
+      );
       return;
     }
     try {
@@ -662,23 +987,33 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       final change = await showDialog<(int, String)>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('第 ${_page + 1} 页表单'),
+          title: Text(
+            tr(context, '第 ${_page + 1} 页表单', 'Forms on page ${_page + 1}'),
+          ),
           content: SizedBox(
             width: 460,
             child: fields.isEmpty
-                ? const Text('当前页没有表单字段。')
+                ? Text(
+                    tr(
+                      context,
+                      '当前页没有表单字段。',
+                      'There are no form fields on this page.',
+                    ),
+                  )
                 : ListView(
                     shrinkWrap: true,
                     children: [
                       for (final field in fields)
                         ListTile(
                           title: Text(
-                            field.name.isEmpty ? '未命名字段' : field.name,
+                            field.name.isEmpty
+                                ? tr(context, '未命名字段', 'Unnamed field')
+                                : field.name,
                           ),
                           subtitle: Text(
                             '${field.kind}${field.value.isEmpty ? '' : ' · ${field.value}'}'
-                            '${field.required ? ' · 必填' : ''}'
-                            '${field.fillable ? '' : ' · 当前不可填写'}',
+                            '${field.required ? ' · ${tr(context, '必填', 'Required')}' : ''}'
+                            '${field.fillable ? '' : ' · ${tr(context, '当前不可填写', 'Read only')}'}',
                           ),
                           trailing: field.fillable
                               ? IconButton(
@@ -701,14 +1036,17 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('关闭'),
+              child: Text(tr(context, '关闭', 'Close')),
             ),
           ],
         ),
       );
       if (change == null) return;
       await _controller?.setFormField(_page, change.$1, change.$2);
-      if (mounted) setState(() => _status = '表单字段已更新');
+      _copySaved = false;
+      if (mounted) {
+        setState(() => _status = tr(context, '表单字段已更新', 'Form field updated'));
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -719,7 +1057,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       return showDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
-          title: Text(field.name.isEmpty ? '选择内容' : field.name),
+          title: Text(
+            field.name.isEmpty
+                ? tr(context, '选择内容', 'Choose a value')
+                : field.name,
+          ),
           children: [
             for (final option in field.options)
               SimpleDialogOption(
@@ -731,8 +1073,8 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       );
     }
     return _promptText(
-      title: field.name.isEmpty ? '填写表单' : field.name,
-      label: '内容',
+      title: field.name.isEmpty ? tr(context, '填写表单', 'Fill form') : field.name,
+      label: tr(context, '内容', 'Value'),
       initial: field.value,
     );
   }
@@ -745,25 +1087,40 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       final removed = await showDialog<int>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('第 ${_page + 1} 页批注'),
+          title: Text(
+            tr(
+              context,
+              '第 ${_page + 1} 页批注',
+              'Annotations on page ${_page + 1}',
+            ),
+          ),
           content: SizedBox(
             width: 440,
             child: annotations.isEmpty
-                ? const Text('当前页没有批注。')
+                ? Text(
+                    tr(
+                      context,
+                      '当前页没有批注。',
+                      'There are no annotations on this page.',
+                    ),
+                  )
                 : ListView(
                     shrinkWrap: true,
                     children: [
                       for (final annotation in annotations)
                         ListTile(
-                          title: Text(_annotationLabel(annotation.subtype)),
+                          title: Text(
+                            _annotationLabel(context, annotation.subtype),
+                          ),
                           subtitle: Text(
                             annotation.contents.isEmpty
-                                ? (annotation.author ?? '无文字内容')
+                                ? (annotation.author ??
+                                      tr(context, '无文字内容', 'No text'))
                                 : annotation.contents,
                           ),
                           trailing: _controller?.preflight.canEdit == true
                               ? IconButton(
-                                  tooltip: '删除',
+                                  tooltip: tr(context, '删除', 'Delete'),
                                   onPressed: () =>
                                       Navigator.of(context).pop(annotation.id),
                                   icon: const Icon(Icons.delete_outline),
@@ -776,14 +1133,17 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('关闭'),
+              child: Text(tr(context, '关闭', 'Close')),
             ),
           ],
         ),
       );
       if (removed == null) return;
       await _controller?.deleteAnnotation(_page, removed);
-      if (mounted) setState(() => _status = '已删除一条批注');
+      _copySaved = false;
+      if (mounted) {
+        setState(() => _status = tr(context, '已删除一条批注', 'Annotation deleted'));
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -791,7 +1151,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _extractCurrentPage() async {
     if (!_can('pdf_extract_pages')) {
-      setState(() => _status = '这份 PDF 不支持页面提取');
+      setState(
+        () => _status = tr(
+          context,
+          '这份 PDF 不支持页面提取',
+          'Pages cannot be exported from this PDF',
+        ),
+      );
       return;
     }
     try {
@@ -805,7 +1171,13 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _mergePdf() async {
     if (!_can('pdf_merge')) {
-      setState(() => _status = '这份 PDF 不支持合并');
+      setState(
+        () => _status = tr(
+          context,
+          '这份 PDF 不支持合并',
+          'Another PDF cannot be merged into this file',
+        ),
+      );
       return;
     }
     final file = await FilePicker.pickFile(
@@ -816,7 +1188,16 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     try {
       final bytes = await file.readAsBytes();
       final count = await _controller?.mergeDocument(bytes);
-      if (mounted) setState(() => _status = '合并完成，现在共 $count 页');
+      _copySaved = false;
+      if (mounted) {
+        setState(
+          () => _status = tr(
+            context,
+            '合并完成，现在共 $count 页',
+            'Merged successfully · $count pages total',
+          ),
+        );
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -824,15 +1205,37 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
 
   Future<void> _flatten() async {
     if (!_can('pdf_flatten')) {
-      setState(() => _status = '这份 PDF 不支持扁平化');
+      setState(
+        () => _status = tr(
+          context,
+          '这份 PDF 不支持固定批注与表单内容',
+          'Annotations and forms cannot be flattened in this PDF',
+        ),
+      );
       return;
     }
-    if (!await _confirm('扁平化批注与表单？', '内容会留在页面上，但之后不能再单独修改。你仍可撤销，原件也不会改变。')) {
+    if (!await _confirm(
+      tr(context, '固定批注与表单内容？', 'Flatten annotations and forms?'),
+      tr(
+        context,
+        '内容会留在页面上，但之后不能再单独修改。你仍可撤销，原件也不会改变。',
+        'The content will stay visible but can no longer be edited separately. You can still undo, and the original is unchanged.',
+      ),
+    )) {
       return;
     }
     try {
       await _controller?.flatten();
-      if (mounted) setState(() => _status = '已扁平化；另存副本后才会保留');
+      _copySaved = false;
+      if (mounted) {
+        setState(
+          () => _status = tr(
+            context,
+            '内容已固定；另存副本后才会保留',
+            'Content flattened · save a copy to keep it',
+          ),
+        );
+      }
     } on Object catch (error) {
       _setErrorStatus(error);
     }
@@ -865,7 +1268,12 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       return;
     }
     await save(bytes, name);
-    if (mounted) setState(() => _status = '已作为新附件保存：$name');
+    if (mounted) {
+      setState(() {
+        _copySaved = true;
+        _status = tr(context, '已作为新文件保存：$name', 'Saved as a new file: $name');
+      });
+    }
   }
 
   Future<void> _saveWithPlatformDialog(Uint8List bytes, String name) async {
@@ -877,7 +1285,16 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       allowedExtensions: const ['pdf'],
     );
     if (mounted) {
-      setState(() => _status = uri == null ? '已取消导出' : '副本已导出到所选位置');
+      setState(() {
+        if (uri != null) _copySaved = true;
+        _status = uri == null
+            ? tr(context, '已取消导出', 'Export cancelled')
+            : tr(
+                context,
+                '副本已导出到所选位置',
+                'Copy exported to the selected location',
+              );
+      });
     }
   }
 
@@ -887,18 +1304,26 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('这份 PDF 的兼容性'),
+        title: Text(tr(context, '这份 PDF 的兼容性', 'PDF compatibility')),
         content: SizedBox(
           width: 480,
           child: ListView(
             shrinkWrap: true,
             children: [
-              Text('兼容等级：${_compatibilityLabel(report.compatibility)}'),
+              Text(
+                tr(
+                  context,
+                  '兼容等级：${_compatibilityLabel(report.compatibility, context)}',
+                  'Compatibility: ${_compatibilityLabel(report.compatibility, context)}',
+                ),
+              ),
               const SizedBox(height: 10),
-              const Text(
-                '预览器会明确显示未内嵌字体、图片或不支持内容造成的缺口。'
-                '若以后将页面栅格化：complete 表示内容没有缺失；exact 还要求字形来自文档指定字体。'
-                '使用替代字体可能 complete，但不会 exact。',
+              Text(
+                tr(
+                  context,
+                  '预览器会明确显示字体、图片或不支持内容造成的显示缺口。完整表示没有内容缺失；精确还要求使用文档指定字体。',
+                  'The viewer reports display gaps caused by fonts, images, or unsupported content. Complete means nothing is missing; exact also requires the document-specified font.',
+                ),
               ),
               if (report.issues.isNotEmpty) ...[
                 const Divider(height: 24),
@@ -922,7 +1347,7 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('知道了'),
+            child: Text(tr(context, '知道了', 'Done')),
           ),
         ],
       ),
@@ -953,8 +1378,10 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   }
 
   Future<String?> _promptPassword(bool wrong) => _promptText(
-    title: wrong ? '密码不正确' : '这份 PDF 已加密',
-    label: 'PDF 密码',
+    title: wrong
+        ? tr(context, '密码不正确', 'Incorrect password')
+        : tr(context, '这份 PDF 已加密', 'This PDF is encrypted'),
+    label: tr(context, 'PDF 密码', 'PDF password'),
     obscure: true,
   );
 
@@ -981,11 +1408,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
+            child: Text(tr(context, '取消', 'Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(fieldValue),
-            child: const Text('确定'),
+            child: Text(tr(context, '确定', 'OK')),
           ),
         ],
       ),
@@ -1002,11 +1429,11 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消'),
+              child: Text(tr(context, '取消', 'Cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('继续'),
+              child: Text(tr(context, '继续', 'Continue')),
             ),
           ],
         ),
@@ -1014,8 +1441,15 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
       false;
 
   Future<bool> _confirmDiscard() {
-    if (_controller?.isDirty != true) return Future.value(true);
-    return _confirm('放弃尚未保存的修改？', '原始文件不会受影响，但这次编辑会丢失。');
+    if (_controller?.isDirty != true || _copySaved) return Future.value(true);
+    return _confirm(
+      tr(context, '放弃尚未保存的修改？', 'Discard unsaved changes?'),
+      tr(
+        context,
+        '原始文件不会受影响，但这次编辑会丢失。',
+        'The original file is safe, but this editing session will be lost.',
+      ),
+    );
   }
 
   void _setErrorStatus(Object error) {
@@ -1029,6 +1463,27 @@ class _PdfEditorScreenState extends State<PdfEditorScreen> {
   String _describe(Object error) => error is DocumentSdkException
       ? '${error.code}：${error.message}'
       : error.toString();
+}
+
+DisplayRect? _textBounds(List<TextQuad> quads) {
+  if (quads.isEmpty) return null;
+  var left = double.infinity;
+  var bottom = double.infinity;
+  var right = double.negativeInfinity;
+  var top = double.negativeInfinity;
+  for (final point in quads.expand((quad) => quad.corners)) {
+    if (point.x < left) left = point.x;
+    if (point.y < bottom) bottom = point.y;
+    if (point.x > right) right = point.x;
+    if (point.y > top) top = point.y;
+  }
+  if (![left, bottom, right, top].every((value) => value.isFinite)) return null;
+  return DisplayRect(
+    x: left,
+    y: bottom,
+    width: right - left,
+    height: top - bottom,
+  );
 }
 
 enum _PdfMenuAction {
@@ -1071,8 +1526,8 @@ class _CompatibilityStrip extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '${_compatibilityLabel(report.compatibility)} · '
-                  '${report.issues.isEmpty ? '没有文件级警告' : '${report.issues.length} 项兼容性提示'}',
+                  '${_compatibilityLabel(report.compatibility, context)} · '
+                  '${report.issues.isEmpty ? tr(context, '没有文件级警告', 'No file warnings') : tr(context, '${report.issues.length} 项兼容性提示', '${report.issues.length} compatibility notices')}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -1089,12 +1544,16 @@ class _SelectionStrip extends StatelessWidget {
   const _SelectionStrip({
     required this.selection,
     required this.onCopy,
+    required this.onReplace,
+    required this.onDelete,
     required this.onMarkup,
     required this.onClear,
   });
 
   final TextSelectionResult selection;
   final Future<void> Function() onCopy;
+  final Future<void> Function()? onReplace;
+  final Future<void> Function()? onDelete;
   final Future<void> Function(String) onMarkup;
   final VoidCallback onClear;
 
@@ -1109,7 +1568,9 @@ class _SelectionStrip extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 220),
             child: Text(
-              selection.text.isEmpty ? '已选择区域' : selection.text,
+              selection.text.isEmpty
+                  ? tr(context, '已选择区域', 'Area selected')
+                  : selection.text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1117,22 +1578,32 @@ class _SelectionStrip extends StatelessWidget {
           TextButton.icon(
             onPressed: selection.text.isEmpty ? null : onCopy,
             icon: const Icon(Icons.copy, size: 17),
-            label: const Text('复制'),
+            label: Text(tr(context, '复制', 'Copy')),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: selection.text.isEmpty ? null : onReplace,
+            icon: const Icon(Icons.edit_outlined, size: 17),
+            label: Text(tr(context, '替换文字', 'Replace text')),
+          ),
+          TextButton.icon(
+            onPressed: selection.text.isEmpty ? null : onDelete,
+            icon: const Icon(Icons.backspace_outlined, size: 17),
+            label: Text(tr(context, '删除文字', 'Delete text')),
           ),
           TextButton(
             onPressed: () => onMarkup('highlight'),
-            child: const Text('高亮'),
+            child: Text(tr(context, '高亮', 'Highlight')),
           ),
           TextButton(
             onPressed: () => onMarkup('underline'),
-            child: const Text('下划线'),
+            child: Text(tr(context, '下划线', 'Underline')),
           ),
           TextButton(
             onPressed: () => onMarkup('strike_out'),
-            child: const Text('删除线'),
+            child: Text(tr(context, '删除线', 'Strike through')),
           ),
           IconButton(
-            tooltip: '清除选择',
+            tooltip: tr(context, '清除选择', 'Clear selection'),
             onPressed: onClear,
             icon: const Icon(Icons.close, size: 18),
           ),
@@ -1143,9 +1614,14 @@ class _SelectionStrip extends StatelessWidget {
 }
 
 class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.dirty, required this.status});
+  const _StatusBar({
+    required this.dirty,
+    required this.saved,
+    required this.status,
+  });
 
   final bool dirty;
+  final bool saved;
   final String? status;
 
   @override
@@ -1159,11 +1635,22 @@ class _StatusBar extends StatelessWidget {
           children: [
             Icon(dirty ? Icons.edit : Icons.check_circle_outline, size: 16),
             const SizedBox(width: 6),
-            Text(dirty ? '有未保存修改' : '尚未修改'),
+            Text(
+              dirty
+                  ? tr(context, '有未保存修改', 'Unsaved changes')
+                  : saved
+                  ? tr(context, '副本已保存', 'Copy saved')
+                  : tr(context, '尚未修改', 'No changes'),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                status ?? '原件不会被覆盖',
+                status ??
+                    tr(
+                      context,
+                      '原件不会被覆盖',
+                      'The original will not be overwritten',
+                    ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall,
@@ -1176,19 +1663,23 @@ class _StatusBar extends StatelessWidget {
   );
 }
 
-String _compatibilityLabel(CompatibilityLevel level) => switch (level) {
-  CompatibilityLevel.fullEdit => '完整编辑',
-  CompatibilityLevel.partialEdit => '部分编辑',
-  CompatibilityLevel.readOnly => '只读',
-  CompatibilityLevel.conversionRequired => '需要转换',
-  CompatibilityLevel.unsupported => '不支持',
-};
+String _compatibilityLabel(CompatibilityLevel level, [BuildContext? context]) {
+  final zh = context == null || isChineseUi(context);
+  return switch (level) {
+    CompatibilityLevel.fullEdit => zh ? '完整编辑' : 'Full editing',
+    CompatibilityLevel.partialEdit => zh ? '部分编辑' : 'Partial editing',
+    CompatibilityLevel.readOnly => zh ? '只读' : 'Read only',
+    CompatibilityLevel.conversionRequired => zh ? '需要转换' : 'Conversion needed',
+    CompatibilityLevel.unsupported => zh ? '不支持' : 'Unsupported',
+  };
+}
 
-String _annotationLabel(String subtype) => switch (subtype) {
-  'Text' || 'text' => '便签',
-  'Ink' || 'ink' => '手写',
-  'Highlight' || 'highlight' => '高亮',
-  'Underline' || 'underline' => '下划线',
-  'StrikeOut' || 'strike_out' => '删除线',
-  _ => subtype,
-};
+String _annotationLabel(BuildContext context, String subtype) =>
+    switch (subtype) {
+      'Text' || 'text' => tr(context, '便签', 'Note'),
+      'Ink' || 'ink' => tr(context, '手写', 'Drawing'),
+      'Highlight' || 'highlight' => tr(context, '高亮', 'Highlight'),
+      'Underline' || 'underline' => tr(context, '下划线', 'Underline'),
+      'StrikeOut' || 'strike_out' => tr(context, '删除线', 'Strike through'),
+      _ => subtype,
+    };
