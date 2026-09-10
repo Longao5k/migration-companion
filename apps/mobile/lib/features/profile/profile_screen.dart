@@ -4,28 +4,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/state/app_store.dart';
 import '../../core/api/web_config.dart';
-import '../../shared/widgets/common.dart';
+import '../../core/i18n/app_language.dart';
+import '../../core/state/app_store.dart';
 import '../subscription/subscription_screen.dart';
 
-/// 订阅入口是否可见。
-///
-/// 第一版会靠订阅出售高级文档能力，所以计费依赖留在构建里。PDF 自研编辑器已经
-/// 接入，但真实购买仍要等 Apple/Google 商品、服务端收据核验和两端沙盒通过后，才用
-/// --dart-define=SUBSCRIPTIONS=true 打开；商店表单的「应用内购买」必须填「是」。
 const subscriptionsEnabled = bool.fromEnvironment('SUBSCRIPTIONS');
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appStoreProvider);
+    final zh = isChineseUi(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('我的')),
+      appBar: AppBar(title: Text(zh ? '我的' : 'Profile')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
         children: [
           Card(
             color: Theme.of(context).colorScheme.primaryContainer,
@@ -36,37 +31,36 @@ class ProfileScreen extends ConsumerWidget {
                 children: [
                   CircleAvatar(
                     radius: 25,
-                    backgroundColor: Theme.of(context).colorScheme.primary,
                     child: Icon(
                       state.isSignedIn ? Icons.person : Icons.person_outline,
-                      color: Theme.of(context).colorScheme.onPrimary,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   Text(
-                    state.isSignedIn ? '已登录账号' : '访客模式',
+                    state.isSignedIn
+                        ? (zh ? '已登录' : 'Signed in')
+                        : (zh ? '访客模式' : 'Guest mode'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 6),
                   Text(
                     state.isSignedIn
-                        ? '${state.accountEmail}\n换手机时可以用这个账号找回你的清单。'
-                        : '项目保存在本机。你可以随时导出备份，不会遇到登录墙。',
+                        ? '${state.accountEmail}\n${zh ? '账号用于恢复清单和关注设置。' : 'Your account restores checklists and follow settings.'}'
+                        : (zh
+                              ? '资料和申请默认保存在这台设备上。'
+                              : 'Documents and applications stay on this device by default.'),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: () => state.isSignedIn
-                        ? ref.read(appStoreProvider.notifier).signOut()
-                        : _signIn(context, ref),
-                    child: Text(state.isSignedIn ? '退出账号（保留本机项目）' : '注册或登录'),
-                  ),
-                  if (!state.isSignedIn && kDebugMode) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Debug 构建使用本地邮箱账号；正式构建将接入邮箱验证码。',
-                      style: TextStyle(fontSize: 12),
+                    onPressed: state.isSignedIn
+                        ? ref.read(appStoreProvider.notifier).signOut
+                        : () => _signIn(context, ref),
+                    child: Text(
+                      state.isSignedIn
+                          ? (zh ? '退出账号' : 'Sign out')
+                          : (zh ? '注册或登录' : 'Sign up or sign in'),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -80,105 +74,91 @@ class ProfileScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '账号删除已排期',
+                      zh ? '账号删除已排期' : 'Account deletion scheduled',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '预计 ${DateFormat('yyyy-MM-dd').format(state.deletionRequestedAt!.add(const Duration(days: 7)))} 清除云端主数据。此前可撤回；本机项目不会自动删除。',
+                      zh
+                          ? '预计 ${DateFormat('yyyy-MM-dd').format(state.deletionRequestedAt!.add(const Duration(days: 7)))} 清除云端账号数据。设备内资料不会自动删除。'
+                          : 'Cloud account data is scheduled for deletion by ${DateFormat.yMMMd().format(state.deletionRequestedAt!.add(const Duration(days: 7)))}. On-device data will remain.',
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     OutlinedButton(
-                      onPressed: () => _cancelAccountDeletion(context, ref),
-                      child: const Text('撤回删除申请'),
+                      onPressed: () => _cancelDeletion(context, ref),
+                      child: Text(zh ? '撤回删除申请' : 'Cancel deletion'),
                     ),
                   ],
                 ),
               ),
             ),
-          const SectionHeader(title: '数据与隐私'),
-          _SettingsTile(
-            icon: Icons.cloud_outlined,
-            title: '云同步',
-            subtitle: '按项目开启；默认关闭',
-            onTap: () => _showInfo(
+          _Section(title: zh ? '偏好与隐私' : 'Preferences & privacy'),
+          _Tile(
+            icon: Icons.notifications_active_outlined,
+            title: zh ? '资讯关注' : 'Update preferences',
+            subtitle: state.isSignedIn
+                ? (state.policyNotificationsEnabled
+                      ? (zh ? '已开启' : 'Enabled')
+                      : (zh ? '未开启' : 'Disabled'))
+                : (zh ? '登录后可同步关注设置' : 'Sign in to sync preferences'),
+            onTap: state.isSignedIn
+                ? () => _notificationPreferences(context, ref)
+                : null,
+          ),
+          _Tile(
+            icon: Icons.lock_outline,
+            title: zh ? '本机资料' : 'On-device documents',
+            subtitle: zh
+                ? '你的文件默认只保存在这台设备'
+                : 'Your files stay on this device by default',
+            onTap: () => _info(
               context,
-              '云同步',
-              '登录不会上传任何文件。请进入具体项目，由项目所有者单独开启云文件同步。',
+              zh ? '本机资料' : 'On-device documents',
+              zh ? '添加到“我的资料”的文件保存在 App 私有目录。只有你主动分享时，文件才会离开设备。' : 'Files added to My documents are stored in the app private directory. They leave the device only when you choose to share them.',
             ),
           ),
-          _SettingsTile(
-            icon: Icons.download_outlined,
-            title: '导出与恢复',
-            subtitle: '取回完整项目备份',
-            onTap: () =>
-                _showInfo(context, '导出与恢复', '在“材料项目”页面可导入备份；进入具体项目可导出加密备份。'),
-          ),
-          _SettingsTile(
+          _Tile(
             icon: Icons.delete_outline,
-            title: '删除账号与数据',
+            title: zh ? '删除账号与云端数据' : 'Delete account and cloud data',
             subtitle: state.deletionRequestedAt == null
-                ? 'App 内可发起；订阅需单独管理'
-                : '已提交，可在计划清除前撤回',
+                ? (zh ? '可在 App 内发起' : 'Request from the app')
+                : (zh ? '已提交' : 'Request submitted'),
             onTap: state.isSignedIn && state.deletionRequestedAt == null
                 ? () => _deleteAccount(context, ref)
                 : null,
           ),
-          _SettingsTile(
-            icon: Icons.notifications_active_outlined,
-            title: '政策通知与关注',
-            subtitle: state.isSignedIn
-                ? state.policyNotificationsEnabled
-                      ? '已开启 · ${state.followedTags.isEmpty ? '全部澳洲移民主题' : state.followedTags.join(' / ')}'
-                      : '已关闭；可按地区、签证与主题关注'
-                : '登录后同步关注规则；本机材料提醒不受影响',
-            onTap: state.isSignedIn
-                ? () => _showNotificationPreferences(context, ref)
-                : null,
-          ),
-          // 购买入口仍由商店与服务端核验能力控制，不能只因 PDF 编辑器接入就开始收费。
           if (subscriptionsEnabled) ...[
-            const SectionHeader(title: '订阅'),
-            _SettingsTile(
+            _Section(title: zh ? '订阅' : 'Subscription'),
+            _Tile(
               icon: Icons.workspace_premium_outlined,
               title: 'Waymark Premium',
-              subtitle:
-                  '${_tierLabel(state.entitlementTier)} · A\$11.99/月 · A\$89.99/年',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
-              ),
-            ),
-            _SettingsTile(
-              icon: Icons.restore,
-              title: '恢复购买',
-              subtitle: '从 Apple 或 Google 商店恢复权益',
+              subtitle: state.entitlementTier,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
               ),
             ),
           ],
-          const SectionHeader(title: '关于'),
-          _SettingsTile(
+          _Section(title: zh ? '关于' : 'About'),
+          _Tile(
             icon: Icons.privacy_tip_outlined,
-            title: '隐私政策',
-            subtitle: '数据范围、保存、删除与跨境处理',
+            title: zh ? '隐私政策' : 'Privacy policy',
+            subtitle: zh ? '了解数据如何保存和删除' : 'How data is stored and deleted',
             onTap: () => launchUrl(Uri.parse('${publicWebBaseUrl()}/privacy')),
           ),
-          _SettingsTile(
+          _Tile(
             icon: Icons.gavel_outlined,
-            title: '信息与法律边界',
-            subtitle: '不是政府官方服务，不提供个人移民法律意见',
+            title: zh ? '使用条款' : 'Terms of use',
+            subtitle: zh ? 'Waymark 不是政府服务，也不提供个人法律意见' : 'Waymark is not a government service and does not provide personal legal advice',
             onTap: () => launchUrl(Uri.parse('${publicWebBaseUrl()}/terms')),
           ),
-          _SettingsTile(
+          _Tile(
             icon: Icons.support_agent_outlined,
-            title: '帮助与支持',
-            subtitle: '订阅、退款、权限和数据问题',
-            onTap: () => _showInfo(
+            title: zh ? '帮助与支持' : 'Help & support',
+            subtitle: zh ? '获取测试版本支持' : 'Support for this test build',
+            onTap: () => _info(
               context,
-              '帮助与支持',
-              '内测期间请直接联系把这个版本发给你的人。'
-                  '正式发布前这里会换成公开的支持邮箱。',
+              zh ? '帮助与支持' : 'Help & support',
+              zh ? '内测期间请联系向你提供此版本的人。公开支持渠道会在上架前加入。' : 'During testing, contact the person who provided this build. Public support details will be added before store release.',
             ),
           ),
         ],
@@ -187,8 +167,22 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({
+class _Section extends StatelessWidget {
+  const _Section({required this.title});
+  final String title;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+    child: Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium
+          ?.copyWith(fontWeight: FontWeight.w800),
+    ),
+  );
+}
+
+class _Tile extends StatelessWidget {
+  const _Tile({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -200,56 +194,43 @@ class _SettingsTile extends StatelessWidget {
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
     leading: Icon(icon),
     title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
     subtitle: Text(subtitle),
-    trailing: const Icon(Icons.chevron_right),
+    trailing: onTap == null ? null : const Icon(Icons.chevron_right),
     onTap: onTap,
   );
 }
 
-String _tierLabel(String tier) => switch (tier) {
-  'PREMIUM' => 'Premium',
-  'TRIAL' => '高级试用中',
-  _ => '永久免费',
-};
-
 Future<void> _signIn(BuildContext context, WidgetRef ref) async {
+  final zh = isChineseUi(context);
   const pilotAuthEnabled = bool.fromEnvironment('PILOT_AUTH');
-  final controller = TextEditingController(
+  final email = TextEditingController(
     text: kDebugMode ? 'owner@example.com' : '',
   );
-  final accessCodeController = TextEditingController();
-  final credentials = await showDialog<({String email, String accessCode})>(
+  final code = TextEditingController();
+  final value = await showDialog<({String email, String code})>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(
-        pilotAuthEnabled
-            ? '内测账号登录'
-            : kDebugMode
-            ? '本地开发账号'
-            : '邮箱登录',
-      ),
+      title: Text(zh ? '登录 Waymark' : 'Sign in to Waymark'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
-            controller: controller,
+            controller: email,
             keyboardType: TextInputType.emailAddress,
-            autocorrect: false,
-            decoration: const InputDecoration(labelText: '邮箱地址'),
+            decoration: InputDecoration(
+              labelText: zh ? '邮箱地址' : 'Email address',
+            ),
           ),
           if (pilotAuthEnabled) ...[
             const SizedBox(height: 12),
             TextField(
-              controller: accessCodeController,
+              controller: code,
               obscureText: true,
-              enableSuggestions: false,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: '内测访问码',
-                helperText: '只用于当前封闭测试，正式登录上线后会替换。',
+              decoration: InputDecoration(
+                labelText: zh ? '内测访问码' : 'Pilot access code',
               ),
             ),
           ],
@@ -258,113 +239,95 @@ Future<void> _signIn(BuildContext context, WidgetRef ref) async {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(zh ? '取消' : 'Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, (
-            email: controller.text.trim(),
-            accessCode: accessCodeController.text,
+            email: email.text.trim(),
+            code: code.text,
           )),
-          child: const Text('继续'),
+          child: Text(zh ? '继续' : 'Continue'),
         ),
       ],
     ),
   );
-  if (credentials == null || !context.mounted) return;
+  if (value == null) return;
   try {
     await ref
         .read(appStoreProvider.notifier)
-        .signIn(credentials.email, accessCode: credentials.accessCode);
+        .signIn(value.email, accessCode: value.code);
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('登录失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${zh ? '登录失败' : 'Sign-in failed'}: $error')),
+      );
     }
   }
 }
 
 Future<void> _deleteAccount(BuildContext context, WidgetRef ref) async {
+  final zh = isChineseUi(context);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('申请删除账号与云端数据？'),
-      content: const Text(
-        '账号主数据目标在确认后 7 天内删除；备份轮换最长 35 天。本机项目不会在此步骤中自动删除。Apple 或 Google 订阅也不会自动取消，请另行前往商店管理。',
+      title: Text(zh ? '删除账号与云端数据？' : 'Delete account and cloud data?'),
+      content: Text(
+        zh ? '确认后，云端账号数据会进入删除流程。设备内资料不会自动删除，Apple 或 Google 订阅也需要在商店中单独取消。' : 'Cloud account data will enter the deletion process. On-device documents remain, and Apple or Google subscriptions must be cancelled separately in the store.',
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: Text(zh ? '取消' : 'Cancel'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('提交删除申请'),
+          child: Text(zh ? '提交删除申请' : 'Request deletion'),
         ),
       ],
     ),
   );
-  if (confirmed != true || !context.mounted) return;
+  if (confirmed != true) return;
   try {
     await ref.read(appStoreProvider.notifier).requestAccountDeletion();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('删除申请已提交')));
-    }
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('提交失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${zh ? '提交失败' : 'Request failed'}: $error')),
+      );
     }
   }
 }
 
-Future<void> _showInfo(BuildContext context, String title, String body) =>
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
-
-Future<void> _cancelAccountDeletion(BuildContext context, WidgetRef ref) async {
+Future<void> _cancelDeletion(BuildContext context, WidgetRef ref) async {
+  final zh = isChineseUi(context);
   try {
     await ref.read(appStoreProvider.notifier).cancelAccountDeletion();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('删除申请已撤回')));
-    }
   } catch (error) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('撤回失败：$error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${zh ? '撤回失败' : 'Cancellation failed'}: $error'),
+        ),
+      );
     }
   }
 }
 
-Future<void> _showNotificationPreferences(
+Future<void> _notificationPreferences(
   BuildContext context,
   WidgetRef ref,
 ) async {
+  final zh = isChineseUi(context);
   final current = ref.read(appStoreProvider);
   var enabled = current.policyNotificationsEnabled;
   var importantOnly = current.importantNotificationsOnly;
-  final taxonomy = current.taxonomy;
-  // 辖区与标签都从服务端目录来，不再写死两个州和两个签证——
-  // 写死的后果是库里已经有昆士兰、西澳、NSW 的内容，用户却订阅不到。
   final jurisdictions = current.followedJurisdictions.toSet();
   final tags = current.followedTags.toSet();
-  final result = await showDialog<bool>(
+  final accepted = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: const Text('政策通知与关注'),
+        title: Text(zh ? '资讯关注' : 'Update preferences'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -372,18 +335,22 @@ Future<void> _showNotificationPreferences(
             children: [
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('接收已核实的政策通知'),
-                subtitle: const Text('重大与重要变化必须先经人工核实。'),
+                title: Text(
+                  zh ? '接收已核实的重要更新' : 'Receive verified important updates',
+                ),
                 value: enabled,
                 onChanged: (value) => setState(() => enabled = value),
               ),
-              const SizedBox(height: 8),
-              const Text('地区（至少选一个）'),
-              for (final entry in taxonomy.jurisdictions)
+              const SizedBox(height: 6),
+              Text(
+                zh ? '地区' : 'Regions',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              for (final entry in current.taxonomy.jurisdictions)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
-                  title: Text('${entry.display}（${entry.count} 条）'),
+                  title: Text(entry.display),
                   value: jurisdictions.contains(entry.code),
                   onChanged: enabled
                       ? (value) => setState(
@@ -393,34 +360,15 @@ Future<void> _showNotificationPreferences(
                         )
                       : null,
                 ),
-              if (taxonomy.visas.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('签证类别（不选表示全部）'),
-                Wrap(
-                  spacing: 6,
-                  children: [
-                    for (final entry in taxonomy.visas)
-                      FilterChip(
-                        label: Text(entry.code),
-                        selected: tags.contains(entry.code),
-                        onSelected: enabled
-                            ? (value) => setState(
-                                () => value
-                                    ? tags.add(entry.code)
-                                    : tags.remove(entry.code),
-                              )
-                            : null,
-                      ),
-                  ],
+              if (current.taxonomy.visas.isNotEmpty) ...[
+                Text(
+                  zh ? '签证（不选表示全部）' : 'Visas (none means all)',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-              ],
-              if (taxonomy.topics.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('主题（不选表示全部）'),
                 Wrap(
                   spacing: 6,
                   children: [
-                    for (final entry in taxonomy.topics)
+                    for (final entry in current.taxonomy.visas)
                       FilterChip(
                         label: Text(entry.code),
                         selected: tags.contains(entry.code),
@@ -437,15 +385,13 @@ Future<void> _showNotificationPreferences(
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('只通知重大与重要变化'),
+                title: Text(
+                  zh ? '只通知重大与重要变化' : 'Only major and important changes',
+                ),
                 value: importantOnly,
                 onChanged: enabled
                     ? (value) => setState(() => importantOnly = value)
                     : null,
-              ),
-              const Text(
-                '锁屏只显示泛化文案，不显示资格判断、材料名称或政策正文。生产推送通道仍需 APNs/FCM 凭据。',
-                style: TextStyle(fontSize: 12),
               ),
             ],
           ),
@@ -453,36 +399,40 @@ Future<void> _showNotificationPreferences(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
+            child: Text(zh ? '取消' : 'Cancel'),
           ),
           FilledButton(
             onPressed: enabled && jurisdictions.isEmpty
                 ? null
                 : () => Navigator.pop(dialogContext, true),
-            child: const Text('保存'),
+            child: Text(zh ? '保存' : 'Save'),
           ),
         ],
       ),
     ),
   );
-  if (result != true || !context.mounted) return;
-  try {
-    await ref
-        .read(appStoreProvider.notifier)
-        .updateNotificationPreferences(
-          enabled: enabled,
-          jurisdictions: jurisdictions.toList(),
-          tags: tags.toList()..sort(),
-          importantOnly: importantOnly,
-        );
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('关注规则已保存')));
-    }
-  } catch (error) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('保存失败：$error')));
-    }
-  }
+  if (accepted != true) return;
+  await ref
+      .read(appStoreProvider.notifier)
+      .updateNotificationPreferences(
+        enabled: enabled,
+        jurisdictions: jurisdictions.toList(),
+        tags: tags.toList()..sort(),
+        importantOnly: importantOnly,
+      );
 }
+
+Future<void> _info(BuildContext context, String title, String body) =>
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(tr(context, '知道了', 'OK')),
+          ),
+        ],
+      ),
+    );

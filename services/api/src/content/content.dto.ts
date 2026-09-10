@@ -289,6 +289,11 @@ export class IngestChangeDto {
   @Length(1, 240)
   titleZh!: string;
 
+  @IsOptional()
+  @IsString()
+  @Length(1, 240)
+  titleEn?: string;
+
   // 引用配额。冻结规则要求正文只保留生成差异和审计所需的最小证据，不把官方全文
   // 作为自有内容重新发布。原先各 2000 字、合计 4000 字：实测南澳新闻页规范化正文
   // 只有 2219 字，配额是整页的 180%，而 /v1/content/changes 是公开免鉴权接口——
@@ -336,6 +341,11 @@ export class ReviewChangeDto {
   @IsString()
   @Length(0, 2000)
   editorSummaryZh?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 2000)
+  editorSummaryEn?: string;
 
   @IsOptional()
   @IsString()

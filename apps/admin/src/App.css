@@ -62,10 +62,13 @@ h2 { margin: 3px 0 0; font-size: 20px; letter-spacing: -.02em; }
 .diff-grid article { min-height: 145px; border-radius: 13px; padding: 16px; border: 1px solid var(--line); }
 .diff-grid article span { font-size: 11px; font-weight: 800; }
 .diff-grid article p { margin: 13px 0 0; font-size: 13px; line-height: 1.65; }
+.diff-grid article pre { margin: 13px 0 0; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .before { background: #fbf3f0; }
 .before p { color: #765a54; }
+.before pre { color: #765a54; }
 .after { background: #eef8f4; }
 .after p { color: #2b5f53; }
+.after pre { color: #2b5f53; }
 .source-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 17px 0; border-bottom: 1px solid var(--line); }
 .source-facts span, .source-facts strong { display: block; font-size: 11px; }
 .source-facts span { color: var(--muted); margin-bottom: 5px; }

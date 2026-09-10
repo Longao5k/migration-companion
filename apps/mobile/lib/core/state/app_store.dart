@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../data/seed_data.dart';
 import '../models/models.dart';
+import '../models/material_library.dart';
 import '../notifications/notification_service.dart';
 import '../storage/local_repository.dart';
 import '../storage/attachment_storage.dart';
@@ -970,6 +971,63 @@ class AppStore extends StateNotifier<AppState> {
     }
   }
 
+  /// The public UI deliberately exposes only done / not done. The richer enum
+  /// remains intact for cloud/API compatibility and future adviser workflows.
+  Future<void> setChecklistCompleted(
+    String projectId,
+    String itemId,
+    bool completed,
+  ) async {
+    final currentProject = state.projects.firstWhere(
+      (item) => item.id == projectId,
+    );
+    final currentItem = currentProject.items.firstWhere(
+      (item) => item.id == itemId,
+    );
+    final nextStatus = completed
+        ? ChecklistStatus.ready
+        : ChecklistStatus.notStarted;
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != projectId) return project;
+        return project.copyWith(
+          items: project.items
+              .map(
+                (item) => item.id == itemId
+                    ? item.copyWith(status: nextStatus)
+                    : item,
+              )
+              .toList(),
+        );
+      }).toList(),
+    );
+    await _persistProjects();
+    if (currentProject.isCloudSyncEnabled && currentProject.remoteId != null) {
+      await _enqueueChecklistUpdate(
+        projectId: projectId,
+        itemId: itemId,
+        status: nextStatus,
+        note: currentItem.note,
+        dueAt: currentItem.dueDate,
+        reminderAt: currentItem.reminderAt,
+      );
+      await _tryFlushProject(projectId);
+    }
+  }
+
+  Future<void> setChecklistPlanDate({
+    required String projectId,
+    required String itemId,
+    DateTime? date,
+  }) => setChecklistDates(
+    projectId: projectId,
+    itemId: itemId,
+    dueDate: date,
+    reminderAt: date,
+    clearDueDate: date == null,
+    clearReminderAt: date == null,
+  );
+
   Future<void> setChecklistDates({
     required String projectId,
     required String itemId,
@@ -1087,6 +1145,43 @@ class AppStore extends StateNotifier<AppState> {
     return attachment;
   }
 
+  Future<LocalAttachment> linkLibraryAttachment({
+    required String projectId,
+    required String itemId,
+    required LibraryDocument document,
+  }) async {
+    final attachment = LocalAttachment(
+      id: _uuid.v4(),
+      name: document.name,
+      contentType: document.contentType,
+      byteSize: document.byteSize,
+      sha256: document.sha256,
+      createdAt: DateTime.now(),
+      localPath: document.localPath,
+      libraryDocumentId: document.id,
+    );
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != projectId) return project;
+        return project.copyWith(
+          items: project.items.map((item) {
+            if (item.id != itemId) return item;
+            if (item.attachments.any(
+              (existing) => existing.libraryDocumentId == document.id,
+            )) {
+              return item;
+            }
+            return item.copyWith(
+              attachments: [...item.attachments, attachment],
+            );
+          }).toList(),
+        );
+      }).toList(),
+    );
+    await _persistProjects();
+    return attachment;
+  }
+
   Future<void> removeAttachment({
     required String projectId,
     required String itemId,
@@ -1104,7 +1199,9 @@ class AppStore extends StateNotifier<AppState> {
     if (attachment.remoteId != null) {
       throw const FormatException('云端文件不能从本机静默删除；请先在云文件管理中确认删除');
     }
-    await _attachmentStorage.remove(attachment.localPath);
+    if (attachment.libraryDocumentId == null) {
+      await _attachmentStorage.remove(attachment.localPath);
+    }
     state = state.copyWith(
       projects: state.projects.map((candidate) {
         if (candidate.id != projectId) return candidate;
@@ -2252,12 +2349,14 @@ PolicyChange _changeFromApi(Map<String, dynamic> json) {
   return PolicyChange(
     id: json['id'] as String,
     pageTitle: json['titleZh'] as String,
+    pageTitleEn: json['titleEn'] as String?,
     sourceUrl: source['url'] as String? ?? '',
     discoveredAt: DateTime.parse(json['discoveredAt'] as String).toLocal(),
     summary:
         json['editorSummaryZh'] as String? ??
         context ??
         '监控器发现页面变化，当前只展示证据，不判断对个人申请的影响。',
+    summaryEn: json['editorSummaryEn'] as String?,
     beforeText: json['oldExcerpt'] as String? ?? '没有可展示的上一版本文字片段。',
     afterText: json['newExcerpt'] as String? ?? '没有可展示的当前版本文字片段。',
     severity: severity,

@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/documents/document_engines.dart';
+import '../../core/i18n/app_language.dart';
 import '../../core/state/app_store.dart';
-import '../change_log/change_log_screen.dart';
 import '../home/home_screen.dart';
+import '../library/material_library_screen.dart';
 import '../profile/profile_screen.dart';
 import '../projects/projects_screen.dart';
-import '../tools/tools_screen.dart';
 
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -65,13 +65,9 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final screens = [
-      HomeScreen(
-        onOpenProjects: () => setState(() => _index = 2),
-        onOpenChanges: () => setState(() => _index = 1),
-      ),
-      const ChangeLogScreen(),
+      HomeScreen(onOpenProjects: () => setState(() => _index = 2)),
+      const MaterialLibraryScreen(),
       const ProjectsScreen(),
-      const ToolsScreen(),
       const ProfileScreen(),
     ];
     return Scaffold(
@@ -81,31 +77,26 @@ class _AppShellState extends ConsumerState<AppShell>
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.auto_stories_outlined),
-            selectedIcon: Icon(Icons.auto_stories_rounded),
-            label: '资讯',
+            icon: const Icon(Icons.auto_stories_outlined),
+            selectedIcon: const Icon(Icons.auto_stories_rounded),
+            label: tr(context, '资讯', 'Updates'),
           ),
           NavigationDestination(
-            icon: Icon(Icons.radar_outlined),
-            selectedIcon: Icon(Icons.radar_rounded),
-            label: '追踪',
+            icon: const Icon(Icons.folder_copy_outlined),
+            selectedIcon: const Icon(Icons.folder_copy_rounded),
+            label: tr(context, '资料', 'Files'),
           ),
           NavigationDestination(
-            icon: Icon(Icons.route_outlined),
-            selectedIcon: Icon(Icons.route_rounded),
-            label: '申请',
+            icon: const Icon(Icons.route_outlined),
+            selectedIcon: const Icon(Icons.route_rounded),
+            label: tr(context, '申请', 'Applications'),
           ),
           NavigationDestination(
-            icon: Icon(Icons.draw_outlined),
-            selectedIcon: Icon(Icons.draw_rounded),
-            label: '文档',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '我的',
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: tr(context, '我的', 'Profile'),
           ),
         ],
       ),

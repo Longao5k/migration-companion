@@ -34,7 +34,7 @@ describe('ContentService publication guardrails', () => {
     );
   });
 
-  it('allows general changes to appear as pending review', async () => {
+  it('keeps general changes private until a reviewer verifies them', async () => {
     const result = await service.ingest({
       sourceUrl: 'https://migration.sa.gov.au/news',
       sourceName: 'South Australia Migration',
@@ -43,7 +43,21 @@ describe('ContentService publication guardrails', () => {
       discoveredAt: '2026-08-27T00:00:00.000Z',
     });
 
-    expect(result.publishedAt).toBeInstanceOf(Date);
+    expect(result.publishedAt).toBeUndefined();
+  });
+
+  it('only exposes verified or corrected policy changes', async () => {
+    prisma.changeLog.findMany.mockResolvedValue([]);
+
+    await service.changes();
+
+    expect(prisma.changeLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          reviewStatus: { in: [ReviewStatus.VERIFIED, ReviewStatus.CORRECTED] },
+        }),
+      }),
+    );
   });
 
   it('requires an explicit note before publishing a correction', async () => {

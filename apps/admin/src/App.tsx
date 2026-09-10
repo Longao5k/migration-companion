@@ -30,12 +30,14 @@ type Source = {
 type ChangeItem = {
   id: string
   titleZh: string
+  titleEn?: string
   importance: Importance
   reviewStatus: ReviewStatus
   oldExcerpt?: string
   newExcerpt?: string
   context?: string
   editorSummaryZh?: string
+  editorSummaryEn?: string
   correctionNote?: string
   discoveredAt: string
   publishedAt?: string
@@ -230,6 +232,7 @@ function App() {
   const [health, setHealth] = useState<SourceHealth[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [summary, setSummary] = useState('')
+  const [summaryEn, setSummaryEn] = useState('')
   const [correctionNote, setCorrectionNote] = useState('')
   const [selectedNewsId, setSelectedNewsId] = useState('')
   const [newsTitle, setNewsTitle] = useState('')
@@ -429,6 +432,7 @@ function App() {
     setSelectedId('')
     setSelectedNewsId('')
     setSummary('')
+    setSummaryEn('')
     setCorrectionNote('')
     if (token) void load(next)
   }
@@ -442,10 +446,12 @@ function App() {
         body: JSON.stringify({
           status,
           ...(summary.trim() ? { editorSummaryZh: summary.trim() } : {}),
+          ...(summaryEn.trim() ? { editorSummaryEn: summaryEn.trim() } : {}),
           ...(correctionNote.trim() ? { correctionNote: correctionNote.trim() } : {}),
         }),
       })
       setSummary('')
+      setSummaryEn('')
       setCorrectionNote('')
       setNotice(status === 'CORRECTED' ? '更正已发布并保留原记录' : '审核结果已保存')
       await load(view)
@@ -793,7 +799,7 @@ function App() {
         <p className="notice" role="status">{notice}</p>
 
         {view === 'review' && (
-          <ChangeWorkspace items={queue} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} summary={summary} setSummary={setSummary} loading={loading} onReview={review} />
+          <ChangeWorkspace items={queue} selected={selected} selectedId={selectedId} setSelectedId={setSelectedId} summary={summary} setSummary={setSummary} summaryEn={summaryEn} setSummaryEn={setSummaryEn} loading={loading} onReview={review} />
         )}
 
         {view === 'published' && (
@@ -1157,11 +1163,11 @@ function App() {
             <div className="management-list full-width">
               <div className="panel-heading"><div><span className="eyebrow">Published changes</span><h2>已公开变更与更正</h2></div></div>
               {changes.filter((item) => item.publishedAt).map((item) => (
-                <button className={`wide-row ${selectedId === item.id ? 'selected' : ''}`} key={item.id} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || ''); setCorrectionNote('') }}>
+                <button className={`wide-row ${selectedId === item.id ? 'selected' : ''}`} key={item.id} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || ''); setSummaryEn(item.editorSummaryEn || ''); setCorrectionNote('') }}>
                   <span className={`severity ${item.importance.toLowerCase()}`}>{severityLabel(item.importance)}</span><strong>{item.titleZh}</strong><small>{item.reviewStatus} · {formatTime(item.publishedAt)}</small>
                 </button>
               ))}
-              {selected?.publishedAt && <div className="correction-editor"><h3>发布更正</h3><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="修订后的中文摘要" /><textarea value={correctionNote} onChange={(event) => setCorrectionNote(event.target.value)} placeholder="必须说明更正了什么" /><button className="approve" onClick={() => review('CORRECTED')} disabled={loading || !summary.trim() || !correctionNote.trim()}>发布更正并保留记录</button></div>}
+              {selected?.publishedAt && <div className="correction-editor"><h3>发布更正</h3><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="修订后的中文摘要" /><textarea value={summaryEn} onChange={(event) => setSummaryEn(event.target.value)} placeholder="Revised English summary" /><textarea value={correctionNote} onChange={(event) => setCorrectionNote(event.target.value)} placeholder="必须说明更正了什么" /><button className="approve" onClick={() => review('CORRECTED')} disabled={loading || !summary.trim() || !summaryEn.trim() || !correctionNote.trim()}>发布更正并保留记录</button></div>}
             </div>
           </section>
         )}
@@ -1196,19 +1202,21 @@ function App() {
   )
 }
 
-function ChangeWorkspace({ items, selected, selectedId, setSelectedId, summary, setSummary, loading, onReview }: {
+function ChangeWorkspace({ items, selected, selectedId, setSelectedId, summary, setSummary, summaryEn, setSummaryEn, loading, onReview }: {
   items: ChangeItem[]
   selected?: ChangeItem
   selectedId: string
   setSelectedId: (id: string) => void
   summary: string
   setSummary: (value: string) => void
+  summaryEn: string
+  setSummaryEn: (value: string) => void
   loading: boolean
   onReview: (status: ReviewStatus) => Promise<void>
 }) {
   return <section className="workspace">
-    <div className="queue-panel"><div className="panel-heading"><div><h2>等待人工判断</h2></div></div><div className="queue-list">{items.length === 0 && <div className="empty">当前没有待审核的政策变化。</div>}{items.map((item) => <button key={item.id} className={`queue-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || '') }}><span className={`severity ${item.importance.toLowerCase()}`}>{severityLabel(item.importance)}</span><strong>{item.titleZh}</strong><span>{item.source.name}</span><time>{formatTime(item.discoveredAt)}</time></button>)}</div></div>
-    <div className="review-panel">{!selected ? <div className="empty large">选择一条变化开始审核</div> : <><div className="review-header"><div><span className={`severity ${selected.importance.toLowerCase()}`}>{severityLabel(selected.importance)}</span><h2>{selected.titleZh}</h2><a href={selected.source.url} target="_blank" rel="noreferrer">打开官方原文 ↗</a></div></div><div className="diff-grid"><article className="before"><span>上一版本</span><p>{selected.oldExcerpt || '首次记录，无上一版本。'}</p></article><article className="after"><span>当前版本</span><p>{selected.newExcerpt || '当前页面没有可展示的文字片段。'}</p></article></div><div className="source-facts"><div><span>司法辖区</span><strong>{selected.source.jurisdiction}</strong></div><div><span>发现时间</span><strong>{formatTime(selected.discoveredAt)}</strong></div><div><span>发布规则</span><strong>{selected.importance === 'GENERAL' ? '可标待核实，不推送' : '人工核实后发布'}</strong></div></div><label className="summary-field"><span>中文编辑摘要</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="只概述官方事实，不给出个人资格、路径或申请答案建议。" /></label><div className="guardrail"><strong>发布前检查</strong><span>来源可回溯</span><span>无个人资格判断</span><span>无政府隶属暗示</span></div><div className="actions"><button className="reject" onClick={() => onReview('REJECTED')} disabled={loading}>标记误报</button><button className="approve" onClick={() => onReview('VERIFIED')} disabled={loading || !summary.trim()}>核实并发布</button></div></>}</div>
+    <div className="queue-panel"><div className="panel-heading"><div><h2>等待人工判断</h2></div></div><div className="queue-list">{items.length === 0 && <div className="empty">当前没有待审核的政策变化。</div>}{items.map((item) => <button key={item.id} className={`queue-item ${selectedId === item.id ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); setSummary(item.editorSummaryZh || ''); setSummaryEn(item.editorSummaryEn || '') }}><span className={`severity ${item.importance.toLowerCase()}`}>{severityLabel(item.importance)}</span><strong>{item.titleZh}</strong><span>{item.source.name}</span><time>{formatTime(item.discoveredAt)}</time></button>)}</div></div>
+    <div className="review-panel">{!selected ? <div className="empty large">选择一条变化开始审核</div> : <><div className="review-header"><div><span className={`severity ${selected.importance.toLowerCase()}`}>{severityLabel(selected.importance)}</span><h2>{selected.titleZh}</h2><a href={selected.source.url} target="_blank" rel="noreferrer">打开官方原文 ↗</a></div></div><div className="diff-grid"><article className="before"><span>上一版本（含上下文）</span><pre>{selected.oldExcerpt || '首次记录，无上一版本。'}</pre></article><article className="after"><span>当前版本（含上下文）</span><pre>{selected.newExcerpt || '当前页面没有可展示的文字片段。'}</pre></article></div><div className="source-facts"><div><span>司法辖区</span><strong>{selected.source.jurisdiction}</strong></div><div><span>发现时间</span><strong>{formatTime(selected.discoveredAt)}</strong></div><div><span>发布规则</span><strong>核实后才会公开</strong></div></div><label className="summary-field"><span>中文编辑摘要</span><textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="只概述官方事实，不给出个人资格、路径或申请答案建议。" /></label><label className="summary-field"><span>English summary</span><textarea value={summaryEn} onChange={(event) => setSummaryEn(event.target.value)} placeholder="Summarise verified official facts only." /></label><div className="guardrail"><strong>发布前检查</strong><span>来源可回溯</span><span>前后文可理解</span><span>无个人资格判断</span></div><div className="actions"><button className="reject" onClick={() => onReview('REJECTED')} disabled={loading}>标记误报</button><button className="approve" onClick={() => onReview('VERIFIED')} disabled={loading || !summary.trim() || !summaryEn.trim()}>核实并发布</button></div></>}</div>
   </section>
 }
 

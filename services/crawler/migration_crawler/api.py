@@ -50,6 +50,7 @@ def submit_candidate(
         "sourceUrl": source.url,
         "sourceName": source.name,
         "titleZh": candidate.title_zh,
+        "titleEn": candidate.title_en,
         "oldExcerpt": candidate.old_excerpt,
         "newExcerpt": candidate.new_excerpt,
         "context": candidate.context,

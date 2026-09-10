@@ -304,12 +304,14 @@ model ChangeLog {
   sourceId        String
   source          Source           @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   titleZh         String
+  titleEn         String?
   oldExcerpt      String?
   newExcerpt      String?
   context         String?
   importance      ChangeImportance
   reviewStatus    ReviewStatus     @default(PENDING)
   editorSummaryZh String?
+  editorSummaryEn String?
   discoveredAt    DateTime
   officialAt      DateTime?
   verifiedAt      DateTime?

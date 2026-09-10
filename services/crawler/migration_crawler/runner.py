@@ -65,6 +65,8 @@ def run_source(source: Source, sources: list[Source], state_dir: Path) -> str:
         news_result = _discover_news(source, fetcher, state_dir, api_url, worker_key)
         if not previous.content_hash:
             return _with_news("baseline-created", news_result)
+        if not source.track_changes:
+            return _with_news("change-tracking-disabled", news_result)
         candidate = make_candidate(
             previous.normalized_text, normalized, source.name, len(normalized)
         )

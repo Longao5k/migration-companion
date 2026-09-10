@@ -46,9 +46,11 @@ abstract final class SeedData {
     PolicyChange(
       id: 'change-income-threshold',
       pageTitle: 'Temporary Skilled Migration Income Threshold',
+      pageTitleEn: 'Temporary Skilled Migration Income Threshold',
       sourceUrl: 'https://migration.sa.gov.au/news/tsmit-increase',
       discoveredAt: DateTime(2026, 7, 2, 9, 42),
       summary: '官方页面新增了 2026 年 7 月 1 日起适用的收入门槛说明。此记录展示页面证据，不判断个人是否满足要求。',
+      summaryEn: 'The official page added the income threshold that applies from 1 July 2026. This record presents page evidence and does not assess individual eligibility.',
       beforeText: '页面未包含 2026–27 财年的最新门槛数值。',
       afterText: 'From 1 July 2026, the TSMIT and CSIT increased to \$79,423.',
       severity: ChangeSeverity.important,

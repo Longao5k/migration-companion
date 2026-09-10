@@ -2,125 +2,158 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/i18n/app_language.dart';
 import '../../core/links/official_link.dart';
-
 import '../../core/models/models.dart';
 import '../../core/state/app_store.dart';
-import '../../shared/widgets/common.dart';
 
-class ChangeLogScreen extends ConsumerWidget {
+class ChangeLogScreen extends ConsumerStatefulWidget {
   const ChangeLogScreen({super.key});
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(appStoreProvider);
-    final changes = state.changes;
-    final children = <Widget>[
-      const _EvidenceIntro(),
-      ContentRefreshStatus(
-        refreshing: state.isContentRefreshing,
-        error: state.contentError,
-        updatedAt: state.contentUpdatedAt,
-        onRefresh: () => ref.read(appStoreProvider.notifier).refreshContent(),
-      ),
-      // 空列表有两种完全不同的含义。把「没在监控」显示成「没有变化」，
-      // 在移民产品上等于告诉用户政策没变——必须按真实监控状态分别措辞。
-      if (changes.isEmpty)
-        _ChangesEmptyState(monitoring: state.monitoring)
-      else ...[
-        if (state.monitoring?.hasGap ?? false)
-          _MonitoringGapNotice(monitoring: state.monitoring!),
-        // 列表非空不代表列表完整：一般变更自动发布，重要变更压在人工核实里。
-        // 只在空列表时提示，等于在最常见的状态下什么都不说。
-        if ((state.monitoring?.pendingReviewCount ?? 0) > 0)
-          _PendingReviewNotice(count: state.monitoring!.pendingReviewCount),
-      ],
-      if (changes.isNotEmpty)
-        ...changes.map((change) => _ChangeCard(change: change)),
-    ];
-    return CustomScrollView(
-      slivers: [
-        const SliverAppBar.large(title: Text('政策变更证据')),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-          sliver: SliverList.separated(
-            itemCount: children.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, index) => children[index],
-          ),
-        ),
-      ],
-    );
-  }
+  ConsumerState<ChangeLogScreen> createState() => _ChangeLogScreenState();
 }
 
-class _EvidenceIntro extends StatelessWidget {
-  const _EvidenceIntro();
+class _ChangeLogScreenState extends ConsumerState<ChangeLogScreen> {
+  final _search = TextEditingController();
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      '我们盯着这些官方页面。发现改动就把改前改后都留下来，你可以自己对照。',
-      style: Theme.of(context).textTheme.bodyLarge
-          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-    ),
-  );
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(appStoreProvider);
+    final zh = isChineseUi(context);
+    final query = _search.text.trim().toLowerCase();
+    final changes = state.changes.where((item) {
+      if (item.verification != VerificationStatus.verified &&
+          item.verification != VerificationStatus.corrected) {
+        return false;
+      }
+      if (!zh && (item.summaryEn?.trim().isEmpty ?? true)) {
+        return false;
+      }
+      return query.isEmpty ||
+          '${item.pageTitle} ${item.pageTitleEn ?? ''} ${item.summary} ${item.summaryEn ?? ''} ${item.tags.join(' ')}'
+              .toLowerCase()
+              .contains(query);
+    }).toList()..sort((a, b) => b.discoveredAt.compareTo(a.discoveredAt));
+    return Scaffold(
+      appBar: AppBar(title: Text(zh ? '政策变更' : 'Policy changes')),
+      body: RefreshIndicator(
+        onRefresh: ref.read(appStoreProvider.notifier).refreshContent,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+          children: [
+            Text(
+              zh ? '看清哪些内容变了，以及改动前后的完整语境。这里只显示已经核实的更新。' : 'See what changed in context. Only verified updates appear here.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 16),
+            SearchBar(
+              controller: _search,
+              leading: const Icon(Icons.search),
+              hintText: zh ? '搜索页面、签证或关键词' : 'Search page, visa or keyword',
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+            if (changes.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.verified_outlined, size: 46),
+                      const SizedBox(height: 12),
+                      Text(
+                        zh ? '暂无已核实的政策变更' : 'No verified policy changes yet',
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        zh ? '我们不会把时间戳、菜单或维护公告当作政策更新。' : 'Timestamps, menus and maintenance notices are not treated as policy changes.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              for (final item in changes) _ChangeCard(change: item),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ChangeCard extends StatelessWidget {
   const _ChangeCard({required this.change});
   final PolicyChange change;
-
   @override
   Widget build(BuildContext context) {
-    final verified = change.verification.isHumanReviewed;
+    final zh = isChineseUi(context);
+    final title = zh
+        ? change.pageTitle
+        : (change.pageTitleEn ?? change.pageTitle);
+    final summary = zh ? change.summary : change.summaryEn!;
     return Card(
+      margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => ChangeDetailScreen(change: change)),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  SourceBadge(
-                    label: verified ? '已人工核实' : '待人工核实',
-                    verified: verified,
+                  Icon(
+                    Icons.verified_rounded,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    zh ? '已核实' : 'Verified',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const Spacer(),
                   Text(
-                    DateFormat('M月d日 HH:mm').format(change.discoveredAt),
+                    DateFormat.yMMMd().format(change.discoveredAt),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               Text(
-                change.pageTitle,
-                style: Theme.of(context).textTheme.titleMedium,
+                title,
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
-              Text(
-                change.summary,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 6,
-                children: change.tags
-                    .map(
-                      (tag) => Chip(
-                        label: Text(tag),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    )
-                    .toList(),
-              ),
+              Text(summary, maxLines: 3, overflow: TextOverflow.ellipsis),
+              if (change.tags.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  children: change.tags
+                      .take(4)
+                      .map(
+                        (tag) => Chip(
+                          label: Text(tag),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ],
           ),
         ),
@@ -130,58 +163,58 @@ class _ChangeCard extends StatelessWidget {
 }
 
 class ChangeDetailScreen extends StatelessWidget {
-  const ChangeDetailScreen({super.key, required this.change});
+  const ChangeDetailScreen({required this.change, super.key});
   final PolicyChange change;
-
   @override
   Widget build(BuildContext context) {
+    final zh = isChineseUi(context);
+    final title = zh
+        ? change.pageTitle
+        : (change.pageTitleEn ?? change.pageTitle);
+    final summary = zh ? change.summary : (change.summaryEn ?? '');
     return Scaffold(
-      appBar: AppBar(title: const Text('变更详情')),
+      appBar: AppBar(title: Text(zh ? '变更详情' : 'Change details')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        padding: const EdgeInsets.fromLTRB(18, 8, 18, 40),
         children: [
           Row(
             children: [
-              SourceBadge(
-                label: change.verification.label,
-                verified: change.verification.isHumanReviewed,
+              Icon(
+                Icons.verified_rounded,
+                color: Theme.of(context).colorScheme.primary,
               ),
-              const Spacer(),
-              Text(DateFormat('yyyy-MM-dd HH:mm').format(change.discoveredAt)),
+              const SizedBox(width: 8),
+              Text(
+                zh ? '已核实' : 'Verified',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text(
-            change.pageTitle,
+            title,
             style: Theme.of(context).textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+                ?.copyWith(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(height: 10),
-          Text(change.summary),
-          if (!change.verification.isHumanReviewed) ...[
-            const SizedBox(height: 12),
-            Text(
-              '系统发现这个页面变了，我们的编辑还在核对。在核对完成前，请直接看官方原文。',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          const SectionHeader(title: '官方页面改了什么'),
-          _DiffBlock(title: '改之前', text: change.beforeText, added: false),
-          const SizedBox(height: 10),
-          _DiffBlock(title: '改之后', text: change.afterText, added: true),
-          const SizedBox(height: 22),
-          FilledButton.icon(
-            onPressed: () => openOfficialSource(context, change.sourceUrl),
-            icon: const Icon(Icons.article_outlined),
-            label: const Text('读官方原文'),
+          const SizedBox(height: 12),
+          Text(summary, style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 26),
+          _DiffBlock(
+            title: zh ? '改动前' : 'Before',
+            text: change.beforeText,
+            color: Theme.of(context).colorScheme.errorContainer,
           ),
           const SizedBox(height: 14),
-          Text(
-            '上面是官方页面改动前后的原文摘录。是否影响你的申请，请以官方原文为准——'
-            '我们不是移民代理，不能替你判断个案。',
-            style: Theme.of(context).textTheme.bodySmall,
+          _DiffBlock(
+            title: zh ? '改动后' : 'After',
+            text: change.afterText,
+            color: Theme.of(context).colorScheme.primaryContainer,
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: () => openOfficialSource(context, change.sourceUrl),
+            icon: const Icon(Icons.open_in_new),
+            label: Text(zh ? '打开当前官方页面' : 'Open current official page'),
           ),
         ],
       ),
@@ -193,153 +226,28 @@ class _DiffBlock extends StatelessWidget {
   const _DiffBlock({
     required this.title,
     required this.text,
-    required this.added,
+    required this.color,
   });
   final String title;
   final String text;
-  final bool added;
+  final Color color;
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = added ? scheme.primaryContainer : scheme.errorContainer;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          Text(text),
-        ],
-      ),
-    );
-  }
-}
-
-/// 变更列表为空时的措辞，按真实监控状态区分。
-class _ChangesEmptyState extends ConsumerWidget {
-  const _ChangesEmptyState({required this.monitoring});
-
-  final MonitoringStatus? monitoring;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final reload = TextButton(
-      onPressed: () => ref.read(appStoreProvider.notifier).refreshContent(),
-      child: const Text('重新加载'),
-    );
-
-    // 还没拿到监控状态：不能断言任何一种情况。
-    if (monitoring == null) {
-      return EmptyState(
-        icon: Icons.cloud_off_outlined,
-        title: '还没有取到变更记录',
-        body: '检查一下网络，或者稍后再看。',
-        action: reload,
-      );
-    }
-
-    final gap = monitoring!.gapSentence;
-    if (gap != null) {
-      return EmptyState(
-        icon: Icons.error_outline,
-        title: '有一部分页面监控不到',
-        body:
-            '正在监控 ${monitoring!.monitoredCount} 个官方页面，$gap，'
-            '这部分的变化请直接去官网看。',
-        action: reload,
-      );
-    }
-
-    // 「有改动正在核实」和「没有改动」是两件事，不能都显示成后者。
-    if (monitoring!.pendingReviewCount > 0) {
-      return EmptyState(
-        icon: Icons.hourglass_bottom_outlined,
-        title: '有 ${monitoring!.pendingReviewCount} 条改动正在核对',
-        body: '我们发现官方页面有改动，编辑核对完就会出现在这里。急的话可以先去官网看。',
-        action: reload,
-      );
-    }
-
-    return EmptyState(
-      icon: Icons.check_circle_outline,
-      title: '这些页面暂时没有变化',
-      body:
-          '正在监控 ${monitoring!.monitoredCount} 个官方页面。'
-          '有改动会出现在这里，重要的改动我们会先人工核实。',
-      action: reload,
-    );
-  }
-}
-
-/// 有变更、但同时存在监控缺口时的提示：列表不完整这件事要说出来。
-class _MonitoringGapNotice extends StatelessWidget {
-  const _MonitoringGapNotice({required this.monitoring});
-
-  final MonitoringStatus monitoring;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '${monitoring.gapSentence ?? '有一部分页面监控不到'}，下面只包含能监控到的部分。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 列表里没有、但已经发现的改动。
-class _PendingReviewNotice extends StatelessWidget {
-  const _PendingReviewNotice({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.hourglass_bottom_outlined,
-            size: 18,
-            color: scheme.onSecondaryContainer,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '另有 $count 条改动我们的编辑还在核对，核对完才会出现在下面。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 10),
+        SelectableText(
+          text.isEmpty ? '—' : text,
+          style: const TextStyle(fontFamily: 'monospace', height: 1.5),
+        ),
+      ],
+    ),
+  );
 }

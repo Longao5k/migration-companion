@@ -142,13 +142,11 @@ export class ContentService {
     return this.prisma.changeLog.findMany({
       where: {
         publishedAt: { not: null },
-        OR: [
-          { reviewStatus: ReviewStatus.VERIFIED },
-          { reviewStatus: ReviewStatus.CORRECTED },
-          { importance: ChangeImportance.GENERAL, reviewStatus: ReviewStatus.PENDING },
-        ],
+        reviewStatus: { in: [ReviewStatus.VERIFIED, ReviewStatus.CORRECTED] },
       },
-      include: { source: { select: { name: true, url: true, sourceType: true } } },
+      include: {
+        source: { select: { name: true, url: true, sourceType: true, jurisdiction: true } },
+      },
       orderBy: { publishedAt: 'desc' },
       take: 100,
     });
@@ -605,13 +603,13 @@ export class ContentService {
         candidateHash,
         sourceId: source.id,
         titleZh: dto.titleZh,
+        titleEn: dto.titleEn?.trim(),
         oldExcerpt: dto.oldExcerpt,
         newExcerpt: dto.newExcerpt,
         context: dto.context,
         importance: dto.importance,
         tags: this.cleanTags(dto.tags ?? []),
         discoveredAt: new Date(dto.discoveredAt),
-        ...(dto.importance === ChangeImportance.GENERAL ? { publishedAt: new Date() } : {}),
       },
       update: {},
     });
@@ -781,6 +779,7 @@ export class ContentService {
         data: {
           reviewStatus: dto.status,
           editorSummaryZh: dto.editorSummaryZh?.trim(),
+          editorSummaryEn: dto.editorSummaryEn?.trim(),
           correctionNote: dto.correctionNote?.trim(),
           verifiedAt: new Date(),
           publishedAt:

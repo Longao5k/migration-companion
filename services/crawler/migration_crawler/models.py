@@ -12,6 +12,9 @@ class Source:
     jurisdiction: str
     license_note: str
     enabled: bool
+    # Discovery feeds and sitemaps are article indexes, not policy pages. They may
+    # discover news but must not create public-facing change-log entries.
+    track_changes: bool = True
     discovery_url: str | None = None
     # 配了这个就走通用发现（generic_discovery），不配就走南澳那套写死的解析。
     # 值是文章路径的正则，例如 r"^/news/[a-z0-9][a-z0-9\-]+$"。
@@ -40,6 +43,7 @@ class FetchResult:
 @dataclass(frozen=True)
 class ChangeCandidate:
     title_zh: str
+    title_en: str
     old_excerpt: str
     new_excerpt: str
     context: str

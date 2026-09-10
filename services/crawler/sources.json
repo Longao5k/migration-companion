@@ -4,6 +4,7 @@
     "name": "Move to South Australia — News",
     "url": "https://migration.sa.gov.au/news",
     "discovery_url": "https://migration.sa.gov.au/ajax/news-listing",
+    "track_changes": false,
     "jurisdiction": "AU-SA",
     "license_note": "South Australian Government site; preserve attribution and check page-level third-party exclusions.",
     "enabled": true
@@ -137,6 +138,7 @@
     "license_note": "© State of Queensland",
     "enabled": true,
     "discovery_url": "https://migration.qld.gov.au/news/",
+    "track_changes": false,
     "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$"
   },
   {
@@ -147,6 +149,7 @@
     "license_note": "© State of New South Wales",
     "enabled": true,
     "discovery_url": "https://www.nsw.gov.au/visas-and-migration/news-and-updates",
+    "track_changes": false,
     "article_pattern": "^/visas-and-migration/news-and-updates/[a-z0-9][a-z0-9\\-]+$"
   },
   {
@@ -157,6 +160,7 @@
     "license_note": "© State of Western Australia",
     "enabled": true,
     "discovery_url": "https://migration.wa.gov.au/news",
+    "track_changes": false,
     "article_pattern": "^/news/[a-z0-9][a-z0-9\\-]+$"
   },
   {
@@ -296,6 +300,7 @@
     "name": "Minister for Home Affairs — Media releases",
     "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=TonyBurke",
     "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=TonyBurke",
+    "track_changes": false,
     "jurisdiction": "AU-FED",
     "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
     "enabled": true,
@@ -308,6 +313,7 @@
     "name": "Assistant Minister for Citizenship — Media releases",
     "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=JulianHill",
     "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=JulianHill",
+    "track_changes": false,
     "jurisdiction": "AU-FED",
     "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
     "enabled": true,
@@ -320,6 +326,7 @@
     "name": "Assistant Minister for Immigration — Media releases",
     "url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=MattThistlethwaite",
     "discovery_url": "https://minister.homeaffairs.gov.au/_layouts/15/AppPages/Rss.aspx?type=media&mini=MattThistlethwaite",
+    "track_changes": false,
     "jurisdiction": "AU-FED",
     "license_note": "Australian Government ministerial media RSS. Store evidence privately; publish a link and short original bilingual summary only.",
     "enabled": true,
@@ -332,6 +339,7 @@
     "name": "Jobs and Skills Australia — Migration news",
     "url": "https://www.jobsandskills.gov.au/news",
     "discovery_url": "https://www.jobsandskills.gov.au/news",
+    "track_changes": false,
     "jurisdiction": "AU-FED",
     "license_note": "DISABLED 2026-09-01: jobsandskills.gov.au robots.txt does not permit this news path for the transparent crawler identity. Do not bypass; retain the source so the federal occupation-data coverage gap is visible.",
     "enabled": false,
@@ -368,6 +376,7 @@
     "name": "ACT Government — Migration-related minister media releases",
     "url": "https://www.cmtedd.act.gov.au/open_government/functions/functionality/media_release_rss_feeds/latest_minister_media_releases_rss",
     "discovery_url": "https://www.cmtedd.act.gov.au/open_government/functions/functionality/media_release_rss_feeds/latest_minister_media_releases_rss",
+    "track_changes": false,
     "jurisdiction": "AU-ACT",
     "license_note": "DISABLED 2026-09-01: the official RSS endpoint is public but cmtedd.act.gov.au robots.txt does not permit this path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
     "enabled": false,
@@ -411,6 +420,7 @@
     "name": "Victorian Government — Migration-related media releases",
     "url": "https://www.premier.vic.gov.au/sitemap.xml",
     "discovery_url": "https://www.premier.vic.gov.au/sitemap.xml",
+    "track_changes": false,
     "jurisdiction": "AU-VIC",
     "license_note": "Victorian Government sitemap and media releases. The migration-specific site blocks the crawler, so this allowed official alternative covers relevant government announcements without bypassing access controls.",
     "enabled": true,
@@ -430,6 +440,7 @@
     "name": "Tasmanian Government — Migration-related media releases",
     "url": "https://www.premier.tas.gov.au/latest-news",
     "discovery_url": "https://www.premier.tas.gov.au/latest-news",
+    "track_changes": false,
     "jurisdiction": "AU-TAS",
     "license_note": "DISABLED 2026-09-01: premier.tas.gov.au robots.txt does not permit this path for the transparent crawler identity. Do not bypass; retain the source so the coverage gap is visible.",
     "enabled": false,

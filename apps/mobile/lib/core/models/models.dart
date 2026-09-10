@@ -52,6 +52,7 @@ class LocalAttachment {
     this.syncStatus = AttachmentSyncStatus.localOnly,
     this.uploadSessionId,
     this.uploadSessionUploaded = false,
+    this.libraryDocumentId,
   });
 
   final String id;
@@ -66,6 +67,10 @@ class LocalAttachment {
   final String? uploadSessionId;
   final bool uploadSessionUploaded;
 
+  /// Non-null when this attachment links to the person's material library.
+  /// Removing it from an application must not delete the library's source file.
+  final String? libraryDocumentId;
+
   LocalAttachment copyWith({
     String? localPath,
     bool clearLocalPath = false,
@@ -75,6 +80,7 @@ class LocalAttachment {
     String? uploadSessionId,
     bool clearUploadSession = false,
     bool? uploadSessionUploaded,
+    String? libraryDocumentId,
   }) => LocalAttachment(
     id: id,
     name: name,
@@ -91,6 +97,7 @@ class LocalAttachment {
     uploadSessionUploaded: clearUploadSession
         ? false
         : uploadSessionUploaded ?? this.uploadSessionUploaded,
+    libraryDocumentId: libraryDocumentId ?? this.libraryDocumentId,
   );
 
   Map<String, Object?> toJson() => {
@@ -105,6 +112,7 @@ class LocalAttachment {
     'syncStatus': syncStatus.name,
     'uploadSessionId': uploadSessionId,
     'uploadSessionUploaded': uploadSessionUploaded,
+    'libraryDocumentId': libraryDocumentId,
   };
 
   factory LocalAttachment.fromJson(Map<String, dynamic> json) =>
@@ -125,6 +133,7 @@ class LocalAttachment {
         ),
         uploadSessionId: json['uploadSessionId'] as String?,
         uploadSessionUploaded: json['uploadSessionUploaded'] as bool? ?? false,
+        libraryDocumentId: json['libraryDocumentId'] as String?,
       );
 }
 
@@ -466,9 +475,11 @@ class PolicyChange {
   const PolicyChange({
     required this.id,
     required this.pageTitle,
+    this.pageTitleEn,
     required this.sourceUrl,
     required this.discoveredAt,
     required this.summary,
+    this.summaryEn,
     required this.beforeText,
     required this.afterText,
     required this.severity,
@@ -478,9 +489,11 @@ class PolicyChange {
 
   final String id;
   final String pageTitle;
+  final String? pageTitleEn;
   final String sourceUrl;
   final DateTime discoveredAt;
   final String summary;
+  final String? summaryEn;
   final String beforeText;
   final String afterText;
   final ChangeSeverity severity;
@@ -490,9 +503,11 @@ class PolicyChange {
   Map<String, Object?> toJson() => {
     'id': id,
     'pageTitle': pageTitle,
+    'pageTitleEn': pageTitleEn,
     'sourceUrl': sourceUrl,
     'discoveredAt': discoveredAt.toIso8601String(),
     'summary': summary,
+    'summaryEn': summaryEn,
     'beforeText': beforeText,
     'afterText': afterText,
     'severity': severity.name,
@@ -503,9 +518,11 @@ class PolicyChange {
   factory PolicyChange.fromJson(Map<String, dynamic> json) => PolicyChange(
     id: json['id'] as String,
     pageTitle: json['pageTitle'] as String,
+    pageTitleEn: json['pageTitleEn'] as String?,
     sourceUrl: json['sourceUrl'] as String,
     discoveredAt: DateTime.parse(json['discoveredAt'] as String),
     summary: json['summary'] as String,
+    summaryEn: json['summaryEn'] as String?,
     beforeText: json['beforeText'] as String? ?? '',
     afterText: json['afterText'] as String? ?? '',
     severity: ChangeSeverity.values.byName(

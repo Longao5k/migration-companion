@@ -15,6 +15,15 @@ IMPORTANT_TERMS = re.compile(
     re.I,
 )
 
+TIMESTAMP_ONLY = re.compile(
+    r"^(?:lastmod\s*[:=]?\s*)?\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$",
+    re.I,
+)
+MAINTENANCE_NOISE = re.compile(
+    r"(?:scheduled maintenance|temporarily unavailable due to maintenance|online services? (?:will be|are) unavailable)",
+    re.I,
+)
+
 
 def classify(changed_text: str) -> Importance:
     if MAJOR_TERMS.search(changed_text):
@@ -35,7 +44,53 @@ def excerpt_budget(body_chars: int) -> int:
     return EXCERPT_COMBINED
 
 
-CANDIDATE_CONTEXT = "自动差异候选；必须回到官方页面判断真实含义。"
+CANDIDATE_CONTEXT = "官方页面内容更新候选；发布前须核对完整页面与上下文。"
+
+
+def _noise_only(changed_lines: list[str]) -> bool:
+    meaningful = [
+        re.sub(r"<[^>]+>", "", line).strip(" \t-+")
+        for line in changed_lines
+        if line.strip(" \t-+")
+    ]
+    if not meaningful:
+        return True
+    return all(
+        TIMESTAMP_ONLY.fullmatch(line) is not None
+        or MAINTENANCE_NOISE.search(line) is not None
+        for line in meaningful
+    )
+
+
+def _contextual_excerpts(old: str, new: str) -> tuple[str, str, list[str]]:
+    """Produce a compact, git-like comparison with unchanged lines for context."""
+    old_lines = old.splitlines()
+    new_lines = new.splitlines()
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    old_output: list[str] = []
+    new_output: list[str] = []
+    changed: list[str] = []
+    groups = list(matcher.get_grouped_opcodes(n=3))
+    for group_index, group in enumerate(groups):
+        if group_index:
+            old_output.append("  …")
+            new_output.append("  …")
+        for tag, i1, i2, j1, j2 in group:
+            if tag == "equal":
+                old_output.extend(f"  {line}" for line in old_lines[i1:i2])
+                new_output.extend(f"  {line}" for line in new_lines[j1:j2])
+            elif tag == "delete":
+                old_output.extend(f"- {line}" for line in old_lines[i1:i2])
+                changed.extend(old_lines[i1:i2])
+            elif tag == "insert":
+                new_output.extend(f"+ {line}" for line in new_lines[j1:j2])
+                changed.extend(new_lines[j1:j2])
+            else:
+                old_output.extend(f"- {line}" for line in old_lines[i1:i2])
+                new_output.extend(f"+ {line}" for line in new_lines[j1:j2])
+                changed.extend(old_lines[i1:i2])
+                changed.extend(new_lines[j1:j2])
+    return "\n".join(old_output), "\n".join(new_output), changed
 
 
 def make_candidate(
@@ -43,13 +98,9 @@ def make_candidate(
 ) -> ChangeCandidate | None:
     if old == new:
         return None
-    removed: list[str] = []
-    added: list[str] = []
-    for line in difflib.ndiff(old.splitlines(), new.splitlines()):
-        if line.startswith("- "):
-            removed.append(line[2:])
-        elif line.startswith("+ "):
-            added.append(line[2:])
+    old_context, new_context, changed = _contextual_excerpts(old, new)
+    if _noise_only(changed):
+        return None
 
     # 服务端按 old + new + context 合计计算，所以 context 必须先从预算里扣掉。
     # 不扣的话，长页面上 600 + 600 + len(context) = 1222 会越过 1200 的合计上限，
@@ -57,14 +108,14 @@ def make_candidate(
     # 预算在改前/改后之间平分，各自再受单字段上限约束。
     budget = max(0, excerpt_budget(body_chars) - len(CANDIDATE_CONTEXT))
     per_field = min(EXCERPT_PER_FIELD, max(0, budget // 2))
-    old_excerpt = "\n".join(removed)[:per_field]
-    new_excerpt = "\n".join(added)[:per_field]
+    old_excerpt = old_context[:per_field]
+    new_excerpt = new_context[:per_field]
     combined = f"{old_excerpt}\n{new_excerpt}"
     return ChangeCandidate(
-        title_zh=f"{source_name} 检测到页面变化",
+        title_zh=f"{source_name} 页面内容更新",
+        title_en=f"{source_name} content update",
         old_excerpt=old_excerpt,
         new_excerpt=new_excerpt,
-        context="自动差异候选；必须回到官方页面判断真实含义。",
-        importance=classify(combined),
+        context=CANDIDATE_CONTEXT,
+        importance=classify("\n".join(changed)),
     )
-
