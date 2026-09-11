@@ -61,6 +61,7 @@ class MaterialLibraryStore extends StateNotifier<MaterialLibraryState> {
   );
 
   Future<PersonMaterialProfile> addPerson(String name) async {
+    await ready;
     final trimmed = name.trim();
     if (trimmed.isEmpty) throw const FormatException('Name cannot be empty');
     final person = PersonMaterialProfile(id: _uuid.v4(), name: trimmed);
@@ -70,6 +71,7 @@ class MaterialLibraryStore extends StateNotifier<MaterialLibraryState> {
   }
 
   Future<void> removePerson(String personId) async {
+    await ready;
     final person = state.people.firstWhere((item) => item.id == personId);
     for (final folder in person.folders) {
       for (final document in folder.documents) {
@@ -87,6 +89,7 @@ class MaterialLibraryStore extends StateNotifier<MaterialLibraryState> {
     required String categoryId,
     String customName = '',
   }) async {
+    await ready;
     final name = customName.trim();
     if (categoryId == 'custom' && name.isEmpty) {
       throw const FormatException('Custom folder name cannot be empty');
@@ -113,6 +116,7 @@ class MaterialLibraryStore extends StateNotifier<MaterialLibraryState> {
     required Uint8List bytes,
     String? contentType,
   }) async {
+    await ready;
     if (bytes.isEmpty) throw const FormatException('The file is empty');
     if (bytes.length > 50 * 1024 * 1024) {
       throw const FormatException('A file cannot exceed 50 MB');
@@ -158,6 +162,7 @@ class MaterialLibraryStore extends StateNotifier<MaterialLibraryState> {
     required String folderId,
     required String documentId,
   }) async {
+    await ready;
     final person = state.people.firstWhere((item) => item.id == personId);
     final folder = person.folders.firstWhere((item) => item.id == folderId);
     final document = folder.documents.firstWhere(

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -33,6 +35,33 @@ void main() {
       restored.state.people.single.folders.single.documents.single.name,
       'passport.pdf',
     );
+  });
+
+  test('a mutation waits for hydration before persisting', () async {
+    final repository = _DelayedReadRepository();
+    final storage = RecordingAttachmentStorage();
+    repository.values['migration_companion.material_library.v1'] = jsonEncode([
+      PersonMaterialProfile(id: 'existing', name: 'Existing').toJson(),
+    ]);
+    final store = MaterialLibraryStore(repository, storage);
+
+    final adding = store.addPerson('New');
+    await Future<void>.delayed(Duration.zero);
+    expect(store.state.isHydrated, isFalse);
+
+    repository.allowRead.complete();
+    await adding;
+
+    expect(store.state.people.map((person) => person.name), [
+      'Existing',
+      'New',
+    ]);
+    final restored = MaterialLibraryStore(repository, storage);
+    await restored.ready;
+    expect(restored.state.people.map((person) => person.name), [
+      'Existing',
+      'New',
+    ]);
   });
 
   test(
@@ -73,4 +102,14 @@ void main() {
       expect(storage.paths[linked.localPath], isNotNull);
     },
   );
+}
+
+class _DelayedReadRepository extends InMemoryRepository {
+  final allowRead = Completer<void>();
+
+  @override
+  Future<String?> read(String key) async {
+    await allowRead.future;
+    return super.read(key);
+  }
 }

@@ -16,10 +16,9 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appStoreProvider);
     final zh = isChineseUi(context);
-    final cutoff = DateTime.now().subtract(const Duration(days: 7));
-    final recent =
-        state.news.where((item) => item.publishedAt.isAfter(cutoff)).toList()
-          ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
+    final orderedNews = [...state.news]
+      ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
+    final recent = orderedNews.take(10).toList(growable: false);
     return Scaffold(
       appBar: AppBar(
         title: Text(zh ? '移民资讯' : 'Migration updates'),
@@ -71,14 +70,14 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              zh ? '最近 7 天' : 'Last 7 days',
+              zh ? '最新资讯' : 'Latest updates',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 4),
             Text(
               zh
-                  ? '来自澳洲联邦与各州的最新资讯'
-                  : 'The newest updates from federal and state sources',
+                  ? '按发布时间展示最近 10 条官方资讯'
+                  : 'The 10 newest official updates by publication date',
             ),
             const SizedBox(height: 12),
             if (state.isContentRefreshing && recent.isEmpty)
@@ -94,18 +93,14 @@ class HomeScreen extends ConsumerWidget {
                     children: [
                       const Icon(Icons.event_available_outlined, size: 42),
                       const SizedBox(height: 12),
-                      Text(
-                        zh
-                            ? '最近 7 天暂无新资讯'
-                            : 'No new updates in the last 7 days',
-                      ),
+                      Text(zh ? '暂时没有可显示的资讯' : 'No updates are available yet'),
                       TextButton(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => const NewsCatalogScreen(),
                           ),
                         ),
-                        child: Text(zh ? '查看全部历史资讯' : 'Browse all updates'),
+                        child: Text(zh ? '查看全部资讯' : 'Browse all updates'),
                       ),
                     ],
                   ),

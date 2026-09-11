@@ -8,7 +8,13 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import 'local_repository_base.dart';
 
-LocalRepository createLocalRepository() => NativeEncryptedLocalRepository();
+final NativeEncryptedLocalRepository _sharedRepository =
+    NativeEncryptedLocalRepository();
+
+/// Every store shares one database connection and one key-initialisation path.
+/// Creating separate repositories during first launch allowed two stores to
+/// generate different encryption keys for the same database.
+LocalRepository createLocalRepository() => _sharedRepository;
 
 class NativeEncryptedLocalRepository implements LocalRepository {
   static const _databaseKeyName = 'migration_companion.database_key.v1';
@@ -19,15 +25,23 @@ class NativeEncryptedLocalRepository implements LocalRepository {
     'migration_companion.auth_token.v1',
     'migration_companion.notice_dismissed.v1',
     'migration_companion.bookmarks.v1',
+    'migration_companion.material_library.v1',
   ];
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   Database? _database;
+  Future<Database?>? _openingDatabase;
   bool _fallbackToPreferences = false;
 
-  Future<Database?> _open() async {
-    if (_fallbackToPreferences) return null;
-    if (_database case final database?) return database;
+  Future<Database?> _open() {
+    if (_fallbackToPreferences) return Future<Database?>.value();
+    if (_database case final database?) {
+      return Future<Database?>.value(database);
+    }
+    return _openingDatabase ??= _openOnce();
+  }
+
+  Future<Database?> _openOnce() async {
     try {
       var encryptionKey = await _secureStorage.read(key: _databaseKeyName);
       if (encryptionKey == null) {
@@ -60,6 +74,8 @@ class NativeEncryptedLocalRepository implements LocalRepository {
       // SQLCipher channel. Production Android/iOS builds must pass the storage POC.
       _fallbackToPreferences = true;
       return null;
+    } finally {
+      _openingDatabase = null;
     }
   }
 
