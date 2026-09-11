@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/documents/document_engine.dart';
 import '../../core/documents/document_engines.dart';
+import '../../core/documents/docx_editor_screen.dart';
 import '../../core/documents/pdf_editor_screen.dart';
 import '../../shared/widgets/common.dart';
 
@@ -31,7 +32,7 @@ class ToolsScreen extends StatelessWidget {
           _ToolCard(
             icon: Icons.picture_as_pdf_outlined,
             title: 'PDF',
-            description: '批注、签名、表单填写与页面整理',
+            description: '改名字日期、填写表单、添加少量文字',
             badge: '可编辑',
             onTap: () => _pickDocument(context, ['pdf']),
           ),
@@ -39,25 +40,25 @@ class ToolsScreen extends StatelessWidget {
           _ToolCard(
             icon: Icons.description_outlined,
             title: 'Word 文档',
-            description: '用手机上能打开 Word 的应用查看',
-            badge: '可查看',
+            description: '修改普通段落，复杂排版可转到其他应用',
+            badge: '简单编辑',
             onTap: () => _pickDocument(context, ['doc', 'docx']),
           ),
           const SectionHeader(title: '这个版本能做什么'),
           const _CapabilityRow(
             icon: Icons.draw_outlined,
             title: '批注与签名',
-            body: '文字高亮、便签、手写签名；可以撤销和重做',
+            body: '修改 PDF 已有文字，或添加名字、日期和少量说明',
           ),
           const _CapabilityRow(
             icon: Icons.view_carousel_outlined,
             title: '页面与表单',
-            body: '旋转、删除、排序、提取、合并、填写和扁平化',
+            body: '填写 PDF 表单，给普通 Word 段落改字或补一段内容',
           ),
           const _CapabilityRow(
             icon: Icons.shield_outlined,
-            title: '不掩盖兼容性缺口',
-            body: '字体、图片或结构无法完整显示时会明确提示，不把近似结果说成精确',
+            title: '复杂文件仍可继续处理',
+            body: '遇到复杂排版时可以直接交给手机上的 Word 或 PDF 应用',
           ),
         ],
       ),
@@ -75,7 +76,8 @@ class ToolsScreen extends StatelessWidget {
     if (file == null) return;
     final pageContext = context;
     final length = await file.length();
-    final isPdf = (file.extension ?? '').toLowerCase() == 'pdf';
+    final extension = (file.extension ?? '').toLowerCase();
+    final isPdf = extension == 'pdf';
     // 两种引擎的调用形状一样，这里只挑一个，后面的 UI 不再分叉——
     // 之前 DOCX 分支只会弹一句提示，卡片却说「可以查看」，是自相矛盾的。
     final Future<DocumentPreflightResult> Function() preflight;
@@ -110,10 +112,26 @@ class ToolsScreen extends StatelessWidget {
         byteSize: length,
       );
       open = () async {
-        await engine.openWorkingCopy(
-          sourcePath: file.path!,
-          displayName: file.name,
-        );
+        if (extension == 'docx') {
+          final workingPath = await engine.createWorkingCopy(
+            sourcePath: file.path!,
+            displayName: file.name,
+          );
+          if (!pageContext.mounted) return;
+          await Navigator.of(pageContext).push(
+            MaterialPageRoute<void>(
+              builder: (_) => DocxEditorScreen(
+                sourcePath: workingPath,
+                displayName: file.name,
+              ),
+            ),
+          );
+        } else {
+          await engine.openExternalCopy(
+            sourcePath: file.path!,
+            displayName: file.name,
+          );
+        }
       };
     }
     final result = await preflight();
@@ -137,7 +155,9 @@ class ToolsScreen extends StatelessWidget {
               Text(
                 isPdf
                     ? 'PDF 会在 Waymark 内打开。逐页提示代表实际兼容性缺口；保存只会生成新副本。'
-                    : 'Word 副本会交给手机上的其他应用；该应用可能把文件同步到自己的云端。',
+                    : extension == 'docx'
+                    ? '普通段落会在 Waymark 内编辑；复杂排版可以再交给其他应用。保存始终生成新副本。'
+                    : '旧版 Word 文件会交给手机上的其他应用；该应用可能把文件同步到自己的云端。',
                 style: TextStyle(
                   color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
                   fontSize: 12,
@@ -160,9 +180,7 @@ class ToolsScreen extends StatelessWidget {
                       }
                     },
               child: Text(
-                isPdf && result.access == DocumentAccess.editable
-                    ? '打开编辑'
-                    : '打开查看',
+                result.access == DocumentAccess.editable ? '打开编辑' : '打开查看',
               ),
             ),
           ],

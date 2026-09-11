@@ -34,7 +34,13 @@ class _MetadataDocxEngine implements DocxDocumentEngine {
   String get implementationName => '网页端（仅清单）';
 
   @override
-  Future<String> openWorkingCopy({
+  Future<String> createWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  }) => throw UnsupportedError('网页端不打开设备文档');
+
+  @override
+  Future<String> openExternalCopy({
     required String sourcePath,
     required String displayName,
   }) => throw UnsupportedError('网页端不打开设备文档');

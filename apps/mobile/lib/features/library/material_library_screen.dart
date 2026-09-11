@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/data/material_catalog.dart';
 import '../../core/documents/document_engines.dart';
+import '../../core/documents/docx_editor_screen.dart';
 import '../../core/documents/pdf_editor_screen.dart';
 import '../../core/i18n/app_language.dart';
 import '../../core/models/material_library.dart';
@@ -443,8 +444,32 @@ Future<void> _openDocument(
     );
     return;
   }
-  if (lower.endsWith('.doc') || lower.endsWith('.docx')) {
-    await createDocxDocumentEngine().openWorkingCopy(
+  if (lower.endsWith('.docx')) {
+    final copy = await createDocxDocumentEngine().createWorkingCopy(
+      sourcePath: document.localPath,
+      displayName: document.name,
+    );
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocxEditorScreen(
+          sourcePath: copy,
+          displayName: document.name,
+          onSaveCopy: (bytes, suggestedName) => ref
+              .read(materialLibraryProvider.notifier)
+              .addDocument(
+                personId: person.id,
+                folderId: folder.id,
+                name: suggestedName,
+                bytes: bytes,
+              ),
+        ),
+      ),
+    );
+    return;
+  }
+  if (lower.endsWith('.doc')) {
+    await createDocxDocumentEngine().openExternalCopy(
       sourcePath: document.localPath,
       displayName: document.name,
     );

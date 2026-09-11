@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:document_sdk/document_sdk.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -8,17 +7,17 @@ import 'package:path_provider/path_provider.dart';
 import 'document_engine.dart';
 import 'document_preflight.dart';
 
-PdfDocumentEngine createPdfDocumentEngine() => DocumentSdkPdfEngine();
-DocxDocumentEngine createDocxDocumentEngine() => _SystemViewerDocxEngine();
+PdfDocumentEngine createPdfDocumentEngine() => DartPdfDocumentEngine();
+DocxDocumentEngine createDocxDocumentEngine() => _MobileDocxEngine();
 
-/// 自研 Document SDK 的宿主边界。
+/// Lightweight host boundary for the open-source PDF editor.
 ///
-/// 先用元数据挡住缺文件和超限，再让 SDK 对实际字节逐份给出兼容等级和 capability。
-/// 原件只用于创建 App 私有工作副本；编辑器打开副本，保存时再产出一个新的、经过
-/// SDK 验证的文件，所以不会把用户材料原地覆盖。
-class DocumentSdkPdfEngine implements PdfDocumentEngine {
+/// The original is only read to validate its signature and create an app-owned
+/// working copy. Every save produces another file, so user material is never
+/// overwritten in place.
+class DartPdfDocumentEngine implements PdfDocumentEngine {
   @override
-  String get implementationName => 'Waymark 自研 PDF 引擎';
+  String get implementationName => 'dart_pdf_editor 4.4.0';
 
   @override
   Future<DocumentPreflightResult> preflight({
@@ -37,14 +36,12 @@ class DocumentSdkPdfEngine implements PdfDocumentEngine {
       return result;
     }
 
-    final file = File(localPath);
-    final sdk = DocumentSdk();
     try {
-      final report = await sdk.probe(
-        await file.readAsBytes(),
-        fileName: fileName,
-      );
-      if (report.info.format != DocumentFormat.pdf) {
+      final bytes = await File(localPath)
+          .openRead(0, 8)
+          .fold<List<int>>(<int>[], (all, part) => all..addAll(part));
+      final signature = String.fromCharCodes(bytes.take(5));
+      if (signature != '%PDF-') {
         return const DocumentPreflightResult(
           kind: DocumentKind.pdf,
           access: DocumentAccess.unavailable,
@@ -52,42 +49,19 @@ class DocumentSdkPdfEngine implements PdfDocumentEngine {
           message: '文件的实际内容和扩展名对不上。原件没有被修改。',
         );
       }
-      final issueNote = report.issues.isEmpty
-          ? ''
-          : ' 另有 ${report.issues.length} 项兼容性提示，打开后会逐页说明。';
-      if (report.canEdit) {
-        return DocumentPreflightResult(
-          kind: DocumentKind.pdf,
-          access: DocumentAccess.editable,
-          title: '可在 Waymark 内编辑',
-          message: '这份 PDF 已通过兼容性检查；工具会按文件实际支持的能力开启。$issueNote',
-        );
-      }
-      if (report.compatibility == CompatibilityLevel.readOnly) {
-        return DocumentPreflightResult(
-          kind: DocumentKind.pdf,
-          access: DocumentAccess.readOnly,
-          title: '可以查看，但不能保存修改',
-          message: 'SDK 判断这份文件只能安全查看，因此不会显示保存编辑的入口。$issueNote',
-        );
-      }
-      return DocumentPreflightResult(
+      return const DocumentPreflightResult(
         kind: DocumentKind.pdf,
-        access: DocumentAccess.unavailable,
-        title: '暂时打不开这份 PDF',
-        message: report.issues.isEmpty
-            ? 'SDK 不支持这份文件的结构，原件没有被修改。'
-            : report.issues.first.message,
+        access: DocumentAccess.editable,
+        title: '可以编辑',
+        message: '会打开一份安全副本，可修改已有文字、填写表单或添加少量文字；原件始终不动。',
       );
-    } on DocumentSdkException catch (error) {
+    } on FileSystemException catch (error) {
       return DocumentPreflightResult(
         kind: DocumentKind.pdf,
         access: DocumentAccess.unavailable,
-        title: 'PDF 兼容性检查失败',
+        title: '读取 PDF 失败',
         message: error.message,
       );
-    } finally {
-      await sdk.dispose();
     }
   }
 
@@ -101,9 +75,9 @@ class DocumentSdkPdfEngine implements PdfDocumentEngine {
   }
 }
 
-class _SystemViewerDocxEngine implements DocxDocumentEngine {
+class _MobileDocxEngine implements DocxDocumentEngine {
   @override
-  String get implementationName => '系统阅读器（仅查看）';
+  String get implementationName => 'docx_creator 1.3.2';
 
   @override
   Future<DocumentPreflightResult> preflight({
@@ -117,7 +91,13 @@ class _SystemViewerDocxEngine implements DocxDocumentEngine {
   );
 
   @override
-  Future<String> openWorkingCopy({
+  Future<String> createWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  }) async => (await _createWorkingCopy(sourcePath, displayName)).path;
+
+  @override
+  Future<String> openExternalCopy({
     required String sourcePath,
     required String displayName,
   }) async {

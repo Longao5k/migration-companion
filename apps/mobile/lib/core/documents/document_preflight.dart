@@ -1,15 +1,13 @@
 import 'document_engine.dart';
 
 // 打开文件时会先复制出一份 App 自有的工作副本，所以这里的上限约束的是「复制多大的
-// 文件到设备存储」。是否真的可编辑仍要由 document_sdk 对文件逐份 probe；只看
-// 扩展名和大小不能承诺编辑能力。
+// 文件到设备存储」。具体结构仍会在编辑器真正解析文件时验证。
 const maxPdfBytes = 50 * 1024 * 1024;
 const maxDocxBytes = 10 * 1024 * 1024;
 
 /// 只凭文件名和大小做的预检。
 ///
-/// 这里不会仅凭元数据返回 [DocumentAccess.editable]。原生 PDF 引擎会在此之后调用
-/// 自研 SDK 的 `probe`，再按这一个文件的 capability 决定 editable/readOnly。
+/// PDF 会再检查文件签名；DOCX 会在内部编辑器中解析 OOXML。
 DocumentPreflightResult preflightByMetadata({
   required String fileName,
   required int byteSize,
@@ -36,9 +34,9 @@ DocumentPreflightResult preflightByMetadata({
     }
     return const DocumentPreflightResult(
       kind: DocumentKind.pdf,
-      access: DocumentAccess.readOnly,
-      title: '等待兼容性检查',
-      message: '会先检查这份 PDF 支持哪些编辑能力，再复制副本打开；原件始终不动。',
+      access: DocumentAccess.editable,
+      title: '可以编辑',
+      message: '会复制一份安全副本后打开；原件始终不动。',
     );
   }
   if (lower.endsWith('.docx')) {
@@ -52,9 +50,9 @@ DocumentPreflightResult preflightByMetadata({
     }
     return const DocumentPreflightResult(
       kind: DocumentKind.docx,
-      access: DocumentAccess.readOnly,
-      title: '可以查看',
-      message: '会交给手机上能打开 Word 的应用查看。这个版本还不能编辑。',
+      access: DocumentAccess.editable,
+      title: '可以简单编辑',
+      message: '可修改普通段落文字或在末尾添加内容。复杂排版建议继续用手机上的 Word 类应用。',
     );
   }
   if (lower.endsWith('.doc')) {

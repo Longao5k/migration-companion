@@ -152,6 +152,15 @@ class ProfileScreen extends ConsumerWidget {
             onTap: () => launchUrl(Uri.parse('${publicWebBaseUrl()}/terms')),
           ),
           _Tile(
+            icon: Icons.code_outlined,
+            title: zh ? '开源软件许可' : 'Open-source licences',
+            subtitle: zh
+                ? '查看 App 使用的第三方软件与许可'
+                : 'Third-party software and licence notices',
+            onTap: () =>
+                showLicensePage(context: context, applicationName: 'Waymark'),
+          ),
+          _Tile(
             icon: Icons.support_agent_outlined,
             title: zh ? '帮助与支持' : 'Help & support',
             subtitle: zh ? '获取测试版本支持' : 'Support for this test build',

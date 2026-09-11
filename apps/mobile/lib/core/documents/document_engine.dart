@@ -45,8 +45,15 @@ abstract interface class DocxDocumentEngine {
     required int byteSize,
   });
 
-  /// 与 PDF 相同：先复制出 App 自有的工作副本，再把副本交给外部程序。
-  Future<String> openWorkingCopy({
+  /// Creates an application-owned copy for the simple in-app DOCX editor.
+  Future<String> createWorkingCopy({
+    required String sourcePath,
+    required String displayName,
+  });
+
+  /// Opens an application-owned copy in another app. Used for legacy .doc
+  /// files and as a fallback for complex DOCX documents.
+  Future<String> openExternalCopy({
     required String sourcePath,
     required String displayName,
   });
