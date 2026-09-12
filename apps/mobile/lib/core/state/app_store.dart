@@ -187,10 +187,13 @@ class AppStore extends StateNotifier<AppState> {
            apiClientFactory ??
            ((accountEmail) => ApiClient(accountEmail: accountEmail)),
        super(
-         AppState(
-           news: SeedData.news,
-           changes: SeedData.changes,
-           projects: const [],
+         const AppState(
+           // Do not render Chinese seed articles while the device locale and
+           // cached bilingual content are still being restored. That caused
+           // a visible Chinese-to-English flash on an English cold start.
+           news: [],
+           changes: [],
+           projects: [],
            isHydrated: false,
          ),
        ) {
@@ -767,6 +770,8 @@ class AppStore extends StateNotifier<AppState> {
       status: existing?.status ?? ProjectStatus.active,
       items: items,
       targetDate: _optionalDate(remote['targetDate']),
+      submittedAt: existing?.submittedAt,
+      grantedAt: existing?.grantedAt,
       // 该对象本身来自账号云端；cloudFilesEnabled 仅表示附件上传授权。
       isCloudSyncEnabled: true,
       allowViewerDownload: remote['allowViewerDownload'] as bool? ?? false,
@@ -875,6 +880,7 @@ class AppStore extends StateNotifier<AppState> {
     required String visaType,
     required String applicant,
   }) async {
+    await ready;
     final project = VisaProject(
       id: _uuid.v4(),
       name: name,
@@ -890,11 +896,50 @@ class AppStore extends StateNotifier<AppState> {
     return project;
   }
 
-  Future<void> addChecklistItem(String projectId, String title) async {
+  Future<void> markProjectSubmitted(String projectId, DateTime date) async {
+    await ready;
+    final submitted = DateTime(date.year, date.month, date.day);
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != projectId) return project;
+        return project.copyWith(
+          submittedAt: submitted,
+          clearGrantedAt: true,
+          activities: [...project.activities, _activity('标记申请已递交')],
+        );
+      }).toList(),
+    );
+    await _persistProjects();
+  }
+
+  Future<void> markProjectGranted(String projectId, DateTime date) async {
+    await ready;
+    final granted = DateTime(date.year, date.month, date.day);
+    state = state.copyWith(
+      projects: state.projects.map((project) {
+        if (project.id != projectId) return project;
+        return project.copyWith(
+          submittedAt: project.submittedAt ?? granted,
+          grantedAt: granted,
+          activities: [...project.activities, _activity('标记申请已下签')],
+        );
+      }).toList(),
+    );
+    await _persistProjects();
+  }
+
+  Future<void> addChecklistItem(
+    String projectId,
+    String title, {
+    String? catalogId,
+    String? category,
+  }) async {
+    await ready;
     final existingProject = state.projects.firstWhere(
       (project) => project.id == projectId,
     );
     final itemId = _uuid.v4();
+    final localItemId = catalogId == null ? itemId : '$catalogId-$itemId';
     state = state.copyWith(
       projects: state.projects.map((project) {
         if (project.id != projectId) return project;
@@ -902,10 +947,10 @@ class AppStore extends StateNotifier<AppState> {
           items: [
             ...project.items,
             ChecklistItem(
-              id: itemId,
+              id: localItemId,
               title: title,
               owner: project.applicant,
-              category: '自定义',
+              category: category ?? '自定义',
               status: ChecklistStatus.notStarted,
             ),
           ],
@@ -920,11 +965,11 @@ class AppStore extends StateNotifier<AppState> {
         PendingSyncOperation(
           id: _uuid.v4(),
           projectId: projectId,
-          itemId: itemId,
+          itemId: localItemId,
           kind: SyncOperationKind.addChecklist,
           createdAt: DateTime.now(),
           title: title,
-          category: '自定义',
+          category: category ?? '自定义',
         ),
       );
       await _tryFlushProject(projectId);

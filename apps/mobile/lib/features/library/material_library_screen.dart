@@ -18,13 +18,12 @@ class MaterialLibraryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(materialLibraryProvider);
-    final zh = isChineseUi(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(zh ? '我的资料' : 'My documents'),
+        title: Text(tr(context, '我的资料', 'My documents')),
         actions: [
           IconButton(
-            tooltip: zh ? '添加人员' : 'Add person',
+            tooltip: tr(context, '添加人员', 'Add person'),
             onPressed: () => _addPerson(context, ref),
             icon: const Icon(Icons.person_add_alt_1_outlined),
           ),
@@ -45,7 +44,7 @@ class MaterialLibraryScreen extends ConsumerWidget {
           : FloatingActionButton.extended(
               onPressed: () => _addPerson(context, ref),
               icon: const Icon(Icons.person_add_alt_1),
-              label: Text(zh ? '添加人员' : 'Add person'),
+              label: Text(tr(context, '添加人员', 'Add person')),
             ),
     );
   }
@@ -131,7 +130,7 @@ class _PersonCard extends ConsumerWidget {
             child: TextButton.icon(
               onPressed: () => _addFolder(context, ref, person),
               icon: const Icon(Icons.create_new_folder_outlined),
-              label: Text(zh ? '添加材料分类' : 'Add document folder'),
+              label: Text(tr(context, '添加材料分类', 'Add document folder')),
             ),
           ),
         ],
@@ -151,7 +150,8 @@ class _FolderTile extends ConsumerWidget {
     final category = materialCategoryById(folder.categoryId);
     final name = folder.customName.isNotEmpty
         ? folder.customName
-        : category?.label(zh) ?? (zh ? '其他材料' : 'Other documents');
+        : category?.localizedLabel(context) ??
+              tr(context, '其他材料', 'Other documents');
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -187,22 +187,22 @@ class _FolderTile extends ConsumerWidget {
                 itemBuilder: (_) => [
                   PopupMenuItem(
                     value: 'open',
-                    child: Text(zh ? '打开 / 编辑' : 'Open / edit'),
+                    child: Text(tr(context, '打开 / 编辑', 'Open / edit')),
                   ),
                   PopupMenuItem(
                     value: 'share',
-                    child: Text(zh ? '分享文件' : 'Share file'),
+                    child: Text(tr(context, '分享文件', 'Share file')),
                   ),
                   PopupMenuItem(
                     value: 'delete',
-                    child: Text(zh ? '删除' : 'Delete'),
+                    child: Text(tr(context, '删除', 'Delete')),
                   ),
                 ],
               ),
             ),
           ListTile(
             leading: const Icon(Icons.upload_file_outlined),
-            title: Text(zh ? '从设备导入文件' : 'Import from device'),
+            title: Text(tr(context, '从设备导入文件', 'Import from device')),
             onTap: () => _importFile(context, ref, person, folder),
           ),
         ],
@@ -250,7 +250,6 @@ Future<void> _addFolder(
   PersonMaterialProfile person, {
   bool firstFolder = false,
 }) async {
-  final zh = isChineseUi(context);
   String selected = materialCategoryCatalog.first.id;
   final custom = TextEditingController();
   final accepted = await showDialog<bool>(
@@ -259,8 +258,8 @@ Future<void> _addFolder(
       builder: (context, setState) => AlertDialog(
         title: Text(
           firstFolder
-              ? (zh ? '选择第一个材料分类' : 'Choose first folder')
-              : (zh ? '添加材料分类' : 'Add document folder'),
+              ? tr(context, '选择第一个材料分类', 'Choose first folder')
+              : tr(context, '添加材料分类', 'Add document folder'),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -271,11 +270,11 @@ Future<void> _addFolder(
                 for (final category in materialCategoryCatalog)
                   DropdownMenuItem(
                     value: category.id,
-                    child: Text(category.label(zh)),
+                    child: Text(category.localizedLabel(context)),
                   ),
                 DropdownMenuItem(
                   value: 'custom',
-                  child: Text(zh ? '自定义名称' : 'Custom name'),
+                  child: Text(tr(context, '自定义名称', 'Custom name')),
                 ),
               ],
               onChanged: (value) =>
@@ -286,7 +285,7 @@ Future<void> _addFolder(
               TextField(
                 controller: custom,
                 decoration: InputDecoration(
-                  labelText: zh ? '文件夹名称' : 'Folder name',
+                  labelText: tr(context, '文件夹名称', 'Folder name'),
                 ),
               ),
             ],
@@ -295,11 +294,11 @@ Future<void> _addFolder(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(zh ? '取消' : 'Cancel'),
+            child: Text(tr(context, '取消', 'Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(zh ? '创建' : 'Create'),
+            child: Text(tr(context, '创建', 'Create')),
           ),
         ],
       ),

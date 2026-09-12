@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/data/visa_route_catalog.dart';
+import '../../core/data/checklist_catalog.dart';
 import '../../core/i18n/app_language.dart';
 import '../../core/models/material_library.dart';
 import '../../core/models/models.dart';
@@ -21,7 +22,7 @@ class ProjectsScreen extends ConsumerWidget {
     final state = ref.watch(appStoreProvider);
     final zh = isChineseUi(context);
     return Scaffold(
-      appBar: AppBar(title: Text(zh ? '我的申请' : 'My applications')),
+      appBar: AppBar(title: Text(tr(context, '我的申请', 'My applications'))),
       body: state.projects.isEmpty
           ? Center(
               child: Padding(
@@ -47,7 +48,7 @@ class ProjectsScreen extends ConsumerWidget {
                     FilledButton.icon(
                       onPressed: () => _newProject(context, ref),
                       icon: const Icon(Icons.add),
-                      label: Text(zh ? '创建申请' : 'Create application'),
+                      label: Text(tr(context, '创建申请', 'Create application')),
                     ),
                   ],
                 ),
@@ -69,7 +70,7 @@ class ProjectsScreen extends ConsumerWidget {
           : FloatingActionButton.extended(
               onPressed: () => _newProject(context, ref),
               icon: const Icon(Icons.add),
-              label: Text(zh ? '创建申请' : 'New application'),
+              label: Text(tr(context, '创建申请', 'New application')),
             ),
     );
   }
@@ -104,6 +105,10 @@ class _ProjectCard extends StatelessWidget {
                           ?.copyWith(fontWeight: FontWeight.w800),
                     ),
                   ),
+                  if (project.grantedAt != null)
+                    Chip(label: Text(tr(context, '已下签', 'Granted')))
+                  else if (project.submittedAt != null)
+                    Chip(label: Text(tr(context, '已递交', 'Lodged'))),
                   const Icon(Icons.chevron_right),
                 ],
               ),
@@ -142,7 +147,7 @@ class ProjectDetailScreen extends ConsumerWidget {
         title: Text(project.name),
         actions: [
           IconButton(
-            tooltip: zh ? '分享全部附件压缩包' : 'Share all attachments as ZIP',
+            tooltip: tr(context, '分享全部附件压缩包', 'Share all attachments as ZIP'),
             onPressed: () => _shareApplicationPackage(context, project),
             icon: const Icon(Icons.folder_zip_outlined),
           ),
@@ -155,6 +160,8 @@ class ProjectDetailScreen extends ConsumerWidget {
             '${project.visaType} · ${project.applicant}',
             style: Theme.of(context).textTheme.titleMedium,
           ),
+          const SizedBox(height: 14),
+          _ApplicationStageCard(project: project),
           const SizedBox(height: 14),
           LinearProgressIndicator(
             value: project.completion,
@@ -173,9 +180,98 @@ class ProjectDetailScreen extends ConsumerWidget {
           OutlinedButton.icon(
             onPressed: () => _addChecklistItem(context, ref, project),
             icon: const Icon(Icons.add),
-            label: Text(zh ? '添加自定义材料' : 'Add custom document item'),
+            label: Text(tr(context, '添加材料', 'Add document')),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ApplicationStageCard extends ConsumerWidget {
+  const _ApplicationStageCard({required this.project});
+
+  final VisaProject project;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final submittedAt = project.submittedAt;
+    final grantedAt = project.grantedAt;
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 0,
+      color: grantedAt != null
+          ? colors.tertiaryContainer
+          : colors.surfaceContainerHigh,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  child: Icon(
+                    grantedAt != null
+                        ? Icons.celebration
+                        : submittedAt != null
+                        ? Icons.hourglass_top
+                        : Icons.edit_document,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        grantedAt != null
+                            ? tr(context, '申请已下签', 'Visa granted')
+                            : submittedAt != null
+                            ? tr(context, '申请已递交', 'Application lodged')
+                            : tr(context, '正在准备申请', 'Preparing application'),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      if (grantedAt != null)
+                        Text(DateFormat.yMMMd().format(grantedAt))
+                      else if (submittedAt != null)
+                        Text(
+                          tr(
+                            context,
+                            '${DateTime.now().difference(submittedAt).inDays.clamp(0, 99999)} 天前递交',
+                            'Lodged ${DateTime.now().difference(submittedAt).inDays.clamp(0, 99999)} days ago',
+                          ),
+                        )
+                      else
+                        Text(
+                          tr(
+                            context,
+                            '材料准备完成后，在这里记录递交日期',
+                            'Record the lodgement date when you submit',
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (submittedAt == null) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => _markSubmitted(context, ref, project),
+                icon: const Icon(Icons.send_outlined),
+                label: Text(tr(context, '标记已递交', 'Mark lodged')),
+              ),
+            ] else if (grantedAt == null) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () => _markGranted(context, ref, project),
+                icon: const Icon(Icons.celebration_outlined),
+                label: Text(tr(context, '标记已下签', 'Mark granted')),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -201,14 +297,16 @@ class _ChecklistCard extends ConsumerWidget {
                   .read(appStoreProvider.notifier)
                   .setChecklistCompleted(project.id, item.id, value ?? false),
               title: Text(
-                item.title,
+                checklistTitle(context, item.id, item.title),
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   decoration: done ? TextDecoration.lineThrough : null,
                 ),
               ),
               subtitle: Text(
-                done ? (zh ? '已完成' : 'Complete') : (zh ? '未完成' : 'Incomplete'),
+                done
+                    ? tr(context, '已完成', 'Complete')
+                    : tr(context, '未完成', 'Incomplete'),
               ),
               controlAffinity: ListTileControlAffinity.leading,
             ),
@@ -217,14 +315,16 @@ class _ChecklistCard extends ConsumerWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: TextButton.icon(
                       onPressed: () =>
-                          _pickPlanDate(context, ref, project, item),
-                      icon: const Icon(Icons.event_outlined, size: 18),
+                          _pickReminderDate(context, ref, project, item),
+                      icon: const Icon(Icons.notifications_outlined, size: 18),
                       label: Text(
-                        item.dueDate == null
-                            ? (zh ? '设置计划日期' : 'Set plan date')
-                            : DateFormat.yMMMd().format(item.dueDate!),
+                        item.reminderAt == null
+                            ? tr(context, '设置提醒', 'Set reminder')
+                            : DateFormat.yMMMd().format(item.reminderAt!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
@@ -234,7 +334,7 @@ class _ChecklistCard extends ConsumerWidget {
                       onPressed: () =>
                           _attachDocument(context, ref, project, item),
                       icon: const Icon(Icons.attach_file, size: 18),
-                      label: Text(zh ? '关联材料' : 'Link file'),
+                      label: Text(tr(context, '关联材料', 'Link file')),
                     ),
                   ),
                 ],
@@ -281,11 +381,13 @@ class _ChecklistCard extends ConsumerWidget {
                   itemBuilder: (_) => [
                     PopupMenuItem(
                       value: 'share',
-                      child: Text(zh ? '分享文件' : 'Share file'),
+                      child: Text(tr(context, '分享文件', 'Share file')),
                     ),
                     PopupMenuItem(
                       value: 'remove',
-                      child: Text(zh ? '从申请移除' : 'Remove from application'),
+                      child: Text(
+                        tr(context, '从申请移除', 'Remove from application'),
+                      ),
                     ),
                   ],
                 ),
@@ -295,6 +397,96 @@ class _ChecklistCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _markSubmitted(
+  BuildContext context,
+  WidgetRef ref,
+  VisaProject project,
+) async {
+  final now = DateTime.now();
+  final date = await showDatePicker(
+    context: context,
+    initialDate: now,
+    firstDate: DateTime(now.year - 10),
+    lastDate: now,
+    helpText: tr(context, '选择实际递交日期', 'Select the lodgement date'),
+  );
+  if (date == null) return;
+  await ref
+      .read(appStoreProvider.notifier)
+      .markProjectSubmitted(project.id, date);
+}
+
+Future<void> _markGranted(
+  BuildContext context,
+  WidgetRef ref,
+  VisaProject project,
+) async {
+  final now = DateTime.now();
+  final date = await showDatePicker(
+    context: context,
+    initialDate: now,
+    firstDate: project.submittedAt ?? DateTime(now.year - 10),
+    lastDate: now,
+    helpText: tr(context, '选择下签日期', 'Select the grant date'),
+  );
+  if (date == null) return;
+  await ref
+      .read(appStoreProvider.notifier)
+      .markProjectGranted(project.id, date);
+  if (!context.mounted) return;
+  await showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: tr(context, '关闭庆祝页', 'Close celebration'),
+    transitionDuration: const Duration(milliseconds: 550),
+    transitionBuilder: (context, animation, _, child) => FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+      child: ScaleTransition(
+        scale: Tween(
+          begin: .72,
+          end: 1.0,
+        ).animate(CurvedAnimation(parent: animation, curve: Curves.elasticOut)),
+        child: child,
+      ),
+    ),
+    pageBuilder: (context, _, _) => Center(
+      child: Card(
+        margin: const EdgeInsets.all(28),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 72)),
+              const SizedBox(height: 12),
+              Text(
+                tr(context, '恭喜下签！', 'Congratulations!'),
+                style: Theme.of(context).textTheme.headlineMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                tr(
+                  context,
+                  '${project.name} 已记录为获批。这是一段值得庆祝的旅程。',
+                  '${project.name} has been recorded as granted. This journey is worth celebrating.',
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 22),
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(tr(context, '太棒了', 'Wonderful')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 Future<void> _newProject(BuildContext context, WidgetRef ref) async {
@@ -311,7 +503,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: Text(zh ? '创建申请' : 'Create application'),
+        title: Text(tr(context, '创建申请', 'Create application')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -319,14 +511,14 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
               TextField(
                 controller: nameController,
                 decoration: InputDecoration(
-                  labelText: zh ? '申请名称' : 'Application name',
+                  labelText: tr(context, '申请名称', 'Application name'),
                 ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: route,
                 decoration: InputDecoration(
-                  labelText: zh ? '申请路线' : 'Visa route',
+                  labelText: tr(context, '申请路线', 'Visa route'),
                 ),
                 isExpanded: true,
                 items: visaRouteCatalog
@@ -334,7 +526,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
                       (item) => DropdownMenuItem(
                         value: item.code,
                         child: Text(
-                          item.label(zh),
+                          item.localizedLabel(context),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -347,7 +539,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
                 DropdownButtonFormField<String>(
                   initialValue: jurisdiction,
                   decoration: InputDecoration(
-                    labelText: zh ? '州或领地' : 'State or territory',
+                    labelText: tr(context, '州或领地', 'State or territory'),
                   ),
                   items: stateJurisdictions
                       .map(
@@ -366,7 +558,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
                 TextField(
                   controller: customRouteController,
                   decoration: InputDecoration(
-                    labelText: zh ? '自定义路线名称' : 'Custom route name',
+                    labelText: tr(context, '自定义路线名称', 'Custom route name'),
                   ),
                 ),
               ],
@@ -374,7 +566,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
               if (people.isEmpty)
                 TextField(
                   decoration: InputDecoration(
-                    labelText: zh ? '主申请人' : 'Primary applicant',
+                    labelText: tr(context, '主申请人', 'Primary applicant'),
                     hintText: applicant,
                   ),
                   onChanged: (value) => applicant = value.trim().isEmpty
@@ -385,7 +577,7 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
                 DropdownButtonFormField<String>(
                   initialValue: applicant,
                   decoration: InputDecoration(
-                    labelText: zh ? '主申请人' : 'Primary applicant',
+                    labelText: tr(context, '主申请人', 'Primary applicant'),
                   ),
                   items: people
                       .map(
@@ -403,11 +595,11 @@ Future<void> _newProject(BuildContext context, WidgetRef ref) async {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(zh ? '取消' : 'Cancel'),
+            child: Text(tr(context, '取消', 'Cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(zh ? '创建' : 'Create'),
+            child: Text(tr(context, '创建', 'Create')),
           ),
         ],
       ),
@@ -432,6 +624,63 @@ Future<void> _addChecklistItem(
   WidgetRef ref,
   VisaProject project,
 ) async {
+  final selected = await showModalBottomSheet<Object>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .72,
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(
+                tr(context, '添加常见材料', 'Add a common document'),
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              subtitle: Text(
+                tr(
+                  context,
+                  '选择一项，或在底部添加自定义材料',
+                  'Choose an item, or add a custom one at the bottom',
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final item in checklistCatalog)
+                    ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(item.label(context)),
+                      subtitle: Text(item.category(context)),
+                      onTap: () => Navigator.pop(context, item),
+                    ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: Text(tr(context, '自定义材料', 'Custom document')),
+              onTap: () => Navigator.pop(context, 'custom'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (!context.mounted) return;
+  if (selected == null) return;
+  if (selected is ChecklistDefinition) {
+    await ref
+        .read(appStoreProvider.notifier)
+        .addChecklistItem(
+          project.id,
+          selected.label(context),
+          catalogId: selected.id,
+          category: selected.category(context),
+        );
+    return;
+  }
   final controller = TextEditingController();
   final title = await showDialog<String>(
     context: context,
@@ -463,7 +712,7 @@ Future<void> _addChecklistItem(
   }
 }
 
-Future<void> _pickPlanDate(
+Future<void> _pickReminderDate(
   BuildContext context,
   WidgetRef ref,
   VisaProject project,
@@ -516,7 +765,7 @@ Future<void> _attachDocument(
           children: [
             ListTile(
               title: Text(
-                zh ? '关联材料' : 'Link a document',
+                tr(context, '关联材料', 'Link a document'),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               subtitle: Text(
@@ -548,7 +797,7 @@ Future<void> _attachDocument(
             ),
             ListTile(
               leading: const Icon(Icons.phone_android),
-              title: Text(zh ? '改为从设备导入' : 'Import from device instead'),
+              title: Text(tr(context, '改为从设备导入', 'Import from device instead')),
               onTap: () => Navigator.pop(context, 'device'),
             ),
           ],

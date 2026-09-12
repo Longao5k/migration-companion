@@ -632,6 +632,8 @@ class VisaProject {
     required this.status,
     required this.items,
     this.targetDate,
+    this.submittedAt,
+    this.grantedAt,
     this.isCloudSyncEnabled = false,
     this.allowViewerDownload = false,
     this.remoteId,
@@ -651,6 +653,8 @@ class VisaProject {
   final ProjectStatus status;
   final List<ChecklistItem> items;
   final DateTime? targetDate;
+  final DateTime? submittedAt;
+  final DateTime? grantedAt;
   final bool isCloudSyncEnabled;
   final bool allowViewerDownload;
   final String? remoteId;
@@ -694,6 +698,10 @@ class VisaProject {
 
   VisaProject copyWith({
     List<ChecklistItem>? items,
+    DateTime? submittedAt,
+    bool clearSubmittedAt = false,
+    DateTime? grantedAt,
+    bool clearGrantedAt = false,
     bool? isCloudSyncEnabled,
     bool? allowViewerDownload,
     String? remoteId,
@@ -715,6 +723,8 @@ class VisaProject {
     status: status,
     items: items ?? this.items,
     targetDate: targetDate,
+    submittedAt: clearSubmittedAt ? null : submittedAt ?? this.submittedAt,
+    grantedAt: clearGrantedAt ? null : grantedAt ?? this.grantedAt,
     isCloudSyncEnabled: isCloudSyncEnabled ?? this.isCloudSyncEnabled,
     allowViewerDownload: allowViewerDownload ?? this.allowViewerDownload,
     remoteId: clearRemoteId ? null : remoteId ?? this.remoteId,
@@ -735,6 +745,8 @@ class VisaProject {
     'status': status.name,
     'items': items.map((item) => item.toJson()).toList(),
     'targetDate': targetDate?.toIso8601String(),
+    'submittedAt': submittedAt?.toIso8601String(),
+    'grantedAt': grantedAt?.toIso8601String(),
     'isCloudSyncEnabled': isCloudSyncEnabled,
     'allowViewerDownload': allowViewerDownload,
     'remoteId': remoteId,
@@ -759,6 +771,12 @@ class VisaProject {
     targetDate: json['targetDate'] == null
         ? null
         : DateTime.parse(json['targetDate'] as String),
+    submittedAt: json['submittedAt'] == null
+        ? null
+        : DateTime.parse(json['submittedAt'] as String),
+    grantedAt: json['grantedAt'] == null
+        ? null
+        : DateTime.parse(json['grantedAt'] as String),
     isCloudSyncEnabled: json['isCloudSyncEnabled'] as bool? ?? false,
     allowViewerDownload: json['allowViewerDownload'] as bool? ?? false,
     remoteId: json['remoteId'] as String?,

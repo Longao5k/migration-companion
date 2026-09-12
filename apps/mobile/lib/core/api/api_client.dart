@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -20,12 +21,14 @@ class ApiClient {
     required this.accountEmail,
     this.accessToken,
     http.Client? httpClient,
+    this.requestTimeout = const Duration(seconds: 20),
   }) : _http = httpClient ?? http.Client();
 
   static const configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   final String accountEmail;
   String? accessToken;
   final http.Client _http;
+  final Duration requestTimeout;
 
   String get baseUrl =>
       configuredBaseUrl.isEmpty ? defaultApiBaseUrl() : configuredBaseUrl;
@@ -177,9 +180,11 @@ class ApiClient {
 
   Future<T> _network<T>(Future<T> Function() request) async {
     try {
-      return await request();
+      return await request().timeout(requestTimeout);
     } on ApiException {
       rethrow;
+    } on TimeoutException {
+      throw const ApiException('连接超时，请稍后重试', 0);
     } catch (_) {
       throw const ApiException('网络不可用，请稍后重试', 0);
     }

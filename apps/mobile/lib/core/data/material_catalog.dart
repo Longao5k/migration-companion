@@ -1,3 +1,7 @@
+import 'package:flutter/widgets.dart';
+
+import '../i18n/app_language.dart';
+
 class MaterialCategoryDefinition {
   const MaterialCategoryDefinition(this.id, this.zh, this.en, this.iconName);
 
@@ -7,6 +11,7 @@ class MaterialCategoryDefinition {
   final String iconName;
 
   String label(bool zhUi) => zhUi ? zh : en;
+  String localizedLabel(BuildContext context) => tr(context, zh, en);
 }
 
 const materialCategoryCatalog = <MaterialCategoryDefinition>[

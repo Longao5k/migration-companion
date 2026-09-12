@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/i18n/app_language.dart';
 import 'features/shell/app_shell.dart';
 
 class WaymarkApp extends StatelessWidget {
@@ -18,12 +19,10 @@ class WaymarkApp extends StatelessWidget {
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
       locale: locale,
-      supportedLocales: const [Locale('en'), Locale('zh')],
+      supportedLocales: supportedWaymarkLocales,
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       localeResolutionCallback: (locale, supported) =>
-          locale?.languageCode.toLowerCase() == 'zh'
-          ? const Locale('zh')
-          : const Locale('en'),
+          resolveWaymarkLocale(locale),
       home: const AppShell(),
     );
   }

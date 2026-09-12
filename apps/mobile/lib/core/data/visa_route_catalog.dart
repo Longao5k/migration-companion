@@ -1,3 +1,7 @@
+import 'package:flutter/widgets.dart';
+
+import '../i18n/app_language.dart';
+
 class VisaRouteDefinition {
   const VisaRouteDefinition(this.code, this.zh, this.en, {this.jurisdiction});
 
@@ -7,6 +11,8 @@ class VisaRouteDefinition {
   final String? jurisdiction;
 
   String label(bool zhUi) => zhUi ? '$code · $zh' : '$code · $en';
+  String localizedLabel(BuildContext context) =>
+      '$code · ${tr(context, zh, en)}';
 }
 
 const visaRouteCatalog = <VisaRouteDefinition>[

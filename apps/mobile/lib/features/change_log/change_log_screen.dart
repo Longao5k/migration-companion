@@ -147,7 +147,7 @@ class _ChangeCard extends StatelessWidget {
                       .take(4)
                       .map(
                         (tag) => Chip(
-                          label: Text(tag),
+                          label: Text(localizedTagLabel(context, tag)),
                           visualDensity: VisualDensity.compact,
                         ),
                       )

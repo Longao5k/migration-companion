@@ -78,30 +78,16 @@ abstract final class SeedData {
     return const [
       ChecklistItem(
         id: 'identity-passport',
-        title: '护照身份页',
+        title: 'Passport & identity',
         owner: '主申请人',
         category: '身份',
         status: ChecklistStatus.notStarted,
       ),
       ChecklistItem(
-        id: 'skills-assessment',
-        title: '职业评估材料',
-        owner: '主申请人',
-        category: '职业',
-        status: ChecklistStatus.notStarted,
-      ),
-      ChecklistItem(
         id: 'employment-evidence',
-        title: '工作经历证明',
+        title: 'Employment & income evidence',
         owner: '主申请人',
         category: '工作',
-        status: ChecklistStatus.notStarted,
-      ),
-      ChecklistItem(
-        id: 'english-evidence',
-        title: '英语能力证明',
-        owner: '主申请人',
-        category: '语言',
         status: ChecklistStatus.notStarted,
       ),
     ];

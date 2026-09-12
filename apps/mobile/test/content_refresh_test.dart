@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -64,6 +65,7 @@ void main() {
         }),
       ),
     );
+    expect(online.state.news, isEmpty);
     await online.ready;
     await online.refreshContent();
     await online.toggleBookmark('news-remote');
@@ -109,5 +111,24 @@ void main() {
     expect(store.state.news.map((item) => item.id), originalIds);
     expect(store.state.contentError, contains('本机缓存'));
     expect(store.state.isContentRefreshing, isFalse);
+  });
+
+  test('网络请求超时后刷新状态会结束', () async {
+    final store = AppStore(
+      InMemoryRepository(),
+      RecordingAttachmentStorage(),
+      SilentNotificationService(),
+      (email) => ApiClient(
+        accountEmail: email,
+        requestTimeout: const Duration(milliseconds: 10),
+        httpClient: MockClient((_) => Completer<http.Response>().future),
+      ),
+    );
+    await store.ready;
+
+    await store.refreshContent();
+
+    expect(store.state.isContentRefreshing, isFalse);
+    expect(store.state.contentError, contains('超时'));
   });
 }
